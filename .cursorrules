@@ -1,0 +1,21 @@
+# Kactus Predict - Cursor Rules
+
+## Project Overview
+This is a data prediction project that handles data ingestion, processing, and storage with various update strategies. The project uses Python with pandas for data manipulation and includes database functionality with different update patterns.
+
+## Project Structure
+- `main/` - Core application code
+  - `data_source/` - Data source implementations and schemas
+  - `database/` - Database client and schema definitions
+  - `tables/` - Table definitions and configurations
+  - `cron-job.ipynb` - Scheduled data processing notebook
+
+## Python Coding Standards
+
+### General Guidelines
+- Always answer in English
+- Use Python 3.12 features
+- Follow PEP 8 style guidelines
+- Use type hints for all functions and class methods
+- Use descriptive variable and function names
+- Add docstrings for all classes and public methods
