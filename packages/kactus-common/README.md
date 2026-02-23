@@ -18,7 +18,9 @@ uv sync --all-packages
 A DuckDB client with support for multiple update strategies: `REPLACE`, `APPEND`, `UPSERT`, and `INSERT_OVERWRITE`.
 
 ```python
-from kactus_common import DatabaseClient, Table, Column, DataType, UpdateStrategy
+from kactus_common.database.duckdb.client import DatabaseClient
+from kactus_common.database.duckdb.schema import Table, Column
+from kactus_common.database.duckdb.consts import DataType, UpdateStrategy
 import pandas as pd
 
 # Initialize client
@@ -60,25 +62,9 @@ print(result.fetchall())
 | `UPSERT` | Update rows matching primary key, insert new ones |
 | `INSERT_OVERWRITE` | Delete matching partitions, insert new data |
 
-### Pydantic Schemas
-
-```python
-from kactus_common.schemas.data_source import SyncDataResponse
-
-response = SyncDataResponse(
-    success=True,
-    data_source="mihong",
-    code="SJC",
-    start_date="2024-01-01",
-    end_date="2024-01-31",
-    data={"prices": [...]},
-    timestamp="2024-01-31T12:00:00",
-)
-```
-
 ## API Reference
 
-### `kactus_common.database`
+### `kactus_common.database.duckdb`
 
 | Class | Description |
 |-------|-------------|
@@ -88,11 +74,7 @@ response = SyncDataResponse(
 | `DataType` | Enum of DuckDB data types |
 | `UpdateStrategy` | Enum: `REPLACE`, `APPEND`, `UPSERT`, `INSERT_OVERWRITE` |
 
-### `kactus_common.schemas`
 
-| Class | Description |
-|-------|-------------|
-| `SyncDataResponse` | Standard response model for data sync operations |
 
 ## Testing
 

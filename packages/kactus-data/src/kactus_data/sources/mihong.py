@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import Dict, Any
 import requests
 
-from kactus_common.schemas.data_source import SyncDataResponse
+from kactus_data.schemas.data_source import SyncDataResponse
 
 class MihongDataSource(DataSource):
     """

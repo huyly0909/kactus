@@ -15,7 +15,7 @@ kactus/
 | Package | Description | Key Dependencies |
 |---------|-------------|-----------------|
 | [**kactus-common**](packages/kactus-common/) | Shared utilities: DuckDB client, data models, constants | `duckdb`, `pandas`, `pydantic` |
-| [**kactus-data**](packages/kactus-data/) | Data sources, scraping, collection, ETL jobs | `kactus-common`, `requests` |
+| [**kactus-data**](packages/kactus-data/) | Data sources, schemas, scraping, collection, ETL jobs | `kactus-common`, `requests` |
 | [**kactus-fin**](packages/kactus-fin/) | REST API for financial data | `kactus-common`, `fastapi`, `uvicorn` |
 
 ### Dependency Graph

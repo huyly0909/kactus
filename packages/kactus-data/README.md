@@ -43,7 +43,7 @@ Create a new class extending `DataSource`:
 
 ```python
 from kactus_data.sources.base import DataSource
-from kactus_common.schemas.data_source import SyncDataResponse
+from kactus_data.schemas.data_source import SyncDataResponse
 from datetime import datetime
 from typing import Dict
 
@@ -83,7 +83,9 @@ class MyNewSource(DataSource):
 Combine with `kactus-common` to persist data:
 
 ```python
-from kactus_common import DatabaseClient, Table, Column, DataType, UpdateStrategy
+from kactus_common.database.duckdb.client import DatabaseClient
+from kactus_common.database.duckdb.schema import Table, Column
+from kactus_common.database.duckdb.consts import DataType, UpdateStrategy
 from kactus_data.sources.mihong import MihongDataSource
 import pandas as pd
 from datetime import date
@@ -110,10 +112,12 @@ db.update_table(table, pd.DataFrame(response.data))
 
 ```
 kactus_data/
+├── schemas/
+│   └── data_source.py  # SyncDataResponse model
 ├── sources/
-│   ├── base.py       # DataSource ABC
-│   └── mihong.py     # Mihong.vn gold price source
-└── jobs/             # ETL job definitions (placeholder)
+│   ├── base.py         # DataSource ABC
+│   └── mihong.py       # Mihong.vn gold price source
+└── jobs/               # ETL job definitions (placeholder)
 ```
 
 ## Available Data Sources
