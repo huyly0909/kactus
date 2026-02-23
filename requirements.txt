@@ -1,5 +1,0 @@
-requests
-pandas
-pydantic
-duckdb
-pytest>=7.0.0

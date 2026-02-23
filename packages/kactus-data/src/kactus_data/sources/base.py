@@ -4,7 +4,7 @@ from typing import Dict, List, Any, Optional
 import urllib.parse
 import requests
 
-from main.data_source.schema import SyncDataResponse
+from kactus_common.schemas.data_source import SyncDataResponse
 
 
 class DataSource(ABC):

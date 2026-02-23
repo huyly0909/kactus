@@ -1,0 +1,17 @@
+[project]
+name = "kactus"
+version = "0.1.0"
+description = "Kactus monorepo"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pytest>=7.0.0",
+]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+kactus-common = { workspace = true }
+kactus-data = { workspace = true }
+kactus-fin = { workspace = true }

@@ -9,9 +9,9 @@ import tempfile
 import os
 from unittest.mock import patch, MagicMock
 
-from main.database.client import DatabaseClient
-from main.database.schema import Table, Column
-from main.database.consts import DataType, UpdateStrategy
+from kactus_common.database.client import DatabaseClient
+from kactus_common.database.schema import Table, Column
+from kactus_common.database.consts import DataType, UpdateStrategy
 
 
 class TestDatabaseClient:

@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, List
 
-from main.database.consts import DataType, UpdateStrategy
+from kactus_common.database.consts import DataType, UpdateStrategy
 
 class Column(BaseModel):
     name: str

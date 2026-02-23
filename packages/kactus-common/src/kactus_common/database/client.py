@@ -4,8 +4,8 @@ import logging
 from typing import Optional, List
 from contextlib import contextmanager
 
-from main.database.consts import UpdateStrategy
-from main.database.schema import Column, Table
+from kactus_common.database.consts import UpdateStrategy
+from kactus_common.database.schema import Column, Table
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
