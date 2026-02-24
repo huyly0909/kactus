@@ -203,6 +203,19 @@ docker compose up -d
 docker compose up -d --build
 ```
 
+### Pre-commit (Husky + lint-staged)
+
+On every `git commit`, Husky automatically runs:
+- **ESLint --fix** on staged `.ts` / `.tsx` files
+- **Prettier --write** on staged `.ts`, `.tsx`, `.css`, `.json`, `.md` files
+
+If linting fails, the commit is blocked.
+
+```bash
+# Setup (first time after clone)
+pnpm install              # Husky installs automatically via prepare script
+```
+
 ## Don't Do This
 
 - ❌ Use `.js` / `.jsx` — always `.ts` / `.tsx`
