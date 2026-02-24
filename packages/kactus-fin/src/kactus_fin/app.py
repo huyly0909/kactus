@@ -41,9 +41,15 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Routers
+    # --- Public (no auth) ---
     app.include_router(health_router)
-    app.include_router(auth_router)
+    app.include_router(auth_router)  # login / register / logout
+
+    # --- Session-protected ---
+    # app.include_router(users_router, dependencies=[Depends(require_session)])
+
+    # --- JWT / Token-protected (future) ---
+    # app.include_router(api_v1_router, dependencies=[Depends(require_token)])
 
     return app
 
