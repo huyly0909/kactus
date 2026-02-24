@@ -123,18 +123,48 @@ from kactus_data.sources.mihong import MihongDataSource
 from ..kactus_common import DatabaseClient
 ```
 
+### Feature Folder Pattern
+
+Features are organized as folders with a standard set of files:
+
+```
+<package>/
+└── <feature>/           # e.g. user/, project/, conversation/
+    ├── __init__.py
+    ├── const.py         # Enums, constants
+    ├── model.py         # SQLAlchemy OLTP models (inherit Base + mixins)
+    ├── schema.py        # Pydantic schemas (inherit BaseSchema)
+    ├── service.py       # Business logic
+    ├── api.py           # FastAPI router (if applicable)
+    └── other.py         # other files (if applicable)
+```
+
+**Shared features** (used by multiple apps) go in `kactus-common`:
+```python
+from kactus_common.user.model import User
+from kactus_common.user.schema import UserSchema
+from kactus_common.user.service import UserService
+```
+
+**App-specific features** go in their own package:
+```python
+from kactus_fin.billing.model import Invoice
+from kactus_fin.billing.api import router as billing_router
+```
+
 ### Where to Put Code
 
 | You need to... | Put it in... |
 |----------------|-------------|
-| Add shared DB logic, types, helpers | `kactus-common` |
+| Add a shared feature (user, auth) | `kactus-common/<feature>/` |
+| Add an app-specific feature | `<app-package>/<feature>/` (e.g. `kactus-fin/billing/`) |
+| Add shared infra (DB, events, logging) | `kactus-common/` (top-level modules) |
 | Add a new exception type | `kactus_common/exceptions.py` (subclass `KactusException`) |
-| Add a new data source / scraper | `kactus-data/sources/` |
+| Add a new data source / scraper | `kactus-data/sources/<domain>/` |
 | Add a new ETL job | `kactus-data/jobs/` |
-| Add a new API endpoint (main) | `kactus-fin/api/` |
+| Add a new API endpoint (main) | `kactus-fin/api/` or `kactus-fin/<feature>/api.py` |
 | Add a new API endpoint (gateway) | `kactus-fin-gateway/api/` |
-| Add shared Pydantic models | `kactus-common/schemas.py` |
-| Add data-specific models | `kactus-data/schemas/` |
+| Add shared Pydantic models | `kactus-common/<feature>/schema.py` or `kactus-common/schemas.py` |
 
 ### Schemas (Pydantic)
 
