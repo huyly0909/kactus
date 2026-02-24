@@ -2,10 +2,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from kactus_fin.config import get_settings
-from kactus_fin.api.health import router as health_router
 from kactus_common.exceptions import install_exception_handlers
+from kactus_fin.api.auth import router as auth_router
+from kactus_fin.api.health import router as health_router
+from kactus_fin.config import get_settings
 
 
 @asynccontextmanager
@@ -43,6 +43,7 @@ def create_app() -> FastAPI:
 
     # Routers
     app.include_router(health_router)
+    app.include_router(auth_router)
 
     return app
 

@@ -22,9 +22,10 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from functools import wraps
 from inspect import signature
-from typing import Any, AsyncContextManager, AsyncIterator, Callable
+from typing import Any, AsyncIterator, Callable
 
 import orjson
+from kactus_common.exceptions import InvalidArgumentError
 from sqlalchemy import Select, asc, desc, func, select
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -33,8 +34,6 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 from sqlalchemy.orm.attributes import InstrumentedAttribute
-
-from kactus_common.exceptions import InvalidArgumentError
 
 
 def json_dumps(*args, **kwargs) -> str:
@@ -107,15 +106,17 @@ class DatabaseSessionManager:
     def engine(self) -> AsyncEngine:
         """Lazily create and return the async engine."""
         if self._engine is None:
-            use_pool_pre_ping = self._database_url.startswith("sqlite")
-            self._engine = create_async_engine(
-                url=self._database_url,
-                echo=self._echo,
-                pool_size=self._pool_size,
-                pool_pre_ping=use_pool_pre_ping,
-                json_serializer=json_dumps,
-                json_deserializer=json_loads,
-            )
+            is_sqlite = self._database_url.startswith("sqlite")
+            engine_kwargs: dict = {
+                "url": self._database_url,
+                "echo": self._echo,
+                "json_serializer": json_dumps,
+                "json_deserializer": json_loads,
+            }
+            if not is_sqlite:
+                engine_kwargs["pool_size"] = self._pool_size
+                engine_kwargs["pool_pre_ping"] = True
+            self._engine = create_async_engine(**engine_kwargs)
         return self._engine
 
     @property

@@ -301,6 +301,25 @@ pre-commit install               # first time setup
 pre-commit run --all-files       # run manually
 ```
 
+### Testing (pytest + pytest-asyncio)
+
+**After every code change, you MUST:**
+1. **Write tests** for new modules, functions, and API endpoints
+2. **Update tests** when modifying existing code
+3. **Run tests** to verify everything passes before committing
+
+```bash
+uv run pytest                           # run all tests
+uv run pytest packages/kactus-fin/tests # run package tests
+uv run pytest -k "test_login"           # run specific tests
+```
+
+Test file convention: `tests/test_<module>.py` in each package:
+```
+packages/kactus-common/tests/test_crypto.py
+packages/kactus-fin/tests/test_auth_api.py
+```
+
 ## Don't Do This
 
 - ❌ Use `Union[A, B]`, `Optional[X]`, `Dict`, `List` — use `A | B`, `X | None`, `dict`, `list`
@@ -314,3 +333,5 @@ pre-commit run --all-files       # run manually
 - ❌ Add `__init__.py` to test directories
 - ❌ Use `config.settings` globally — use dependency injection / constructor params
 - ❌ Raise bare `Exception` — use `KactusException` subclasses
+- ❌ Skip tests — every feature needs tests, run `uv run pytest` before committing
+
