@@ -30,7 +30,7 @@ class TestConfig:
         from kactus_fin_gateway.config import Settings
         settings = Settings()
         assert settings.app_name == "Kactus Fin Gateway"
-        assert settings.port == 8001
+        assert settings.port == 17601
         assert settings.debug is False
 
     def test_env_prefix(self):

@@ -51,7 +51,7 @@ class TestConfig:
         assert settings.app_version == "0.1.0"
         assert settings.debug is False
         assert settings.host == "0.0.0.0"
-        assert settings.port == 8000
+        assert settings.port == 17600
         assert settings.db_path == "kactus.duckdb"
 
     def test_settings_env_prefix(self):

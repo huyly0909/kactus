@@ -1,0 +1,63 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U kactus" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  kactus-fin:
+    build:
+      context: ../../
+      dockerfile: packages/docker-hub/Dockerfile.fin
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "17600:17600"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --workers 2 --log-level info
+
+  kactus-fin-gw:
+    build:
+      context: ../../
+      dockerfile: packages/docker-hub/Dockerfile.fin-gw
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "17601:17601"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      uvicorn kactus_fin_gateway.app:app --host 0.0.0.0 --port 17601 --workers 2 --log-level info
+
+volumes:
+  postgres_data:
+  redis_data:

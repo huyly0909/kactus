@@ -8,8 +8,9 @@ A Python monorepo managed by **uv workspaces** for gold price data processing, a
 |---------|-------------|------|
 | [kactus-common](packages/kactus-common/) | Shared infrastructure: DB clients, schemas, events, logging, exceptions | — |
 | [kactus-data](packages/kactus-data/) | Data processing, scraping, ETL pipelines | — |
-| [kactus-fin](packages/kactus-fin/) | FastAPI backend server (main API) | 8000 |
-| [kactus-fin-gateway](packages/kactus-fin-gateway/) | FastAPI gateway server (public APIs) | 8001 |
+| [kactus-fin](packages/kactus-fin/) | FastAPI backend server (main API) | 17600 |
+| [kactus-fin-gateway](packages/kactus-fin-gateway/) | FastAPI gateway server (public APIs) | 17601 |
+| [docker-hub](packages/docker-hub/) | Docker Compose configs for dev/stag/prod | — |
 
 ## Quick Start
 
@@ -21,33 +22,34 @@ A Python monorepo managed by **uv workspaces** for gold price data processing, a
 ### Install
 
 ```bash
-# Install uv if you don't have it
 curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Clone and install all packages
 git clone <repo-url> kactus && cd kactus
 uv sync --all-packages
 ```
 
-### Run Servers
+### Run Servers (local)
 
 ```bash
-# Start kactus-fin (port 8000)
-uv run uvicorn kactus_fin.app:app --host 0.0.0.0 --port 8000 --reload
+python manage.py fin dev        # port 17600, hot-reload
+python manage.py fin-gw dev     # port 17601, hot-reload
+```
 
-# Start kactus-fin-gateway (port 8001)
-uv run uvicorn kactus_fin_gateway.app:app --host 0.0.0.0 --port 8001 --reload
+### Run Servers (Docker)
+
+```bash
+cd packages/docker-hub/dev      # or stag / prod
+docker compose up -d
+
+# Run migrations
+docker compose exec kactus-fin python manage.py fin db upgrade
+docker compose exec kactus-fin-gw python manage.py fin-gw db upgrade
 ```
 
 ### Run Tests
 
 ```bash
-# All tests
-uv run pytest
-
-# Single package
-uv run pytest packages/kactus-common/tests/
-uv run pytest packages/kactus-fin/tests/
+uv run pytest                   # all tests
+uv run pytest packages/kactus-fin/tests/   # single package
 ```
 
 ## Development
@@ -56,8 +58,12 @@ uv run pytest packages/kactus-fin/tests/
 # Add dependency to a package
 cd packages/kactus-common && uv add <package>
 
-# Sync all packages after changes
-uv sync --all-packages
+# Sync a specific package
+uv sync --package kactus-fin
+
+# Pre-commit hooks
+pre-commit install
+pre-commit run --all-files
 ```
 
 ## Architecture

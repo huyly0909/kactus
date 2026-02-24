@@ -1,0 +1,50 @@
+# -------------------------------------------------------------------
+# Stage 1: Builder
+# -------------------------------------------------------------------
+FROM python:3.12-slim AS builder
+
+WORKDIR /app
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Copy workspace manifests first (cache-friendly layer)
+COPY pyproject.toml uv.lock ./
+COPY packages/kactus-common/pyproject.toml packages/kactus-common/pyproject.toml
+COPY packages/kactus-fin-gateway/pyproject.toml packages/kactus-fin-gateway/pyproject.toml
+
+# Create stub packages so uv can resolve
+RUN mkdir -p packages/kactus-common/src/kactus_common && \
+    touch packages/kactus-common/src/kactus_common/__init__.py && \
+    mkdir -p packages/kactus-fin-gateway/src/kactus_fin_gateway && \
+    touch packages/kactus-fin-gateway/src/kactus_fin_gateway/__init__.py
+
+# Install dependencies only (cached unless pyproject.toml changes)
+RUN uv sync --package kactus-fin-gateway --frozen --no-install-project
+
+# Copy full source
+COPY packages/kactus-common/ packages/kactus-common/
+COPY packages/kactus-fin-gateway/ packages/kactus-fin-gateway/
+COPY manage.py pytest.ini ./
+
+# Install the project itself
+RUN uv sync --package kactus-fin-gateway --frozen
+
+# -------------------------------------------------------------------
+# Stage 2: Runtime
+# -------------------------------------------------------------------
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+# Copy venv from builder
+COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /app/packages /app/packages
+COPY --from=builder /app/manage.py /app/manage.py
+
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 17601
+
+CMD ["uvicorn", "kactus_fin_gateway.app:app", "--host", "0.0.0.0", "--port", "17601"]

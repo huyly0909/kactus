@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     # Server
     host: str = "0.0.0.0"
-    port: int = 8001
+    port: int = 17601
 
     # Database
     database_url: str = "postgresql://localhost:5432/kactus"

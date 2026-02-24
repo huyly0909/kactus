@@ -4,14 +4,15 @@
 
 ## Architecture
 
-Kactus is a **uv workspaces** monorepo with 4 packages:
+Kactus is a **uv workspaces** monorepo with 5 packages:
 
 | Package | Import As | Purpose | Port |
 |---------|-----------|---------|------|
 | `kactus-common` | `kactus_common` | Shared infrastructure — database clients, schemas, events, logging, exceptions | — |
 | `kactus-data` | `kactus_data` | Data processing, scraping, ETL pipelines | — |
-| `kactus-fin` | `kactus_fin` | FastAPI backend server (main API) | 8000 |
-| `kactus-fin-gateway` | `kactus_fin_gateway` | FastAPI gateway server (public APIs) | 8001 |
+| `kactus-fin` | `kactus_fin` | FastAPI backend server (main API) | 17600 |
+| `kactus-fin-gateway` | `kactus_fin_gateway` | FastAPI gateway server (public APIs) | 17601 |
+| `docker-hub` | — | Docker Compose configs for dev/stag/prod deployment | — |
 
 ### Dependency Flow (One-Way)
 
@@ -53,14 +54,22 @@ kactus/
 │   │   │   ├── app.py         # FastAPI app factory
 │   │   │   └── config.py      # Settings (KACTUS_ prefix)
 │   │   └── tests/
-│   └── kactus-fin-gateway/    # Gateway API server
-│       ├── src/kactus_fin_gateway/
-│       │   ├── api/           # Route definitions
-│       │   ├── cli/           # CLI commands (server, db)
-│       │   ├── app.py         # FastAPI app factory
-│       │   └── config.py      # Settings (KACTUS_GW_ prefix)
-│       └── tests/
+│   ├── kactus-fin-gateway/    # Gateway API server
+│   │   ├── src/kactus_fin_gateway/
+│   │   │   ├── api/           # Route definitions
+│   │   │   ├── cli/           # CLI commands (server, db)
+│   │   │   ├── app.py         # FastAPI app factory
+│   │   │   └── config.py      # Settings (KACTUS_GW_ prefix)
+│   │   └── tests/
+│   └── docker-hub/            # Docker deployment configs
+│       ├── Dockerfile.fin
+│       ├── Dockerfile.fin-gw
+│       ├── dev/               # docker-compose.yml + .env
+│       ├── stag/
+│       └── prod/
 ├── manage.py                  # Centralized CLI entry point
+├── .pre-commit-config.yaml    # isort, autoflake, black, flake8
+├── .flake8
 ├── pyproject.toml             # Workspace root
 └── pytest.ini                 # Test configuration
 ```
@@ -73,6 +82,10 @@ kactus/
 - **DuckDB** — OLAP / analytical queries
 - **Pydantic v2** / **pydantic-settings** — Schemas and config
 - **loguru** — Structured logging
+- **Typer** — CLI framework (via `AsyncTyper` wrapper)
+- **Alembic** — Database migrations
+- **Docker Compose** — Container orchestration (dev/stag/prod)
+- **pre-commit** — Code quality (isort, autoflake, black, flake8)
 - **pytest** — Testing
 
 ## Coding Conventions
@@ -158,10 +171,10 @@ All server management goes through the root `manage.py`:
 
 ```bash
 # Servers
-python manage.py fin dev                # dev with hot-reload (port 8000)
+python manage.py fin dev                # dev with hot-reload (port 17600)
 python manage.py fin stag               # staging (2 workers)
 python manage.py fin prod               # production (4 workers)
-python manage.py fin-gw dev             # gateway dev (port 8001)
+python manage.py fin-gw dev             # gateway dev (port 17601)
 
 # Database migrations
 python manage.py fin db migrate -m "add users table"
@@ -179,8 +192,30 @@ To add a new CLI command to a package, add it in `<package>/cli/` and register i
 # Add to a specific package
 cd packages/kactus-common && uv add <package>
 
+# Sync a specific package (preferred)
+uv sync --package kactus-fin
+
 # Sync all packages
 uv sync --all-packages
+```
+
+### Docker Deployment
+
+```bash
+# Pick environment and start
+cd packages/docker-hub/dev       # or stag / prod
+docker compose up -d
+
+# Run migrations after first deploy
+docker compose exec kactus-fin python manage.py fin db upgrade
+docker compose exec kactus-fin-gw python manage.py fin-gw db upgrade
+```
+
+### Pre-commit
+
+```bash
+pre-commit install               # first time setup
+pre-commit run --all-files       # run manually
 ```
 
 ## Don't Do This
