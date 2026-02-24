@@ -1,12 +1,27 @@
 [project]
 name = "kactus-common"
 version = "0.1.0"
-description = "Shared utilities: DuckDB client, Pydantic schemas, common models"
+description = "Shared utilities: database clients, Pydantic schemas, events, logging, exceptions"
 requires-python = ">=3.12"
 dependencies = [
+    # DuckDB
     "duckdb>=1.4.4",
     "pandas>=3.0.1",
+    # Core
     "pydantic>=2.12.5",
+    "loguru>=0.7.0",
+    "orjson>=3.9.0",
+    # OLTP database (SQLAlchemy async)
+    "sqlalchemy[asyncio]>=2.0.0",
+    "asyncpg>=0.30.0",
+    "snowflake-id>=1.0.0",
+    "inflect>=7.0.0",
+    "sqlalchemy-utils>=0.41.0",
+    # Events
+    "blinker>=1.7.0",
+    "fastapi-events>=0.11.0",
+    "fastapi>=0.100.0",
+    "typer>=0.24.1",
 ]
 
 [build-system]

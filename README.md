@@ -1,132 +1,71 @@
-# 🌵 Kactus
+# Kactus
 
-A Python monorepo for financial data collection, processing, and serving — powered by [uv workspaces](https://docs.astral.sh/uv/concepts/workspaces/).
+A Python monorepo managed by **uv workspaces** for gold price data processing, analytics, and API services.
 
-## Architecture
+## Packages
 
-```
-kactus/
-├── packages/
-│   ├── kactus-common/   # Shared library (DuckDB, Pydantic schemas)
-│   ├── kactus-data/     # Data scraping & ETL pipelines
-│   └── kactus-fin/      # FastAPI backend server
-```
-
-| Package | Description | Key Dependencies |
-|---------|-------------|-----------------|
-| [**kactus-common**](packages/kactus-common/) | Shared utilities: DuckDB client, data models, constants | `duckdb`, `pandas`, `pydantic` |
-| [**kactus-data**](packages/kactus-data/) | Data sources, schemas, scraping, collection, ETL jobs | `kactus-common`, `requests` |
-| [**kactus-fin**](packages/kactus-fin/) | REST API for financial data | `kactus-common`, `fastapi`, `uvicorn` |
-
-### Dependency Graph
-
-```mermaid
-graph TD
-    A[kactus-data] --> C[kactus-common]
-    B[kactus-fin] --> C[kactus-common]
-```
-
-## Prerequisites
-
-- **Python** ≥ 3.12
-- **[uv](https://docs.astral.sh/uv/getting-started/installation/)** (fast Python package manager)
+| Package | Description | Port |
+|---------|-------------|------|
+| [kactus-common](packages/kactus-common/) | Shared infrastructure: DB clients, schemas, events, logging, exceptions | — |
+| [kactus-data](packages/kactus-data/) | Data processing, scraping, ETL pipelines | — |
+| [kactus-fin](packages/kactus-fin/) | FastAPI backend server (main API) | 8000 |
+| [kactus-fin-gateway](packages/kactus-fin-gateway/) | FastAPI gateway server (public APIs) | 8001 |
 
 ## Quick Start
 
-```bash
-# Clone the repo
-git clone <your-repo-url> && cd kactus
+### Prerequisites
 
-# Install all packages in the workspace
-uv sync --all-packages
+- Python 3.12+
+- [uv](https://docs.astral.sh/uv/) package manager
 
-# Run tests
-uv run pytest
-
-# Start the API server
-uv run uvicorn kactus_fin.app:app --reload
-```
-
-## Development
-
-### Install & Sync
+### Install
 
 ```bash
-# Install all workspace packages (editable)
-uv sync --all-packages
+# Install uv if you don't have it
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# Install only a specific package and its deps
-uv sync --package kactus-common
+# Clone and install all packages
+git clone <repo-url> kactus && cd kactus
+uv sync --all-packages
 ```
 
-### Running Tests
+### Run Servers
+
+```bash
+# Start kactus-fin (port 8000)
+uv run uvicorn kactus_fin.app:app --host 0.0.0.0 --port 8000 --reload
+
+# Start kactus-fin-gateway (port 8001)
+uv run uvicorn kactus_fin_gateway.app:app --host 0.0.0.0 --port 8001 --reload
+```
+
+### Run Tests
 
 ```bash
 # All tests
 uv run pytest
 
-# Specific package tests
-uv run pytest packages/kactus-common/tests/ -v
-uv run pytest packages/kactus-data/tests/ -v
-
-# With coverage (if installed)
-uv run pytest --cov
+# Single package
+uv run pytest packages/kactus-common/tests/
+uv run pytest packages/kactus-fin/tests/
 ```
 
-### Adding Dependencies
+## Development
 
 ```bash
-# Add a dependency to a specific package
-cd packages/kactus-data
-uv add httpx
+# Add dependency to a package
+cd packages/kactus-common && uv add <package>
 
-# Add a dev dependency to the root
-uv add --dev ruff
+# Sync all packages after changes
+uv sync --all-packages
 ```
 
-### Running the API Server
+## Architecture
 
-```bash
-# Development (with hot reload)
-uv run uvicorn kactus_fin.app:app --reload --port 8000
-
-# Check health
-curl http://localhost:8000/health
-# → {"status": "ok"}
+```
+kactus-fin  ──────┐
+kactus-fin-gateway ──┤──▶ kactus-common
+kactus-data  ─────┘
 ```
 
-### Code Quality
-
-```bash
-# Format (if ruff is installed)
-uv run ruff format .
-
-# Lint
-uv run ruff check .
-```
-
-## Project Configuration
-
-| File | Purpose |
-|------|---------|
-| `pyproject.toml` | Root workspace config, shared dev dependencies |
-| `pytest.ini` | Test runner configuration |
-| `.python-version` | Python version pin (3.12) |
-| `packages/*/pyproject.toml` | Per-package dependencies and build config |
-
-## Environment Variables
-
-The **kactus-fin** server supports configuration via environment variables (prefixed with `KACTUS_`):
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `KACTUS_DEBUG` | `false` | Enable debug mode |
-| `KACTUS_HOST` | `0.0.0.0` | Server bind host |
-| `KACTUS_PORT` | `8000` | Server bind port |
-| `KACTUS_DB_PATH` | `kactus.duckdb` | Path to DuckDB database file |
-
-You can also use a `.env` file in the project root.
-
-## License
-
-Private — All rights reserved.
+See [.cursorrules](.cursorrules) for detailed coding conventions and AI agent guidance.

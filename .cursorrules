@@ -1,0 +1,193 @@
+# Kactus Monorepo — AI Agent Rules
+
+> **Purpose**: This file helps AI agents understand the project structure, conventions, and where to write code. Always read this before making changes.
+
+## Architecture
+
+Kactus is a **uv workspaces** monorepo with 4 packages:
+
+| Package | Import As | Purpose | Port |
+|---------|-----------|---------|------|
+| `kactus-common` | `kactus_common` | Shared infrastructure — database clients, schemas, events, logging, exceptions | — |
+| `kactus-data` | `kactus_data` | Data processing, scraping, ETL pipelines | — |
+| `kactus-fin` | `kactus_fin` | FastAPI backend server (main API) | 8000 |
+| `kactus-fin-gateway` | `kactus_fin_gateway` | FastAPI gateway server (public APIs) | 8001 |
+
+### Dependency Flow (One-Way)
+
+```
+kactus-fin  ──────┐
+kactus-fin-gateway ──┤──▶ kactus-common
+kactus-data  ─────┘
+```
+
+**Never import from kactus-fin, kactus-fin-gateway, or kactus-data into kactus-common.**
+
+## Directory Structure
+
+```
+kactus/
+├── packages/
+│   ├── kactus-common/         # Shared utilities
+│   │   ├── src/kactus_common/
+│   │   │   ├── database/
+│   │   │   │   ├── duckdb/    # DuckDB (OLAP) client
+│   │   │   │   └── oltp/      # SQLAlchemy async (PostgreSQL/MySQL)
+│   │   │   ├── events/        # Event dispatch system (background tasks)
+│   │   │   │   └── backends/  # blinker, fastapi-events, composite
+│   │   │   ├── cli.py         # AsyncTyper, exit_with_error
+│   │   │   ├── exceptions.py  # KactusException hierarchy
+│   │   │   ├── schemas.py     # BaseSchema, ResponseModel, Pagination
+│   │   │   └── logging.py     # Loguru configuration
+│   │   └── tests/
+│   ├── kactus-data/           # Data processing & ETL
+│   │   ├── src/kactus_data/
+│   │   │   ├── schemas/       # Data-specific schemas (SyncDataResponse)
+│   │   │   ├── sources/       # DataSource ABC + implementations
+│   │   │   └── jobs/          # ETL jobs
+│   │   └── tests/
+│   ├── kactus-fin/            # Main API server
+│   │   ├── src/kactus_fin/
+│   │   │   ├── api/           # Route definitions
+│   │   │   ├── cli/           # CLI commands (server, db)
+│   │   │   ├── app.py         # FastAPI app factory
+│   │   │   └── config.py      # Settings (KACTUS_ prefix)
+│   │   └── tests/
+│   └── kactus-fin-gateway/    # Gateway API server
+│       ├── src/kactus_fin_gateway/
+│       │   ├── api/           # Route definitions
+│       │   ├── cli/           # CLI commands (server, db)
+│       │   ├── app.py         # FastAPI app factory
+│       │   └── config.py      # Settings (KACTUS_GW_ prefix)
+│       └── tests/
+├── manage.py                  # Centralized CLI entry point
+├── pyproject.toml             # Workspace root
+└── pytest.ini                 # Test configuration
+```
+
+## Tech Stack
+
+- **Python 3.12+**, managed by **uv** workspaces
+- **FastAPI** — REST API framework
+- **SQLAlchemy 2.0 (async)** — OLTP database (PostgreSQL/MySQL)
+- **DuckDB** — OLAP / analytical queries
+- **Pydantic v2** / **pydantic-settings** — Schemas and config
+- **loguru** — Structured logging
+- **pytest** — Testing
+
+## Coding Conventions
+
+### Imports
+
+```python
+# ✅ Correct — always use the full package path
+from kactus_common.database.duckdb.client import DatabaseClient
+from kactus_common.database.oltp import DatabaseSessionManager
+from kactus_common.exceptions import NotFoundError
+from kactus_common.schemas import BaseSchema
+from kactus_data.sources.mihong import MihongDataSource
+
+# ❌ Wrong — never use relative imports across packages
+from ..kactus_common import DatabaseClient
+```
+
+### Where to Put Code
+
+| You need to... | Put it in... |
+|----------------|-------------|
+| Add shared DB logic, types, helpers | `kactus-common` |
+| Add a new exception type | `kactus_common/exceptions.py` (subclass `KactusException`) |
+| Add a new data source / scraper | `kactus-data/sources/` |
+| Add a new ETL job | `kactus-data/jobs/` |
+| Add a new API endpoint (main) | `kactus-fin/api/` |
+| Add a new API endpoint (gateway) | `kactus-fin-gateway/api/` |
+| Add shared Pydantic models | `kactus-common/schemas.py` |
+| Add data-specific models | `kactus-data/schemas/` |
+
+### Exception Pattern
+
+Always raise subclasses of `KactusException`:
+
+```python
+from kactus_common.exceptions import NotFoundError, DatabaseError
+
+# Raise with structured fields
+raise NotFoundError(
+    "User not found",
+    tip="Check the user ID format",
+    data={"user_id": user_id},
+)
+
+# Custom code override
+raise DatabaseError(
+    "Connection pool exhausted",
+    code="POOL_EXHAUSTED",
+    tip="Increase pool_size or reduce concurrent requests",
+)
+```
+
+Exception handlers are auto-installed via `install_exception_handlers(app)` in both servers.
+
+### Database Pattern
+
+kactus-common provides the `DatabaseSessionManager` class. Each app creates its own singleton:
+
+```python
+# In kactus-fin/config.py or a db.py module:
+from kactus_common.database.oltp import DatabaseSessionManager
+from kactus_fin.config import get_settings
+
+settings = get_settings()
+db = DatabaseSessionManager(database_url=settings.database_url)
+
+# Usage in endpoints:
+async with db.get_session() as session:
+    user = await User.get_or_404(session, user_id)
+```
+
+### Testing
+
+- Tests live in each package's `tests/` directory
+- Run all tests: `uv run pytest`
+- Run one package: `uv run pytest packages/kactus-fin/tests/`
+- No `__init__.py` in test directories (prevents namespace collisions)
+
+### CLI Commands (`manage.py`)
+
+All server management goes through the root `manage.py`:
+
+```bash
+# Servers
+python manage.py fin dev                # dev with hot-reload (port 8000)
+python manage.py fin stag               # staging (2 workers)
+python manage.py fin prod               # production (4 workers)
+python manage.py fin-gw dev             # gateway dev (port 8001)
+
+# Database migrations
+python manage.py fin db migrate -m "add users table"
+python manage.py fin db upgrade
+python manage.py fin db downgrade <rev>
+python manage.py fin db current
+python manage.py fin db history
+```
+
+To add a new CLI command to a package, add it in `<package>/cli/` and register it in `<package>/cli/__init__.py`. Use `AsyncTyper` from `kactus_common.cli` for async commands.
+
+### Adding Dependencies
+
+```bash
+# Add to a specific package
+cd packages/kactus-common && uv add <package>
+
+# Sync all packages
+uv sync --all-packages
+```
+
+## Don't Do This
+
+- ❌ Import app-specific settings into `kactus-common`
+- ❌ Create circular dependencies between packages
+- ❌ Put business logic in `kactus-common` (it's for infrastructure only)
+- ❌ Write duplicate utilities — check `kactus-common` first
+- ❌ Add `__init__.py` to test directories
+- ❌ Use `config.settings` globally — use dependency injection / constructor params

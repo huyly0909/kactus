@@ -1,13 +1,13 @@
 [project]
-name = "kactus-fin"
+name = "kactus-fin-gateway"
 version = "0.1.0"
-description = "Kactus financial backend API (FastAPI)"
+description = "Kactus API Gateway - Public-facing API server"
 requires-python = ">=3.12"
 dependencies = [
     "kactus-common",
-    "fastapi>=0.115.0",
-    "uvicorn[standard]>=0.34.0",
-    "pydantic-settings>=2.7.0",
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.20.0",
+    "pydantic-settings>=2.0.0",
     "alembic>=1.18.4",
 ]
 
@@ -18,10 +18,8 @@ kactus-common = { workspace = true }
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[dependency-groups]
-dev = [
-    "httpx>=0.28.1",
-]
-
 [tool.hatch.build.targets.wheel]
-packages = ["src/kactus_fin"]
+packages = ["src/kactus_fin_gateway"]
+
+[project.optional-dependencies]
+dev = ["httpx>=0.24.0"]

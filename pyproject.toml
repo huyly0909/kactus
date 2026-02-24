@@ -15,3 +15,4 @@ members = ["packages/*"]
 kactus-common = { workspace = true }
 kactus-data = { workspace = true }
 kactus-fin = { workspace = true }
+kactus-fin-gateway = { workspace = true }
