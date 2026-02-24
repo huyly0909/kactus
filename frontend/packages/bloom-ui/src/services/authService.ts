@@ -1,16 +1,42 @@
 import { apiClient } from './apiClient';
-import type { ApiResponse, LoginRequest, LoginResponse } from '../types';
+import type { ApiResponse } from '../types';
 
+interface UserInfo {
+  id: string;
+  email: string;
+  username: string;
+  name: string;
+  status: string;
+}
+
+interface LoginResponse {
+  user: UserInfo;
+}
+
+interface LoginPayload {
+  email: string;
+  password: string;
+  remember?: boolean;
+}
+
+/**
+ * Auth service — session-based, cookies sent automatically via withCredentials.
+ */
 export const authService = {
-    login: (credentials: LoginRequest) =>
-        apiClient.post<ApiResponse<LoginResponse>>('/auth/login', credentials),
+  /** Login with email + password. Cookie is set by the server. */
+  login: async (payload: LoginPayload) => {
+    const { data } = await apiClient.post<ApiResponse<LoginResponse>>('/api/auth/login', payload);
+    return data.data;
+  },
 
-    logout: () => apiClient.post('/auth/logout'),
+  /** Logout — server clears the session cookie. */
+  logout: async () => {
+    await apiClient.post('/api/auth/logout');
+  },
 
-    me: () => apiClient.get<ApiResponse<LoginResponse['user']>>('/auth/me'),
-
-    refresh: (refreshToken: string) =>
-        apiClient.post<ApiResponse<{ accessToken: string; refreshToken: string }>>('/auth/refresh', {
-            refreshToken,
-        }),
+  /** Get current user from session cookie. */
+  me: async () => {
+    const { data } = await apiClient.get<ApiResponse<UserInfo>>('/api/auth/me');
+    return data.data;
+  },
 };

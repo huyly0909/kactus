@@ -177,11 +177,11 @@ sendBrowserNotification('New Alert', 'Your report is ready.');
 
 ### Auth Flow
 
-1. Login → POST `/api/auth/login` → `{ accessToken, refreshToken }`
-2. Store tokens in Zustand (memory) — **not localStorage**
-3. Axios interceptor adds `Authorization: Bearer <token>`
-4. On 401 → interceptor calls `/api/auth/refresh` → retry
-5. Route guards redirect unauthenticated users to `/login`
+1. Login → POST `/api/auth/login` → server sets `kactus_session_id` httpOnly cookie
+2. Axios uses `withCredentials: true` — browser sends cookie automatically
+3. On 401 → redirect to `/login` (session expired or missing)
+4. `AuthGuard` calls `GET /api/auth/me` on mount to restore session from cookie
+5. Zustand stores only `user` + `isAuthenticated` — **no tokens in memory**
 
 ### Environment Variables
 
@@ -216,6 +216,26 @@ If linting fails, the commit is blocked.
 pnpm install              # Husky installs automatically via prepare script
 ```
 
+### Testing (Vitest + React Testing Library)
+
+**After every code change, you MUST:**
+1. **Write tests** for new components, hooks, and pages
+2. **Update tests** when modifying existing code
+3. **Run tests** to verify everything passes before committing
+
+```bash
+pnpm test                 # run all tests once
+pnpm test:watch           # watch mode during development
+```
+
+Test file convention: colocate with source using `*.test.tsx` suffix:
+```
+pages/Login/index.tsx
+pages/Login/Login.test.tsx
+router/guards.tsx
+router/guards.test.tsx
+```
+
 ## Don't Do This
 
 - ❌ Use `.js` / `.jsx` — always `.ts` / `.tsx`
@@ -223,10 +243,11 @@ pnpm install              # Husky installs automatically via prepare script
 - ❌ Use class components — always functional + hooks
 - ❌ Use `default export` for components — use named exports
 - ❌ Import bloom-app → bloom-ui (one-way dependency only)
-- ❌ Store tokens in localStorage — use Zustand (memory)
+- ❌ Store tokens in localStorage — session is in httpOnly cookie
 - ❌ Make API calls directly in components — use services + TanStack Query
 - ❌ Install Ant Design, MUI, or Chakra — use Mantine only
 - ❌ Use `var` — use `const` / `let`
 - ❌ Skip TypeScript interfaces for props
 - ❌ Use `useEffect` for data fetching — use TanStack Query
 - ❌ Put Dockerfiles in app packages — keep them in `docker-hub/`
+- ❌ Skip tests — every feature needs tests, run `pnpm test` before committing

@@ -1,18 +1,31 @@
-import { type FC } from 'react';
+import { type FC, useEffect } from 'react';
 import { Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useAuthStore } from '@kactus-bloom/ui/stores';
+import { useAuth } from '@kactus-bloom/ui/hooks';
+import { Center, Loader } from '@mantine/core';
 
 /**
- * Auth guard — redirects unauthenticated users to /login.
- * Wraps protected routes via <Outlet />.
+ * Auth guard — checks session cookie via /api/auth/me on mount.
+ * Shows loader while checking, redirects to /login if unauthenticated.
  */
 export const AuthGuard: FC = () => {
-    const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-    const location = useLocation();
+  const { isAuthenticated, isLoading, checkSession } = useAuth();
+  const location = useLocation();
 
-    if (!isAuthenticated) {
-        return <Navigate to="/login" state={{ from: location }} replace />;
-    }
+  useEffect(() => {
+    checkSession();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    return <Outlet />;
+  if (isLoading) {
+    return (
+      <Center h="100vh">
+        <Loader size="lg" />
+      </Center>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  return <Outlet />;
 };

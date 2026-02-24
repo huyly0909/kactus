@@ -15,6 +15,16 @@ pnpm dev --filter bloom-app
 pnpm build --filter bloom-app
 ```
 
+## Test
+
+```bash
+# Run all tests
+pnpm test
+
+# Run tests for a specific package
+pnpm test --filter bloom-app
+```
+
 ## Packages
 
 | Package | Purpose |

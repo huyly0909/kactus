@@ -1,31 +1,34 @@
 import { create } from 'zustand';
-import type { User } from '../types';
 
-interface AuthState {
-    user: User | null;
-    token: string | null;
-    refreshToken: string | null;
-    isAuthenticated: boolean;
-    setUser: (user: User) => void;
-    setToken: (token: string) => void;
-    setRefreshToken: (refreshToken: string) => void;
-    login: (user: User, token: string, refreshToken: string) => void;
-    logout: () => void;
+interface User {
+  id: string;
+  email: string;
+  username: string;
+  name: string;
+  status: string;
 }
 
+interface AuthState {
+  user: User | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  setUser: (user: User | null) => void;
+  setLoading: (loading: boolean) => void;
+  clearAuth: () => void;
+}
+
+/**
+ * Auth store — session is in httpOnly cookie (server-managed).
+ * Frontend only tracks user info and authentication state.
+ */
 export const useAuthStore = create<AuthState>((set) => ({
-    user: null,
-    token: null,
-    refreshToken: null,
-    isAuthenticated: false,
+  user: null,
+  isAuthenticated: false,
+  isLoading: true, // true until /me check completes
 
-    setUser: (user) => set({ user }),
-    setToken: (token) => set({ token }),
-    setRefreshToken: (refreshToken) => set({ refreshToken }),
+  setUser: (user) => set({ user, isAuthenticated: user !== null, isLoading: false }),
 
-    login: (user, token, refreshToken) =>
-        set({ user, token, refreshToken, isAuthenticated: true }),
+  setLoading: (isLoading) => set({ isLoading }),
 
-    logout: () =>
-        set({ user: null, token: null, refreshToken: null, isAuthenticated: false }),
+  clearAuth: () => set({ user: null, isAuthenticated: false, isLoading: false }),
 }));

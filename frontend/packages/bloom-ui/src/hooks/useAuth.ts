@@ -1,28 +1,67 @@
 import { useAuthStore } from '../stores/authStore';
 import { authService } from '../services/authService';
-import type { LoginRequest } from '../types';
+
+interface LoginPayload {
+  email: string;
+  password: string;
+  remember?: boolean;
+}
+
+interface AuthUser {
+  id: string;
+  email: string;
+  username: string;
+  name: string;
+  status: string;
+}
+
+interface AuthResult {
+  user: AuthUser;
+}
+
+interface UseAuthReturn {
+  user: AuthUser | null;
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  login: (payload: LoginPayload) => Promise<AuthResult>;
+  logout: () => Promise<void>;
+  checkSession: () => Promise<void>;
+}
 
 /**
- * Auth hook — provides login, logout, and auth state.
- * Wraps the Zustand auth store + authService API calls.
+ * Auth hook — wraps authStore + authService for convenience.
  */
-export const useAuth = () => {
-    const { user, isAuthenticated, login: storeLogin, logout: storeLogout } = useAuthStore();
+export const useAuth = (): UseAuthReturn => {
+  const { user, isAuthenticated, isLoading, setUser, clearAuth, setLoading } = useAuthStore();
 
-    const login = async (credentials: LoginRequest) => {
-        const { data } = await authService.login(credentials);
-        const { user, tokens } = data.data;
-        storeLogin(user, tokens.accessToken, tokens.refreshToken);
-        return user;
-    };
+  const login = async (payload: LoginPayload): Promise<AuthResult> => {
+    const result = await authService.login(payload);
+    setUser(result.user);
+    return result;
+  };
 
-    const logout = async () => {
-        try {
-            await authService.logout();
-        } finally {
-            storeLogout();
-        }
-    };
+  const logout = async () => {
+    await authService.logout();
+    clearAuth();
+  };
 
-    return { user, isAuthenticated, login, logout };
+  /** Check if user has an active session (call on app mount). */
+  const checkSession = async () => {
+    setLoading(true);
+    try {
+      const userData = await authService.me();
+      setUser(userData);
+    } catch {
+      clearAuth();
+    }
+  };
+
+  return {
+    user,
+    isAuthenticated,
+    isLoading,
+    login,
+    logout,
+    checkSession,
+  };
 };
