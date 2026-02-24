@@ -24,9 +24,11 @@ app = typer.Typer(
 def register_packages():
     from kactus_fin.cli import cli as fin_cli
     from kactus_fin_gateway.cli import cli as gw_cli
+    from kactus_data.cli import cli as data_cli
 
     app.add_typer(fin_cli, name="fin", help="Kactus Fin — main API server")
     app.add_typer(gw_cli, name="fin-gw", help="Kactus Fin Gateway — public API server")
+    app.add_typer(data_cli, name="data", help="Kactus Data — ETL pipelines & backups")
 
 
 register_packages()

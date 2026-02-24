@@ -41,11 +41,17 @@ kactus/
 │   │   │   ├── schemas.py     # BaseSchema, ResponseModel, Pagination
 │   │   │   └── logging.py     # Loguru configuration
 │   │   └── tests/
-│   ├── kactus-data/           # Data processing & ETL
+│   ├── kactus-data/           # Data ETL library
 │   │   ├── src/kactus_data/
-│   │   │   ├── schemas/       # Data-specific schemas (SyncDataResponse)
-│   │   │   ├── sources/       # DataSource ABC + implementations
-│   │   │   └── jobs/          # ETL jobs
+│   │   │   ├── sources/       # HttpDataSource ABC
+│   │   │   │   ├── gold/      # MihongGoldSource
+│   │   │   │   ├── stock/     # placeholder
+│   │   │   │   └── coin/      # placeholder
+│   │   │   ├── storage/       # DuckDBStorage adapter
+│   │   │   ├── cli/           # backup + sync commands
+│   │   │   ├── schemas.py     # SyncDataResponse, SyncResult
+│   │   │   ├── pipeline.py    # SyncPipeline: source → storage
+│   │   │   └── jobs/          # Airflow/Celery task definitions
 │   │   └── tests/
 │   ├── kactus-fin/            # Main API server
 │   │   ├── src/kactus_fin/
@@ -90,6 +96,19 @@ kactus/
 
 ## Coding Conventions
 
+### Typing
+
+Use modern Python 3.12+ type syntax:
+
+```python
+# ✅ Correct
+def process(items: list[str], config: dict[str, int] | None = None) -> str | None: ...
+
+# ❌ Wrong — don't use typing.Dict, typing.List, typing.Union, typing.Optional
+from typing import Dict, List, Union, Optional
+def process(items: List[str], config: Optional[Dict[str, int]] = None) -> Union[str, None]: ...
+```
+
 ### Imports
 
 ```python
@@ -117,29 +136,93 @@ from ..kactus_common import DatabaseClient
 | Add shared Pydantic models | `kactus-common/schemas.py` |
 | Add data-specific models | `kactus-data/schemas/` |
 
+### Schemas (Pydantic)
+
+All Pydantic schemas **must** inherit from `BaseSchema`:
+
+```python
+from kactus_common.schemas import BaseSchema, FancyInt, FancyFloat
+
+class UserSchema(BaseSchema):
+    id: FancyInt                    # serialises int → str in JSON
+    name: str
+    balance: FancyFloat             # serialises float → str in JSON
+    email: str | None = None
+```
+
+`BaseSchema` provides: whitespace stripping, empty-string-to-None conversion, `from_attributes=True` for ORM loading.
+
+**API responses** must always use Pydantic schemas — never return raw dicts. For integer and float fields, use `FancyInt` / `FancyFloat` to avoid JavaScript precision loss in JSON.
+
+### OLTP Models (SQLAlchemy)
+
+Inherit from `Base` + mixins in `kactus_common.database.oltp.models`:
+
+```python
+from kactus_common.database.oltp.models import Base, ModelMixin, AuditMixin, LogicalDeleteMixin
+
+class User(Base, ModelMixin, AuditMixin, LogicalDeleteMixin):
+    __tablename__ = "users"     # or let resolve_table_name auto-generate
+
+    name: Mapped[str] = mapped_column()
+    email: Mapped[str | None] = mapped_column(default=None)
+```
+
+- `ModelMixin` → snowflake `id`, `create_time`, `update_time`
+- `AuditMixin` → `created_by`, `updated_by`
+- `LogicalDeleteMixin` → soft-delete via `deleted_timestamp`
+
+### OLAP (DuckDB)
+
+Default analytical database is DuckDB via `kactus_common.database.duckdb`:
+
+```python
+from kactus_common.database.duckdb.client import DatabaseClient
+```
+
 ### Exception Pattern
 
-Always raise subclasses of `KactusException`:
+Use exceptions from `kactus_common.exceptions` for common error types:
 
 ```python
 from kactus_common.exceptions import NotFoundError, DatabaseError
 
-# Raise with structured fields
-raise NotFoundError(
-    "User not found",
-    tip="Check the user ID format",
-    data={"user_id": user_id},
-)
-
-# Custom code override
-raise DatabaseError(
-    "Connection pool exhausted",
-    code="POOL_EXHAUSTED",
-    tip="Increase pool_size or reduce concurrent requests",
-)
+raise NotFoundError("User not found", tip="Check the user ID", data={"user_id": user_id})
 ```
 
-Exception handlers are auto-installed via `install_exception_handlers(app)` in both servers.
+For **package-specific** exceptions, create a local `exceptions.py` and inherit from `KactusException` — they will be caught by the FastAPI handler automatically:
+
+```python
+# kactus_fin/exceptions.py
+from kactus_common.exceptions import KactusException
+
+class PaymentError(KactusException):
+    code = "PAYMENT_ERROR"
+    title = "Payment Error"
+```
+
+### Background Tasks & Events
+
+Use the event system in `kactus_common.events` for dispatching background work:
+
+```python
+from kactus_common.events import register_handler, BaseEventName, BaseEventPayload
+
+class MyEvents(BaseEventName):
+    USER_CREATED = "user_created"
+
+class UserCreatedPayload(BaseEventPayload):
+    __event_name__ = MyEvents.USER_CREATED
+    user_id: int
+
+# Register a handler
+@register_handler(MyEvents.USER_CREATED)
+async def on_user_created(*, event_name, payload: UserCreatedPayload):
+    ...
+
+# Dispatch (in an endpoint)
+await UserCreatedPayload(user_id=123).dispatch(background=True)
+```
 
 ### Database Pattern
 
@@ -220,9 +303,14 @@ pre-commit run --all-files       # run manually
 
 ## Don't Do This
 
+- ❌ Use `Union[A, B]`, `Optional[X]`, `Dict`, `List` — use `A | B`, `X | None`, `dict`, `list`
+- ❌ Return raw dicts from API endpoints — always use Pydantic schemas
+- ❌ Use `int` / `float` in API schemas — use `FancyInt` / `FancyFloat`
+- ❌ Inherit from `BaseModel` directly — use `BaseSchema` from `kactus_common.schemas`
 - ❌ Import app-specific settings into `kactus-common`
 - ❌ Create circular dependencies between packages
 - ❌ Put business logic in `kactus-common` (it's for infrastructure only)
 - ❌ Write duplicate utilities — check `kactus-common` first
 - ❌ Add `__init__.py` to test directories
 - ❌ Use `config.settings` globally — use dependency injection / constructor params
+- ❌ Raise bare `Exception` — use `KactusException` subclasses

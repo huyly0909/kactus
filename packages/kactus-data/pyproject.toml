@@ -5,7 +5,9 @@ description = "Data scraping, collection, and ETL pipelines"
 requires-python = ">=3.12"
 dependencies = [
     "kactus-common",
+    "pandas>=3.0.1",
     "requests>=2.32.5",
+    "typer>=0.24.1",
 ]
 
 [tool.uv.sources]
