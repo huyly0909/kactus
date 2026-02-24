@@ -1,0 +1,48 @@
+{
+    "name": "@kactus-bloom/ui",
+    "version": "0.0.1",
+    "private": true,
+    "type": "module",
+    "main": "./src/index.ts",
+    "types": "./src/index.ts",
+    "exports": {
+        ".": "./src/index.ts",
+        "./hooks": "./src/hooks/index.ts",
+        "./stores": "./src/stores/index.ts",
+        "./services": "./src/services/index.ts",
+        "./types": "./src/types/index.ts",
+        "./utils": "./src/utils/index.ts",
+        "./theme": "./src/theme/index.ts"
+    },
+    "scripts": {
+        "lint": "eslint src/ --ext .ts,.tsx",
+        "test": "vitest run",
+        "test:watch": "vitest"
+    },
+    "dependencies": {
+        "@hookform/resolvers": "^3.9.0",
+        "@mantine/core": "^7.15.0",
+        "@mantine/hooks": "^7.15.0",
+        "@mantine/notifications": "^7.15.0",
+        "@tanstack/react-query": "^5.62.0",
+        "axios": "^1.7.0",
+        "lucide-react": "^0.468.0",
+        "react": "^18.3.0",
+        "react-dom": "^18.3.0",
+        "react-hook-form": "^7.54.0",
+        "recharts": "^2.15.0",
+        "zod": "^3.24.0",
+        "zustand": "^5.0.0"
+    },
+    "devDependencies": {
+        "@testing-library/react": "^16.1.0",
+        "@types/react": "^18.3.0",
+        "@types/react-dom": "^18.3.0",
+        "@typescript-eslint/eslint-plugin": "^8.18.0",
+        "@typescript-eslint/parser": "^8.18.0",
+        "eslint-plugin-react": "^7.37.0",
+        "eslint-plugin-react-hooks": "^5.1.0",
+        "eslint-plugin-react-refresh": "^0.4.0",
+        "vitest": "^2.1.0"
+    }
+}

@@ -1,0 +1,219 @@
+# Kactus Bloom — AI Agent Rules
+
+> **Purpose**: This file helps AI agents understand the project structure,
+> conventions, and where to write code. Always read this before making changes.
+
+## Architecture
+
+Kactus Bloom is a **pnpm workspaces + Turborepo** monorepo with 3 packages:
+
+| Package | Import As | Purpose |
+|---------|-----------|---------|
+| `bloom-ui` | `@kactus-bloom/ui` | Shared UI components, hooks, stores, services, types, theme |
+| `bloom-app` | — | Main web application (pages, routes, layouts) |
+| `docker-hub` | — | Docker Compose configs for dev/stag/prod deployment |
+
+### Dependency Flow (One-Way)
+
+```
+bloom-app ──▶ bloom-ui
+```
+
+**Never import from bloom-app into bloom-ui.**
+`docker-hub` is infrastructure-only — no code imports.
+
+## Tech Stack
+
+- **React 18** + **TypeScript 5** — UI framework
+- **Vite 6** — Build + dev server (HMR)
+- **Mantine 7** — UI component library
+- **Recharts** — Charts (line, bar, area, pie, composed)
+- **Lucide React** — Icons
+- **React Router v7** — Routing
+- **TanStack Query v5** — Server state (API caching, background refresh)
+- **Zustand** — Client state (auth, UI preferences)
+- **Axios** — HTTP client
+- **React Hook Form + Zod** — Forms + schema validation
+- **Native WebSocket** — Real-time communication
+- **ESLint 9 + Prettier** — Code quality
+- **Vitest + React Testing Library** — Testing
+
+## Backend API
+
+Backend: `kactus-fin` (FastAPI) at port **17600**.
+Gateway: `kactus-fin-gateway` at port **17601**.
+Dev API URL: `http://localhost:17600/api`
+
+Response shape:
+```json
+{ "data": { ... }, "message": "Success", "code": 200 }
+```
+
+## Coding Conventions
+
+### TypeScript
+
+- Always `.ts` / `.tsx` — never `.js` / `.jsx`
+- Use `interface` for object shapes, `type` for unions/intersections
+- Use `import type` for type-only imports
+- Never use `any` — use `unknown` or define proper types
+
+### Component Pattern
+
+```tsx
+// ✅ Correct — named export, FC, typed props
+import { type FC } from 'react';
+import { Card, Text } from '@mantine/core';
+
+interface UserCardProps {
+  name: string;
+  balance: number;
+}
+
+export const UserCard: FC<UserCardProps> = ({ name, balance }) => {
+  return (
+    <Card shadow="sm" padding="lg">
+      <Text fw={500}>{name}</Text>
+      <Text size="xl">${balance.toLocaleString()}</Text>
+    </Card>
+  );
+};
+```
+
+### File Naming
+
+| Type | Convention | Example |
+|------|-----------|---------|
+| Components | `PascalCase.tsx` | `DataTable.tsx` |
+| Hooks | `use` prefix, `camelCase.ts` | `useAuth.ts` |
+| Stores | `Store` suffix, `camelCase.ts` | `authStore.ts` |
+| Services | `Service` suffix, `camelCase.ts` | `authService.ts` |
+| Utils/Types | `camelCase.ts` | `formatters.ts` |
+| Pages | Folder with `index.tsx` | `Dashboard/index.tsx` |
+
+### Imports
+
+```tsx
+// ✅ Package alias for bloom-ui
+import { DataTable, ChartCard } from '@kactus-bloom/ui';
+import { useAuth } from '@kactus-bloom/ui/hooks';
+
+// ✅ Mantine components
+import { Button, Modal, TextInput } from '@mantine/core';
+import { notifications } from '@mantine/notifications';
+
+// ✅ Other libraries
+import { LineChart, Line, XAxis, YAxis } from 'recharts';
+import { useForm } from 'react-hook-form';
+import { z } from 'zod';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Search, Bell, Settings } from 'lucide-react';
+
+// ❌ Never cross package boundaries with relative imports
+import { DataTable } from '../../bloom-ui/src/components/DataTable';
+```
+
+### Where to Put Code
+
+| You need to... | Put it in... |
+|----------------|-------------|
+| Add a reusable component | `bloom-ui/src/components/` |
+| Add a shared hook | `bloom-ui/src/hooks/` |
+| Add a Zustand store | `bloom-ui/src/stores/` |
+| Add an API service | `bloom-ui/src/services/` |
+| Add shared types | `bloom-ui/src/types/` |
+| Add utilities | `bloom-ui/src/utils/` |
+| Add a page/route | `bloom-app/src/pages/` + register in `router/` |
+| Customize Mantine theme | `bloom-ui/src/theme/` |
+| Add/modify Docker config | `docker-hub/` (Dockerfiles, compose, .env) |
+
+### API Calls with TanStack Query
+
+```tsx
+// ✅ Define in services
+export const getTransactions = (params: TransactionParams) =>
+  apiClient.get<ApiResponse<Transaction[]>>('/transactions', { params });
+
+// ✅ Use in components with TanStack Query
+const { data, isLoading, error } = useQuery({
+  queryKey: ['transactions', filters],
+  queryFn: () => getTransactions(filters),
+});
+
+// ✅ Mutations
+const mutation = useMutation({
+  mutationFn: createTransaction,
+  onSuccess: () => queryClient.invalidateQueries({ queryKey: ['transactions'] }),
+});
+```
+
+### Forms with React Hook Form + Zod
+
+```tsx
+const schema = z.object({
+  email: z.string().email(),
+  amount: z.number().positive(),
+});
+
+type FormData = z.infer<typeof schema>;
+
+const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+  resolver: zodResolver(schema),
+});
+```
+
+### Notifications
+
+```tsx
+// In-app toast (Mantine)
+import { notifications } from '@mantine/notifications';
+notifications.show({ title: 'Saved', message: 'Record updated', color: 'green' });
+
+// Browser push notification (custom hook)
+import { useNotification } from '@kactus-bloom/ui/hooks';
+const { sendBrowserNotification } = useNotification();
+sendBrowserNotification('New Alert', 'Your report is ready.');
+```
+
+### Auth Flow
+
+1. Login → POST `/api/auth/login` → `{ accessToken, refreshToken }`
+2. Store tokens in Zustand (memory) — **not localStorage**
+3. Axios interceptor adds `Authorization: Bearer <token>`
+4. On 401 → interceptor calls `/api/auth/refresh` → retry
+5. Route guards redirect unauthenticated users to `/login`
+
+### Environment Variables
+
+Prefix with `VITE_`:
+```env
+VITE_API_BASE_URL=http://localhost:17600/api
+VITE_WS_BASE_URL=ws://localhost:17600/ws
+VITE_APP_NAME=Kactus Bloom
+```
+
+### Docker Deployment
+
+```bash
+# Pick environment and start
+cd packages/docker-hub/dev       # or stag / prod
+docker compose up -d
+
+# Rebuild after code changes
+docker compose up -d --build
+```
+
+## Don't Do This
+
+- ❌ Use `.js` / `.jsx` — always `.ts` / `.tsx`
+- ❌ Use `any` — define proper types
+- ❌ Use class components — always functional + hooks
+- ❌ Use `default export` for components — use named exports
+- ❌ Import bloom-app → bloom-ui (one-way dependency only)
+- ❌ Store tokens in localStorage — use Zustand (memory)
+- ❌ Make API calls directly in components — use services + TanStack Query
+- ❌ Install Ant Design, MUI, or Chakra — use Mantine only
+- ❌ Use `var` — use `const` / `let`
+- ❌ Skip TypeScript interfaces for props
+- ❌ Use `useEffect` for data fetching — use TanStack Query
+- ❌ Put Dockerfiles in app packages — keep them in `docker-hub/`

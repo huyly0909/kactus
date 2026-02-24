@@ -1,0 +1,13 @@
+services:
+  bloom-app:
+    build:
+      context: ../../
+      dockerfile: packages/docker-hub/Dockerfile.bloom-app
+      args:
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL}
+        - VITE_WS_BASE_URL=${VITE_WS_BASE_URL}
+        - VITE_APP_NAME=${VITE_APP_NAME}
+    env_file: .env
+    ports:
+      - "3000:80"
+    restart: unless-stopped
