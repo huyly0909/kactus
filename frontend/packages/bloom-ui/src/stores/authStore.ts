@@ -6,6 +6,7 @@ interface User {
   username: string;
   name: string;
   status: string;
+  is_superuser: boolean;
 }
 
 interface AuthState {

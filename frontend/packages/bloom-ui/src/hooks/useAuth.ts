@@ -13,6 +13,7 @@ interface AuthUser {
   username: string;
   name: string;
   status: string;
+  is_superuser: boolean;
 }
 
 interface AuthResult {

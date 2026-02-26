@@ -7,6 +7,7 @@ interface UserInfo {
   username: string;
   name: string;
   status: string;
+  is_superuser: boolean;
 }
 
 interface LoginResponse {

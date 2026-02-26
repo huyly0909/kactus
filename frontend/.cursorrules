@@ -182,6 +182,24 @@ sendBrowserNotification('New Alert', 'Your report is ready.');
 3. On 401 → redirect to `/login` (session expired or missing)
 4. `AuthGuard` calls `GET /api/auth/me` on mount to restore session from cookie
 5. Zustand stores only `user` + `isAuthenticated` — **no tokens in memory**
+6. Project selection → `js-cookie` sets `kactus_project_id` cookie (client-managed)
+7. Backend reads project cookie during auth → `request.state.project_id`
+8. Permissions → `GET /api/me/permissions?project_id=X` → returns `{permission, act}[]`
+9. `ProjectGuard` ensures a project is selected before accessing project-scoped routes
+
+### Routing & Layouts
+
+Two separate layouts for authenticated pages:
+
+| Layout | Routes | Sidebar Items |
+|--------|--------|---------------|
+| **AdminLayout** | `/admin/*` | Users, Projects, Authorization, Back to App, Logout |
+| **MainLayout** | `/select-project`, `/dashboard`, `/welcome`, etc. | Select Project, Dashboard, Reports, Settings, Logout |
+
+- **Admin pages** do NOT require project selection
+- **Non-admin users** navigating to `/admin/*` see 404 (AdminGuard)
+- **Superusers** go to `/admin` explicitly to access admin features
+- Project-scoped sidebar items (Dashboard, Reports, Settings) only appear when a project is selected
 
 ### Environment Variables
 
