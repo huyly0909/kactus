@@ -21,6 +21,7 @@ class UserInfo(BaseSchema):
     username: str
     name: str
     status: str
+    is_superuser: bool = False
 
 
 class LoginResponse(BaseSchema):

@@ -143,8 +143,37 @@ class DatabaseSessionManager:
             await session.close()
 
     def provide_session(self, fn: Callable[..., Any]):
-        """Decorator that auto-injects a ``session`` argument when not provided."""
-        parameters = signature(fn).parameters
+        """Decorator that auto-injects ``session`` from this manager's pool."""
+        return make_provide_session(self.get_session)(fn)
+
+    async def close(self) -> None:
+        """Dispose the engine and release all connections."""
+        if self._engine is not None:
+            await self._engine.dispose()
+            self._engine = None
+            self._session_factory = None
+
+
+def make_provide_session(
+    get_session: Callable[[], Any],
+) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    """Create a ``@provide_session`` decorator bound to a session source.
+
+    Args:
+        get_session: A callable that returns an async context manager
+            yielding an ``AsyncSession``.  Can be
+            ``DatabaseSessionManager.get_session`` or a lazy wrapper.
+
+    Returns:
+        A decorator that auto-injects a ``session`` argument into the
+        wrapped async function.  The ``session`` parameter is stripped
+        from the wrapper's ``__signature__`` so FastAPI will not try to
+        resolve it as a dependency.
+    """
+
+    def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
+        fn_sig = signature(fn)
+        parameters = fn_sig.parameters
         has_session = "session" in parameters
         session_has_default = (
             has_session
@@ -165,7 +194,7 @@ class DatabaseSessionManager:
             if "session" in kwargs and kwargs["session"]:
                 return await fn(*args, **kwargs)
 
-            async with self.get_session() as session:
+            async with get_session() as session:
                 if session_args_idx < len(args):
                     args = list(args)
                     args[session_args_idx] = session
@@ -174,14 +203,16 @@ class DatabaseSessionManager:
                     kwargs["session"] = session
                 return await fn(*args, **kwargs)
 
+        # Strip ``session`` from signature so FastAPI ignores it
+        if has_session:
+            new_params = [
+                p for name, p in fn_sig.parameters.items() if name != "session"
+            ]
+            wrapper.__signature__ = fn_sig.replace(parameters=new_params)
+
         return wrapper
 
-    async def close(self) -> None:
-        """Dispose the engine and release all connections."""
-        if self._engine is not None:
-            await self._engine.dispose()
-            self._engine = None
-            self._session_factory = None
+    return decorator
 
 
 # ---------------------------------------------------------------------------

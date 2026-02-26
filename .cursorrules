@@ -131,10 +131,11 @@ Features are organized as folders with a standard set of files:
 <package>/
 └── <feature>/           # e.g. user/, project/, conversation/
     ├── __init__.py
-    ├── const.py         # Enums, constants
+    ├── const.py         # Enums, constants, Permission subclass (e.g. ProjectPermission)
     ├── model.py         # SQLAlchemy OLTP models (inherit Base + mixins)
     ├── schema.py        # Pydantic schemas (inherit BaseSchema)
     ├── service.py       # Business logic
+    ├── app.py           # KactusApp declaration (imports from const.py)
     ├── api.py           # FastAPI router (if applicable)
     └── other.py         # other files (if applicable)
 ```
@@ -200,7 +201,27 @@ class User(Base, ModelMixin, AuditMixin, LogicalDeleteMixin):
 
 - `ModelMixin` → snowflake `id`, `create_time`, `update_time`
 - `AuditMixin` → `created_by`, `updated_by`
+- `AuditCreatorMixin` → `created_by` only
 - `LogicalDeleteMixin` → soft-delete via `deleted_timestamp`
+
+### Custom Column Types
+
+| Type | Import | Behaviour |
+|------|--------|-----------|
+| `UnsignedBigInt` | `kactus_common.database.oltp.types` | Unsigned 64-bit integer (snowflake IDs) |
+| `DateTimeTzAware` | `kactus_common.database.oltp.types` | Timezone-aware datetime, auto-converts to UTC |
+| `PasswordHash` | `kactus_common.database.oltp.types` | Auto bcrypt-hash on save, returns `"********"` on load. Use `verify_password()` with raw hash for verification. |
+| `PydanticJSONDict` | `kactus_common.database.oltp.types` | Pydantic model ↔ JSON column |
+| `PydanticJSONList` | `kactus_common.database.oltp.types` | List of Pydantic models ↔ JSON column |
+
+```python
+from kactus_common.database.oltp.types import PasswordHash
+
+class User(Base, ModelMixin):
+    password_hash: Mapped[str] = mapped_column(PasswordHash)
+    # On save: plaintext → bcrypt hash
+    # On load: returns "********" (never exposes raw hash)
+```
 
 ### OLAP (DuckDB)
 
@@ -355,6 +376,8 @@ packages/kactus-fin/tests/test_auth_api.py
 - ❌ Use `Union[A, B]`, `Optional[X]`, `Dict`, `List` — use `A | B`, `X | None`, `dict`, `list`
 - ❌ Return raw dicts from API endpoints — always use Pydantic schemas
 - ❌ Use `int` / `float` in API schemas — use `FancyInt` / `FancyFloat`
+- ❌ Use `.value` on `StrEnum` / `IntEnum` — they are already `str` / `int`, no `.value` needed
+- ❌ Use `get_db().get_session()` in API endpoints — use `@provide_session` + `session: AsyncSession` param
 - ❌ Inherit from `BaseModel` directly — use `BaseSchema` from `kactus_common.schemas`
 - ❌ Import app-specific settings into `kactus-common`
 - ❌ Create circular dependencies between packages
@@ -364,4 +387,71 @@ packages/kactus-fin/tests/test_auth_api.py
 - ❌ Use `config.settings` globally — use dependency injection / constructor params
 - ❌ Raise bare `Exception` — use `KactusException` subclasses
 - ❌ Skip tests — every feature needs tests, run `uv run pytest` before committing
+
+## API Router
+
+### Use KactusAPIRouter
+- Always use `KactusAPIRouter` from `kactus_common.router` instead of `fastapi.APIRouter`.
+- Endpoints return **plain data objects** — `KactusAPIRouter` auto-wraps in `ResponseModel(data=...)`.
+- Do NOT manually wrap responses in `ResponseModel`.
+- Set `response_model` explicitly only for non-standard responses (FileResponse, StreamingResponse, etc).
+
+```python
+from kactus_common.router import KactusAPIRouter
+
+router = KactusAPIRouter(prefix="/api/projects", tags=["projects"])
+
+# ✅ Correct — return plain data, auto-wrapped
+@router.get("")
+async def list_projects(...) -> Pagination[ProjectSchema]:
+    return Pagination(total=len(items), items=items)
+
+# ❌ Wrong — do not manually wrap
+@router.get("", response_model=ResponseModel[Pagination[ProjectSchema]])
+async def list_projects(...) -> ResponseModel[Pagination[ProjectSchema]]:
+    return ResponseModel(data=Pagination(...))
+```
+
+### Feature Registration (KactusApp)
+- Each feature declares a `KactusApp` in its `app.py` file.
+- Route handlers go in `api.py`, KactusApp declaration goes in `app.py`.
+- The main application imports KactusApp from `feature.app` and registers it.
+- Do NOT import `app_manager` in feature modules.
+
+```python
+# feature/app.py — declare KactusApp
+from kactus_common.app_registry import KactusApp
+from kactus_common.authorization.const import Permission, PermissionAct
+from kactus_common.project.const import DefaultRole
+
+class MyPermission(Permission):
+    my_feature = "my_feature"
+
+feature_app = KactusApp(
+    name="my_feature",
+    session_routes=[router],
+    permissions=[MyPermission.my_feature],
+    role_permissions={
+        DefaultRole.OWNER: (MyPermission.my_feature, PermissionAct.manage),
+        DefaultRole.MANAGER: (MyPermission.my_feature, PermissionAct.write),
+        DefaultRole.MEMBER: (MyPermission.my_feature, PermissionAct.read),
+    },
+)
+
+# main application — register
+from my_feature.app import feature_app
+app_manager.register(feature_app)
+```
+
+### Permission System
+- `PermissionAct(IntEnum)`: `read=1, write=5, manage=10` — higher = more access.
+- `Permission(StrEnum)` — base class; subclass per feature (e.g. `ProjectPermission`).
+- Use `DefaultRole` from `kactus_common.project.const` for role names.
+- Use `@permission` decorator on endpoints for access control.
+- In `session_routes` / `superuser_routes`, access the user via `request.state.user` — do NOT use `Depends` for user resolution (AppManager's auth dependency sets it automatically).
+
+### AuditMixin
+- `AuditMixin` auto-populates `created_by` / `updated_by` from the ContextVar.
+- Do NOT manually set `created_by` / `updated_by` in service code.
+
 

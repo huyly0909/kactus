@@ -2,6 +2,8 @@
 
 from logging.config import fileConfig
 
+import kactus_common.project.model  # noqa: F401 — registers Project, ProjectMember
+import kactus_common.user.model  # noqa: F401 — registers User, UserSession
 from alembic import context
 
 # Import Base and all models so autogenerate can detect them

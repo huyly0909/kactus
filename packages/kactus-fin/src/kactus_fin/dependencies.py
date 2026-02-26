@@ -31,3 +31,21 @@ def get_auth() -> AuthDependency:
 def get_db_session():
     """FastAPI dependency — yields a database session."""
     return get_db().get_session()
+
+
+def provide_session(fn):
+    """Decorator — auto-injects ``session: AsyncSession`` from the app DB.
+
+    Resolution of ``get_db()`` is deferred to call time so that test
+    monkeypatching of ``get_db`` works correctly.
+
+    Usage::
+
+        @router.get("/items")
+        @provide_session
+        async def list_items(request: Request, session: AsyncSession):
+            ...
+    """
+    from kactus_common.database.oltp.session import make_provide_session
+
+    return make_provide_session(lambda: get_db().get_session())(fn)

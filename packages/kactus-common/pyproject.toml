@@ -25,6 +25,8 @@ dependencies = [
     # Auth / Crypto
     "cryptography>=44.0.0",
     "bcrypt>=4.2.0",
+    # Authorization (Casbin RBAC)
+    "casbin>=1.36,<2",
 ]
 
 [build-system]

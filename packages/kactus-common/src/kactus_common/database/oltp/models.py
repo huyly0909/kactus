@@ -14,6 +14,7 @@ import uuid
 from typing import TYPE_CHECKING, Any, Iterable, Self, TypeVar, Union, cast
 
 import inflect
+from kactus_common.exceptions import NotFoundError
 from pydantic import BaseModel
 from sqlalchemy import (
     Delete,
@@ -40,13 +41,11 @@ from sqlalchemy.orm import (
 )
 from sqlalchemy_utils import generic_repr
 
-from kactus_common.exceptions import NotFoundError
-
 from .snowflake_id import next_id
 from .types import DateTimeTzAware, UnsignedBigInt, UUIDList
 
 if TYPE_CHECKING:
-    from fastapi import Request
+    pass
 
 T = TypeVar("T")
 T_STMT = TypeVar("T_STMT", bound=Union[Select, Delete])
@@ -285,10 +284,33 @@ class AuditCreatorMixin:
 
 
 class AuditMixin(AuditCreatorMixin):
-    """Track who created and last updated the record."""
+    """Track who created and last updated the record.
+
+    Uses SQLAlchemy ``before_insert`` / ``before_update`` events to
+    automatically populate ``created_by`` and ``updated_by`` from the
+    request-scoped ``ContextVar`` set by the auth dependency.
+    """
 
     updated_by: Mapped[UnsignedBigInt | None] = mapped_column(comment="update user id")
     updated_by._creation_order = 8999
+
+    @staticmethod
+    def _update_user_id(mapper, connection, target: "AuditMixin"):
+        from kactus_common.user.context import get_current_user_id
+
+        user_id = get_current_user_id()
+        if user_id is None:
+            return
+        if not target.created_by:
+            target.created_by = user_id
+        target.updated_by = user_id
+
+    @classmethod
+    def __declare_last__(cls):
+        from sqlalchemy import event
+
+        event.listen(cls, "before_insert", cls._update_user_id)
+        event.listen(cls, "before_update", cls._update_user_id)
 
 
 class ExecutionMixin:

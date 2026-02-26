@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import typer
 from kactus_common.cli import AsyncTyper
-from kactus_common.crypto import hash_password
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.user.model import User
 from kactus_fin.config import get_settings
@@ -12,17 +11,15 @@ from kactus_fin.config import get_settings
 cli = AsyncTyper(help="User management commands")
 
 
-@cli.command()
-async def create(
-    email: str = typer.Option(..., prompt=True, help="User email"),
-    username: str = typer.Option(..., prompt=True, help="Username"),
-    name: str = typer.Option(..., prompt=True, help="Display name"),
-    password: str = typer.Option(
-        ..., prompt=True, confirmation_prompt=True, hide_input=True, help="Password"
-    ),
-    status: str = typer.Option("active", help="User status (active/inactive)"),
+async def _create_user(
+    email: str,
+    username: str,
+    name: str,
+    password: str,
+    status: str = "active",
+    is_superuser: bool = False,
 ):
-    """Create a new user."""
+    """Shared logic for creating a regular or admin user."""
     settings = get_settings()
     db = DatabaseSessionManager(database_url=settings.database_url)
 
@@ -38,25 +35,70 @@ async def create(
             typer.echo(f"❌ User with username '{username}' already exists.")
             raise typer.Exit(code=1)
 
+        # PasswordHash TypeDecorator auto-hashes the plaintext password
         user = User.init(
             email=email,
             username=username,
-            password_hash=hash_password(password),
+            password_hash=password,
             name=name,
             status=status,
+            is_superuser=is_superuser,
         )
         session.add(user)
         await session.commit()
         await session.refresh(user)
 
-        typer.echo("✅ User created successfully!")
-        typer.echo(f"   ID:       {user.id}")
-        typer.echo(f"   Email:    {user.email}")
-        typer.echo(f"   Username: {user.username}")
-        typer.echo(f"   Name:     {user.name}")
-        typer.echo(f"   Status:   {user.status}")
+        role_label = "Admin user" if is_superuser else "User"
+        typer.echo(f"✅ {role_label} created successfully!")
+        typer.echo(f"   ID:          {user.id}")
+        typer.echo(f"   Email:       {user.email}")
+        typer.echo(f"   Username:    {user.username}")
+        typer.echo(f"   Name:        {user.name}")
+        typer.echo(f"   Status:      {user.status}")
+        typer.echo(f"   Superuser:   {user.is_superuser}")
 
     await db.close()
+
+
+@cli.command()
+async def create(
+    email: str = typer.Option(..., prompt=True, help="User email"),
+    # username: str = typer.Option(..., prompt=True, help="Username"),
+    name: str = typer.Option(..., prompt=True, help="Display name"),
+    password: str = typer.Option(
+        ..., prompt=True, confirmation_prompt=True, hide_input=True, help="Password"
+    ),
+    status: str = typer.Option("active", help="User status (active/inactive)"),
+):
+    """Create a new user."""
+    await _create_user(
+        email=email,
+        username=email,
+        name=name,
+        password=password,
+        status=status,
+        is_superuser=False,
+    )
+
+
+@cli.command(name="create-admin")
+async def create_admin(
+    email: str = typer.Option(..., prompt=True, help="Admin email"),
+    # username: str = typer.Option(..., prompt=True, help="Admin username"),
+    name: str = typer.Option(..., prompt=True, help="Admin display name"),
+    password: str = typer.Option(
+        ..., prompt=True, confirmation_prompt=True, hide_input=True, help="Password"
+    ),
+):
+    """Create a new admin (superuser) account."""
+    await _create_user(
+        email=email,
+        username=email,
+        name=name,
+        password=password,
+        status="active",
+        is_superuser=True,
+    )
 
 
 @cli.command()
@@ -72,12 +114,13 @@ async def list():
             return
 
         typer.echo(
-            f"{'ID':<22} {'Email':<30} {'Username':<20} {'Name':<25} {'Status':<10}"
+            f"{'ID':<22} {'Email':<30} {'Username':<20} {'Name':<25} {'Super':<6} {'Status':<10}"
         )
-        typer.echo("─" * 107)
+        typer.echo("─" * 113)
         for u in users:
             typer.echo(
-                f"{u.id:<22} {u.email:<30} {u.username:<20} {u.name:<25} {u.status:<10}"
+                f"{u.id:<22} {u.email:<30} {u.username:<20} {u.name:<25} "
+                f"{'Yes' if u.is_superuser else 'No':<6} {u.status:<10}"
             )
 
     await db.close()
@@ -100,7 +143,8 @@ async def reset_password(
             typer.echo(f"❌ User with email '{email}' not found.")
             raise typer.Exit(code=1)
 
-        user.password_hash = hash_password(password)
+        # PasswordHash TypeDecorator auto-hashes the plaintext password
+        user.password_hash = password
         await user.save(session)
 
         typer.echo(f"✅ Password reset for '{email}'.")

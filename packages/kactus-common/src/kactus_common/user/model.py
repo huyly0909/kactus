@@ -10,8 +10,8 @@ from kactus_common.database.oltp.models import (
     LogicalDeleteMixin,
     ModelMixin,
 )
-from kactus_common.database.oltp.types import UnsignedBigInt
-from sqlalchemy import Index, String, Text
+from kactus_common.database.oltp.types import PasswordHash, UnsignedBigInt
+from sqlalchemy import Boolean, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .const import UserStatus
@@ -24,7 +24,8 @@ class User(Base, ModelMixin, AuditMixin, LogicalDeleteMixin):
 
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     username: Mapped[str] = mapped_column(String(100), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(255))
+    password_hash: Mapped[str] = mapped_column(PasswordHash)
+    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
     name: Mapped[str] = mapped_column(String(255))
     status: Mapped[str] = mapped_column(String(20), default=UserStatus.ACTIVE.value)
     last_login: Mapped[datetime.datetime | None] = mapped_column(default=None)

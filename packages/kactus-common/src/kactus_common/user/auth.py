@@ -9,6 +9,7 @@ from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.exceptions import AuthenticationError
 
 from .const import (
+    PROJECT_COOKIE_NAME,
     SESSION_COOKIE_NAME,
     SESSION_EXPIRY_SECONDS,
     SESSION_REMEMBER_EXPIRY_SECONDS,
@@ -23,6 +24,7 @@ class AuthConfig:
 
     db: DatabaseSessionManager
     cookie_name: str = SESSION_COOKIE_NAME
+    project_cookie_name: str = PROJECT_COOKIE_NAME
     session_expiry: int = SESSION_EXPIRY_SECONDS
     remember_expiry: int = SESSION_REMEMBER_EXPIRY_SECONDS
     cookie_secure: bool = False
@@ -50,7 +52,12 @@ class AuthDependency:
         self._config = config
 
     async def get_current_user(self, request: Request) -> User:
-        """FastAPI dependency — reads session cookie, validates, returns User."""
+        """FastAPI dependency — reads session cookie, validates, returns User.
+
+        Also sets:
+        * ``request.state.user`` — for access in endpoints/decorators.
+        * ``set_current_user_id()`` — for ``AuditMixin`` auto-populate.
+        """
         session_id = request.cookies.get(self._config.cookie_name)
         if not session_id:
             raise AuthenticationError("Not authenticated")
@@ -62,6 +69,18 @@ class AuthDependency:
 
         if user_session is None or user is None:
             raise AuthenticationError("Session expired or invalid")
+
+        # Set ContextVar for AuditMixin auto-populate
+        from kactus_common.user.context import set_current_user_id
+
+        set_current_user_id(user.id)
+
+        # Set request.state.user for @permission decorator
+        request.state.user = user
+
+        # Read selected project from cookie
+        project_id_str = request.cookies.get(self._config.project_cookie_name)
+        request.state.project_id = int(project_id_str) if project_id_str else None
 
         return user
 

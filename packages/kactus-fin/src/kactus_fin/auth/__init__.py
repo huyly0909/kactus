@@ -1,0 +1,1 @@
+"""Auth feature — kactus-fin."""

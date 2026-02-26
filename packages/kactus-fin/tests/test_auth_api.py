@@ -8,7 +8,6 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from kactus_common.crypto import hash_password
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.user.auth import create_auth_dependency
@@ -73,7 +72,7 @@ async def seed_user(db) -> User:
         user = User.init(
             email="test@kactus.io",
             username="testuser",
-            password_hash=hash_password("Test123!"),
+            password_hash="Test123!",
             name="Test User",
             status="active",
         )
@@ -148,13 +147,15 @@ async def test_me_with_session(client, seed_user):
         "/api/auth/login",
         json={"email": "test@kactus.io", "password": "Test123!"},
     )
-    cookies = login_resp.cookies
+    cookies = dict(login_resp.cookies)
 
     # Call /me with cookie
-    resp = await client.get("/api/auth/me", cookies=cookies)
+    client.cookies.update(cookies)
+    resp = await client.get("/api/auth/me")
     assert resp.status_code == 200
     body = resp.json()
     assert body["data"]["email"] == "test@kactus.io"
+    client.cookies.clear()
 
 
 @pytest.mark.asyncio
@@ -165,15 +166,18 @@ async def test_logout(client, seed_user):
         "/api/auth/login",
         json={"email": "test@kactus.io", "password": "Test123!"},
     )
-    cookies = login_resp.cookies
+    cookies = dict(login_resp.cookies)
 
     # Logout
-    logout_resp = await client.post("/api/auth/logout", cookies=cookies)
+    client.cookies.update(cookies)
+    logout_resp = await client.post("/api/auth/logout")
     assert logout_resp.status_code == 200
 
     # /me should now fail
-    resp = await client.get("/api/auth/me", cookies=cookies)
+    client.cookies.update(cookies)
+    resp = await client.get("/api/auth/me")
     assert resp.status_code == 401
+    client.cookies.clear()
 
 
 @pytest.mark.asyncio

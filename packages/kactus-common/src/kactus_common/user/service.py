@@ -30,6 +30,20 @@ class UserService:
         """Find a user by primary key."""
         return await User.get(session, user_id)
 
+    @staticmethod
+    async def get_password_hash(session: AsyncSession, user_id: int) -> str | None:
+        """Read the raw bcrypt hash from the DB, bypassing PasswordHash mask.
+
+        Uses ``text()`` raw SQL so the TypeDecorator's
+        ``process_result_value`` is never applied.
+        """
+        from sqlalchemy import text
+
+        stmt = text("SELECT password_hash FROM users WHERE id = :uid")
+        result = await session.execute(stmt, {"uid": user_id})
+        row = result.first()
+        return row[0] if row else None
+
     # -------------------------------------------------------------------
     # Session management
     # -------------------------------------------------------------------

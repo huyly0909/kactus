@@ -11,7 +11,7 @@ from uuid import UUID
 
 import orjson
 from pydantic import BaseModel
-from sqlalchemy import JSON, DateTime, Dialect, TypeDecorator
+from sqlalchemy import JSON, DateTime, Dialect, String, TypeDecorator
 from sqlalchemy.dialects.mysql import DATETIME, MEDIUMBLOB
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.ext.mutable import Mutable
@@ -100,6 +100,39 @@ class UUIDList(TypeDecorator):
         if not value:
             return []
         return [UUID(item) for item in value]
+
+
+class PasswordHash(TypeDecorator):
+    """Auto-hash on save, mask on load.
+
+    - ``process_bind_param``: hashes plaintext with bcrypt → stored hash.
+    - ``process_result_value``: always returns ``'********'`` (never exposes hash).
+    - For password verification, use ``verify_password()`` with a direct
+      column query (bypassing the TypeDecorator mask).
+
+    Usage::
+
+        from kactus_common.database.oltp.types import PasswordHash
+
+        class User(Base, ModelMixin):
+            password_hash: Mapped[str] = mapped_column(PasswordHash)
+    """
+
+    impl = String(255)
+    cache_ok = True
+    MASK = "********"
+
+    def process_bind_param(self, value: str | None, dialect: "Dialect") -> str | None:
+        if value is None or value == self.MASK:
+            return value  # don't re-hash masked or None values
+        from kactus_common.crypto import hash_password
+
+        return hash_password(value)
+
+    def process_result_value(self, value: str | None, dialect: "Dialect") -> str | None:
+        if value is None:
+            return None
+        return self.MASK
 
 
 class MutableList(Mutable, list):
