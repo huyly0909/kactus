@@ -8,7 +8,7 @@ Fintech frontend monorepo built with React + TypeScript + Mantine.
 # Install dependencies
 pnpm install
 
-# Start dev server (port 3000)
+# Start dev server (port 17630)
 pnpm dev --filter bloom-app
 
 # Build for production
