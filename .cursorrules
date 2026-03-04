@@ -43,16 +43,20 @@ kactus/
 │   │   └── tests/
 │   ├── kactus-data/           # Data ETL library
 │   │   ├── src/kactus_data/
-│   │   │   ├── sources/       # HttpDataSource ABC
+│   │   │   ├── sources/       # HttpDataSource / VnstockSource ABCs
 │   │   │   │   ├── gold/      # MihongGoldSource
-│   │   │   │   ├── stock/     # placeholder
+│   │   │   │   ├── stock/     # VNStock sources (OHLCV, listing, company, finance)
 │   │   │   │   └── coin/      # placeholder
 │   │   │   ├── storage/       # DuckDBStorage adapter
-│   │   │   ├── cli/           # backup + sync commands
+│   │   │   ├── cli/           # backup + sync + stock commands
 │   │   │   ├── schemas.py     # SyncDataResponse, SyncResult
 │   │   │   ├── pipeline.py    # SyncPipeline: source → storage
 │   │   │   └── jobs/          # Airflow/Celery task definitions
 │   │   └── tests/
+│   │       ├── schemas/       # Schema validation tests
+│   │       ├── sources/       # Source-specific tests (gold, stock)
+│   │       ├── storage/       # Storage adapter tests
+│   │       └── pipeline/      # Pipeline integration tests
 │   ├── kactus-fin/            # Main API server
 │   │   ├── src/kactus_fin/
 │   │   │   ├── api/           # Route definitions
@@ -295,8 +299,11 @@ async with db.get_session() as session:
 ### Testing
 
 - Tests live in each package's `tests/` directory
+- **Organise tests by feature** — create subdirectories per feature area (e.g. `tests/sources/`, `tests/storage/`, `tests/pipeline/`)
+- Keep each test file focused on one module or class — easier to run and maintain
 - Run all tests: `uv run pytest`
 - Run one package: `uv run pytest packages/kactus-fin/tests/`
+- Run one feature: `uv run pytest packages/kactus-data/tests/sources/`
 - No `__init__.py` in test directories (prevents namespace collisions)
 
 ### CLI Commands (`manage.py`)
@@ -316,6 +323,12 @@ python manage.py fin db upgrade
 python manage.py fin db downgrade <rev>
 python manage.py fin db current
 python manage.py fin db history
+
+# Data collection
+python manage.py data stock ohlcv -s VCI --start 2024-01-01 --end 2024-12-31
+python manage.py data stock listing
+python manage.py data stock company -s VCI
+python manage.py data stock finance -s VCI --report-type income_statement
 ```
 
 To add a new CLI command to a package, add it in `<package>/cli/` and register it in `<package>/cli/__init__.py`. Use `AsyncTyper` from `kactus_common.cli` for async commands.
@@ -365,9 +378,14 @@ uv run pytest packages/kactus-fin/tests # run package tests
 uv run pytest -k "test_login"           # run specific tests
 ```
 
-Test file convention: `tests/test_<module>.py` in each package:
+Test directory convention — **organise by feature**, one file per module:
 ```
 packages/kactus-common/tests/test_crypto.py
+packages/kactus-data/tests/schemas/test_schemas.py
+packages/kactus-data/tests/sources/test_gold_source.py
+packages/kactus-data/tests/sources/test_vnstock_sources.py
+packages/kactus-data/tests/storage/test_duckdb_storage.py
+packages/kactus-data/tests/pipeline/test_pipeline.py
 packages/kactus-fin/tests/test_auth_api.py
 ```
 
@@ -387,6 +405,7 @@ packages/kactus-fin/tests/test_auth_api.py
 - ❌ Use `config.settings` globally — use dependency injection / constructor params
 - ❌ Raise bare `Exception` — use `KactusException` subclasses
 - ❌ Skip tests — every feature needs tests, run `uv run pytest` before committing
+- ❌ Use `import logging` / `logging.getLogger(__name__)` — use `from loguru import logger` (loguru is the project standard)
 
 ## API Router
 

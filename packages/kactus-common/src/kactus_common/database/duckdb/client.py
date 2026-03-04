@@ -209,8 +209,12 @@ class DatabaseClient:
                             elif isinstance(value, str):
                                 escaped_value = value.replace("'", "''")
                                 pk_conditions.append(f"{pk_col} = '{escaped_value}'")
-                            else:
+                            elif isinstance(value, (int, float)):
                                 pk_conditions.append(f"{pk_col} = {value}")
+                            else:
+                                # datetime, date, and other types — quote as string
+                                escaped_value = str(value).replace("'", "''")
+                                pk_conditions.append(f"{pk_col} = '{escaped_value}'")
                         where_conditions.append(f"({' AND '.join(pk_conditions)})")
                     
                     if where_conditions:
@@ -277,8 +281,12 @@ class DatabaseClient:
                     # Escape single quotes in strings
                     escaped_value = value.replace("'", "''")
                     values.append(f"'{escaped_value}'")
-                else:
+                elif isinstance(value, (int, float)):
                     values.append(str(value))
+                else:
+                    # datetime, date, Timestamp, and other types — quote as string
+                    escaped_value = str(value).replace("'", "''")
+                    values.append(f"'{escaped_value}'")
             records.append(f"({', '.join(values)})")
         
         return ', '.join(records)

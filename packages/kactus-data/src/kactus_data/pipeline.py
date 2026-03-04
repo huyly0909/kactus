@@ -8,16 +8,28 @@ from __future__ import annotations
 import logging
 import time
 from datetime import date
+from typing import Protocol
 
 import pandas as pd
 
 from kactus_common.database.duckdb.consts import UpdateStrategy
 from kactus_common.database.duckdb.schema import Table
-from kactus_data.schemas import SyncResult
-from kactus_data.sources.http import HttpDataSource
+from kactus_data.schemas import SyncDataResponse, SyncResult
 from kactus_data.storage.duckdb import DuckDBStorage
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+
+class DataSourceProtocol(Protocol):
+    """Protocol for any data source compatible with SyncPipeline."""
+
+    name: str
+
+    def sync(
+        self,
+        start_date: date,
+        end_date: date,
+        code: str,
+    ) -> SyncDataResponse: ...
 
 
 class SyncPipeline:
@@ -43,7 +55,7 @@ class SyncPipeline:
 
     def __init__(
         self,
-        source: HttpDataSource,
+        source: DataSourceProtocol,
         storage: DuckDBStorage,
     ) -> None:
         self.source = source
@@ -131,6 +143,12 @@ class SyncPipeline:
                 duration_ms=elapsed,
                 success=True,
             )
+
+        # Reorder DataFrame columns to match the table schema
+        # (INSERT uses positional VALUES — order must match the table definition)
+        table_col_names = [col.name for col in table.columns]
+        available_cols = [c for c in table_col_names if c in df.columns]
+        df = df[available_cols]
 
         rows_stored = self.storage.store(table, df, strategy)
         elapsed = (time.perf_counter() - t0) * 1000

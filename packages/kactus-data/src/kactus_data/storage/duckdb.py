@@ -15,8 +15,7 @@ import pandas as pd
 from kactus_common.database.duckdb.client import DatabaseClient
 from kactus_common.database.duckdb.consts import UpdateStrategy
 from kactus_common.database.duckdb.schema import Table
-
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class DuckDBStorage:
