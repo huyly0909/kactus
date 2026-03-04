@@ -10,7 +10,8 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
-from kactus_common.user.auth import create_auth_dependency
+from kactus_common.database.oltp import session as session_mod
+from kactus_common.user import auth as auth_mod
 from kactus_common.user.model import User, UserSession
 
 # ---------------------------------------------------------------------------
@@ -35,24 +36,24 @@ async def db():
 @pytest_asyncio.fixture(scope="module")
 async def app(db):
     """Create a test app with overridden dependencies."""
-    import kactus_fin.dependencies as deps
+    from kactus_common.config import CommonSettings, register_settings, clear_settings
     from kactus_fin.app import create_app
 
+    # Register settings so get_db/get_auth singletons work
+    register_settings(CommonSettings())
+
+    # Patch the get_db singleton to use our test db
+    session_mod._db = db
+    # Reset auth singleton so it picks up the patched db
+    auth_mod._auth = None
+
     _app = create_app()
-
-    # Override DI singletons
-    auth = create_auth_dependency(db=db)
-    original_get_db = deps.get_db
-    original_get_auth = deps.get_auth
-
-    deps.get_db = lambda: db
-    deps.get_auth = lambda: auth
-
     yield _app
 
-    # Restore originals
-    deps.get_db = original_get_db
-    deps.get_auth = original_get_auth
+    # Restore
+    session_mod._db = None
+    auth_mod._auth = None
+    clear_settings()
 
 
 @pytest_asyncio.fixture(autouse=True)

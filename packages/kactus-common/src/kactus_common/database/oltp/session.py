@@ -2,19 +2,19 @@
 Async SQLAlchemy session management.
 
 Provides :class:`DatabaseSessionManager` — a configurable wrapper around
-SQLAlchemy async engine and session creation. Each application creates its
-own singleton instance with its own connection settings.
+SQLAlchemy async engine and session creation.
 
-Usage in kactus-fin::
+Preferred usage (settings-backed singleton)::
 
-    from kactus_common.database.oltp import DatabaseSessionManager
-    from kactus_fin.config import get_settings
+    from kactus_common.database.oltp.session import get_db
 
-    settings = get_settings()
-    db = DatabaseSessionManager(database_url=settings.database_url)
-
+    db = get_db()  # reads database_url, echo, pool_size from settings
     async with db.get_session() as session:
         ...
+
+Manual usage (tests, migrations)::
+
+    db = DatabaseSessionManager(database_url="sqlite+aiosqlite:///test.db")
 """
 
 from __future__ import annotations
@@ -142,9 +142,6 @@ class DatabaseSessionManager:
         finally:
             await session.close()
 
-    def provide_session(self, fn: Callable[..., Any]):
-        """Decorator that auto-injects ``session`` from this manager's pool."""
-        return make_provide_session(self.get_session)(fn)
 
     async def close(self) -> None:
         """Dispose the engine and release all connections."""
@@ -154,65 +151,94 @@ class DatabaseSessionManager:
             self._session_factory = None
 
 
-def make_provide_session(
-    get_session: Callable[[], Any],
-) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Create a ``@provide_session`` decorator bound to a session source.
+# ---------------------------------------------------------------------------
+# Settings-backed singleton
+# ---------------------------------------------------------------------------
 
-    Args:
-        get_session: A callable that returns an async context manager
-            yielding an ``AsyncSession``.  Can be
-            ``DatabaseSessionManager.get_session`` or a lazy wrapper.
+_db: DatabaseSessionManager | None = None
 
-    Returns:
-        A decorator that auto-injects a ``session`` argument into the
-        wrapped async function.  The ``session`` parameter is stripped
-        from the wrapper's ``__signature__`` so FastAPI will not try to
-        resolve it as a dependency.
+
+def get_db() -> DatabaseSessionManager:
+    """Return a singleton ``DatabaseSessionManager`` backed by the settings registry.
+
+    Reads ``database_url``, ``sqlalchemy_echo``, and ``sqlalchemy_pool_size``
+    from the registered settings.  The main app's ``.env`` controls these
+    values.
+
+    For tests or one-off scripts that need a custom URL, instantiate
+    ``DatabaseSessionManager`` directly.
     """
+    global _db
+    if _db is None:
+        from kactus_common.config import settings
 
-    def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
-        fn_sig = signature(fn)
-        parameters = fn_sig.parameters
-        has_session = "session" in parameters
-        session_has_default = (
-            has_session
-            and parameters["session"].default is not parameters["session"].empty
-            and parameters["session"].default is not None
+        _db = DatabaseSessionManager(
+            database_url=settings.database_url,
+            echo=settings.sqlalchemy_echo,
+            pool_size=settings.sqlalchemy_pool_size,
         )
-        session_args_idx = tuple(parameters).index("session") if has_session else None
+    return _db
 
-        @wraps(fn)
-        async def wrapper(*args, **kwargs) -> Any:
-            if not has_session or session_has_default:
+
+def clear_db() -> None:
+    """Reset the singleton (useful for testing)."""
+    global _db
+    _db = None
+
+
+def provide_session(fn: Callable[..., Any]) -> Callable[..., Any]:
+    """Decorator that auto-injects ``session: AsyncSession`` from ``get_db()``.
+
+    The ``session`` parameter is stripped from the wrapper's
+    ``__signature__`` so FastAPI will not try to resolve it as a
+    dependency.
+
+    Usage::
+
+        @router.get("/items")
+        @provide_session
+        async def list_items(request: Request, session: AsyncSession):
+            ...
+    """
+    fn_sig = signature(fn)
+    parameters = fn_sig.parameters
+    has_session = "session" in parameters
+    session_has_default = (
+        has_session
+        and parameters["session"].default is not parameters["session"].empty
+        and parameters["session"].default is not None
+    )
+    session_args_idx = tuple(parameters).index("session") if has_session else None
+
+    @wraps(fn)
+    async def wrapper(*args, **kwargs) -> Any:
+        if not has_session or session_has_default:
+            return await fn(*args, **kwargs)
+
+        if session_args_idx is not None and session_args_idx < len(args):
+            if args[session_args_idx] is not None:
                 return await fn(*args, **kwargs)
 
-            if session_args_idx is not None and session_args_idx < len(args):
-                if args[session_args_idx] is not None:
-                    return await fn(*args, **kwargs)
+        if "session" in kwargs and kwargs["session"]:
+            return await fn(*args, **kwargs)
 
-            if "session" in kwargs and kwargs["session"]:
-                return await fn(*args, **kwargs)
+        async with get_db().get_session() as session:
+            if session_args_idx < len(args):
+                args = list(args)
+                args[session_args_idx] = session
+                args = tuple(args)
+            else:
+                kwargs["session"] = session
+            return await fn(*args, **kwargs)
 
-            async with get_session() as session:
-                if session_args_idx < len(args):
-                    args = list(args)
-                    args[session_args_idx] = session
-                    args = tuple(args)
-                else:
-                    kwargs["session"] = session
-                return await fn(*args, **kwargs)
+    # Strip ``session`` from signature so FastAPI ignores it
+    if has_session:
+        new_params = [
+            p for name, p in fn_sig.parameters.items() if name != "session"
+        ]
+        wrapper.__signature__ = fn_sig.replace(parameters=new_params)
 
-        # Strip ``session`` from signature so FastAPI ignores it
-        if has_session:
-            new_params = [
-                p for name, p in fn_sig.parameters.items() if name != "session"
-            ]
-            wrapper.__signature__ = fn_sig.replace(parameters=new_params)
-
-        return wrapper
-
-    return decorator
+    return wrapper
 
 
 # ---------------------------------------------------------------------------

@@ -27,6 +27,7 @@ dependencies = [
     "bcrypt>=4.2.0",
     # Authorization (Casbin RBAC)
     "casbin>=1.36,<2",
+    "pydantic-settings>=2.13.1",
 ]
 
 [build-system]

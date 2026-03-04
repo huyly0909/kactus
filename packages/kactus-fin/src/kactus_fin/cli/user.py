@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import typer
 from kactus_common.cli import AsyncTyper
-from kactus_common.database.oltp.session import DatabaseSessionManager
+from kactus_common.database.oltp.session import get_db
 from kactus_common.user.model import User
-from kactus_fin.config import get_settings
 
 cli = AsyncTyper(help="User management commands")
 
@@ -20,8 +19,7 @@ async def _create_user(
     is_superuser: bool = False,
 ):
     """Shared logic for creating a regular or admin user."""
-    settings = get_settings()
-    db = DatabaseSessionManager(database_url=settings.database_url)
+    db = get_db()
 
     async with db.get_session() as session:
         # Check for duplicates
@@ -104,8 +102,7 @@ async def create_admin(
 @cli.command()
 async def list():
     """List all users."""
-    settings = get_settings()
-    db = DatabaseSessionManager(database_url=settings.database_url)
+    db = get_db()
 
     async with db.get_session() as session:
         users = await User.all(session)
@@ -134,8 +131,7 @@ async def reset_password(
     ),
 ):
     """Reset a user's password."""
-    settings = get_settings()
-    db = DatabaseSessionManager(database_url=settings.database_url)
+    db = get_db()
 
     async with db.get_session() as session:
         user = await User.first(session, email=email)

@@ -11,19 +11,24 @@ from datetime import date
 import typer
 from typer import Context, Option, Typer
 
+from kactus_data.config import DataSettings
+
 cli = Typer()
+
+_defaults = DataSettings()
 
 
 @cli.callback()
 def main(
     ctx: Context,
-    db_path: str = Option("kactus.duckdb", help="Path to DuckDB database file"),
-    data_source: str = Option("KBS", "--data-source", "-d", help="Data source: KBS or VCI"),
+    db_path: str = Option(_defaults.db_path, help="Path to DuckDB database file"),
+    data_source: str = Option(_defaults.data_source, "--data-source", "-d", help="Data source: KBS or VCI"),
 ):
     """Stock price data collection commands."""
     from kactus_data.storage.duckdb import DuckDBStorage
 
     ctx.obj = {"storage": DuckDBStorage(db_path), "data_source": data_source}
+
 
 
 @cli.command()

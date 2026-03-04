@@ -5,6 +5,9 @@ from datetime import date
 import typer
 
 from kactus_data.cli import cli
+from kactus_data.config import DataSettings
+
+_defaults = DataSettings()
 
 
 @cli.command()
@@ -14,7 +17,7 @@ def sync(
     code: str = typer.Option(..., "--code", "-c", help="Source-specific code (e.g. SJC, BTC)"),
     start: str = typer.Option(..., "--start", "-s", help="Start date (YYYY-MM-DD)"),
     end: str = typer.Option(..., "--end", "-e", help="End date (YYYY-MM-DD)"),
-    db_path: str = typer.Option("kactus.duckdb", help="DuckDB database path"),
+    db_path: str = typer.Option(_defaults.db_path, help="DuckDB database path"),
 ):
     """Manually trigger a data sync from a source into DuckDB.
 

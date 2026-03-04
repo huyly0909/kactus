@@ -10,7 +10,11 @@ from datetime import date
 import typer
 from typer import Context, Option, Typer
 
+from kactus_data.config import DataSettings
+
 cli = Typer()
+
+_defaults = DataSettings()
 
 
 @cli.callback(invoke_without_command=True)
@@ -24,8 +28,8 @@ def main(
         help="Report type: income_statement, balance_sheet, cash_flow, ratio",
     ),
     period: str = Option("quarter", "--period", "-p", help="Period: quarter or year"),
-    db_path: str = Option("kactus.duckdb", help="Path to DuckDB database file"),
-    data_source: str = Option("KBS", "--data-source", "-d", help="Data source: KBS or VCI"),
+    db_path: str = Option(_defaults.db_path, help="Path to DuckDB database file"),
+    data_source: str = Option(_defaults.data_source, "--data-source", "-d", help="Data source: KBS or VCI"),
 ):
     """Sync financial reports for a stock symbol."""
     from kactus_data.pipeline import SyncPipeline

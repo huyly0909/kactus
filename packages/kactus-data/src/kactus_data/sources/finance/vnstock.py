@@ -10,6 +10,7 @@ import pandas as pd
 from kactus_data.schemas import SyncDataResponse
 from kactus_data.sources.stock.base import VnstockSource
 from loguru import logger
+from kactus_data.config import get_settings
 
 REPORT_TYPES = ("income_statement", "balance_sheet", "cash_flow", "ratio")
 
@@ -29,6 +30,7 @@ class VnstockFinanceSource(VnstockSource):
     ) -> None:
         if report_type not in REPORT_TYPES:
             raise ValueError(f"report_type must be one of {REPORT_TYPES}, got '{report_type}'")
+        settings = get_settings()
         super().__init__(name=f"vnstock_finance_{report_type}", source=source)
         self.report_type = report_type
         self.period = period

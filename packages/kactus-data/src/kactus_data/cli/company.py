@@ -10,14 +10,18 @@ from datetime import date
 import typer
 from typer import Context, Option, Typer
 
+from kactus_data.config import DataSettings
+
 cli = Typer()
+
+_defaults = DataSettings()
 
 
 @cli.callback(invoke_without_command=True)
 def main(
     ctx: Context,
     symbol: str = Option(..., "--symbol", "-s", help="Stock symbol (e.g. VCI, ACB)"),
-    db_path: str = Option("kactus.duckdb", help="Path to DuckDB database file"),
+    db_path: str = Option(_defaults.db_path, help="Path to DuckDB database file"),
     data_source: str = Option("VCI", "--data-source", "-d", help="Data source: KBS or VCI"),
 ):
     """Sync company overview for a stock symbol."""

@@ -4,13 +4,17 @@ import typer
 
 from typer import Context, Option, Typer
 
+from kactus_data.config import DataSettings
+
 cli = Typer()
+
+_defaults = DataSettings()
 
 
 @cli.callback()
 def main(
     ctx: Context,
-    db_path: str = Option("kactus.duckdb", help="Path to DuckDB database file"),
+    db_path: str = Option(_defaults.db_path, help="Path to DuckDB database file"),
 ):
     """DuckDB backup and export commands."""
     from kactus_data.storage.duckdb import DuckDBStorage

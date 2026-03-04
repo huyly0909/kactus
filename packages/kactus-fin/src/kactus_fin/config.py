@@ -1,37 +1,44 @@
+"""
+kactus-fin application settings.
+
+Inherits the full chain::
+
+    BaseKactusSettings → CommonSettings → DataSettings → Settings
+
+``Settings`` loads ``.env`` from the kactus-fin package root.
+All inherited env variables (database_url, db_path, data_source, …) are
+populated from that single ``.env`` file.
+"""
+
 from functools import lru_cache
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import SettingsConfigDict
+
+from kactus_common.config import register_settings
+from kactus_data.config import DataSettings
 
 
-class Settings(BaseSettings):
-    """Application settings loaded from environment variables."""
+class Settings(DataSettings):
+    """kactus-fin settings — entry-point package that loads .env."""
 
     app_name: str = "Kactus Fin"
     app_version: str = "0.1.0"
-    debug: bool = False
 
     # Server
     host: str = "0.0.0.0"
     port: int = 17600
 
-    # Database
-    db_path: str = "kactus.duckdb"
-    database_url: str = "postgresql://kactus:kactus@localhost:5432/kactus"
-
-    # Auth / Crypto
-    encryption_key: str = ""  # Fernet key — generate with CryptoService.generate_key()
-    session_cookie_secure: bool = False  # True in prod (HTTPS-only cookies)
-    session_expiry: int = 7 * 24 * 3600  # 7 days
-    session_remember_expiry: int = 365 * 24 * 3600  # 1 year
-
-    model_config = {
-        "env_prefix": "KACTUS_",
-        "env_file": ".env",
-        "env_file_encoding": "utf-8",
-    }
+    model_config = SettingsConfigDict(
+        env_prefix="KACTUS_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
 
 @lru_cache
 def get_settings() -> Settings:
-    """Return cached application settings."""
-    return Settings()
+    """Return cached application settings and register in the global registry."""
+    s = Settings()
+    register_settings(s)
+    return s
