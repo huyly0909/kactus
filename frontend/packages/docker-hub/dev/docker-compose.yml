@@ -9,7 +9,7 @@ services:
         - VITE_APP_NAME=${VITE_APP_NAME}
     env_file: .env
     ports:
-      - "3000:80"
+      - "17630:80"
     volumes:
       - ../../packages/bloom-ui/src:/app/packages/bloom-ui/src
       - ../../packages/bloom-app/src:/app/packages/bloom-app/src

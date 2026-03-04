@@ -7,10 +7,19 @@ import { projectService } from '@kactus-bloom/ui/services';
 /**
  * Project guard — ensures a project is selected before accessing protected routes.
  * If no project is selected (no cookie), redirects to /select-project.
+ *
+ * Uses the list endpoint (GET /api/projects) to restore the project from cookie,
+ * avoiding the @permission-protected single-project endpoint.
  */
 export const ProjectGuard: FC = () => {
-  const { currentProject, isLoading, setProject, setLoading, getProjectIdFromCookie } =
-    useProjectStore();
+  const {
+    currentProject,
+    isLoading,
+    setProject,
+    clearProject,
+    setLoading,
+    getProjectIdFromCookie,
+  } = useProjectStore();
   const location = useLocation();
 
   useEffect(() => {
@@ -28,10 +37,16 @@ export const ProjectGuard: FC = () => {
 
       setLoading(true);
       try {
-        const project = await projectService.getProjectById(projectId);
-        setProject(project);
+        const { items } = await projectService.getProjects();
+        const project = items.find((p) => String(p.id) === String(projectId));
+        if (project) {
+          setProject(project);
+        } else {
+          // Cookie references a project the user is not a member of — clear it
+          clearProject();
+        }
       } catch {
-        setLoading(false);
+        clearProject();
       }
     };
     restoreProject();

@@ -6,7 +6,7 @@ import { ProjectGuard } from './projectGuard';
 
 // Mock stores and services
 const mockUseProjectStore = vi.fn();
-const mockGetProjectById = vi.fn();
+const mockGetProjects = vi.fn();
 
 vi.mock('@kactus-bloom/ui/stores', () => ({
   useProjectStore: () => mockUseProjectStore(),
@@ -14,7 +14,7 @@ vi.mock('@kactus-bloom/ui/stores', () => ({
 
 vi.mock('@kactus-bloom/ui/services', () => ({
   projectService: {
-    getProjectById: (...args: unknown[]) => mockGetProjectById(...args),
+    getProjects: (...args: unknown[]) => mockGetProjects(...args),
   },
 }));
 
@@ -43,6 +43,7 @@ describe('ProjectGuard', () => {
       currentProject: null,
       isLoading: false,
       setProject: vi.fn(),
+      clearProject: vi.fn(),
       setLoading: vi.fn(),
       getProjectIdFromCookie: () => undefined,
     });
@@ -57,6 +58,7 @@ describe('ProjectGuard', () => {
       currentProject: null,
       isLoading: true,
       setProject: vi.fn(),
+      clearProject: vi.fn(),
       setLoading: vi.fn(),
       getProjectIdFromCookie: () => '123',
     });
@@ -72,6 +74,7 @@ describe('ProjectGuard', () => {
       currentProject: { id: '123', name: 'Test Project', code: 'TP', status: 'active' },
       isLoading: false,
       setProject: vi.fn(),
+      clearProject: vi.fn(),
       setLoading: vi.fn(),
       getProjectIdFromCookie: () => '123',
     });
