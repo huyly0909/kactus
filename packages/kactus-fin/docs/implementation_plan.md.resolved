@@ -1,0 +1,137 @@
+# Admin Data Pages — Company, Finance, Stock
+
+Add three new admin pages for viewing and manually syncing market data from DuckDB.
+
+## Context
+
+Data lives in **DuckDB** tables (not OLTP):
+
+| Table | Primary Keys | Key Columns |
+|-------|-------------|-------------|
+| `stock_company` | `symbol` | company_name, industry, exchange, market_cap, synced_at |
+| `stock_finance` | `symbol + period + year + quarter + report_type` | data_json, source, synced_at |
+| `stock_ohlcv` | `symbol + time + interval` | open, high, low, close, volume |
+| `stock_listing` | `symbol` | organ_name, source, synced_at |
+
+Currently **no API endpoints** exist for querying DuckDB — only CLI commands. We need to build the full stack: backend API → frontend service → admin pages.
+
+## User Review Required
+
+> [!IMPORTANT]
+> **Where to put the backend API?** Two options:
+> 1. **kactus-fin** (port 17600) — admin data APIs alongside user-facing APIs
+> 2. **kactus-fin-gateway** (port 17601) — separate gateway for data APIs
+>
+> This plan assumes **kactus-fin** since the admin pages already call kactus-fin APIs. Let me know if you prefer the gateway.
+
+> [!IMPORTANT]
+> **Sync triggers**: The sync button will call a backend endpoint that runs [SyncPipeline](file:///Users/recurve/project/test-test/kactus/packages/kactus-data/src/kactus_data/pipeline.py#35-170) in-process. For large syncs (e.g., OHLCV with wide date ranges), this could be slow. We can add async/background execution later if needed.
+
+---
+
+## Proposed Changes
+
+### Backend: kactus-fin — Data Admin API
+
+New feature folder `kactus-fin/data_admin/` with query + sync endpoints.
+
+#### [NEW] `data_admin/__init__.py`
+#### [NEW] `data_admin/api.py`
+
+Superuser-only endpoints:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/admin/data/companies` | List all companies from `stock_company` |
+| `GET` | `/api/admin/data/companies/{symbol}` | Company detail (overview_json parsed) |
+| `POST` | `/api/admin/data/companies/sync` | Sync company data for a symbol |
+| `GET` | `/api/admin/data/finance` | List finance records (filter by symbol, report_type) |
+| `GET` | `/api/admin/data/finance/{symbol}` | Finance detail for a symbol |
+| `POST` | `/api/admin/data/finance/sync` | Sync finance data (symbol, report_type, period) |
+| `GET` | `/api/admin/data/stocks` | List from `stock_listing` |
+| `GET` | `/api/admin/data/stocks/{symbol}/ohlcv` | OHLCV detail for a symbol |
+| `POST` | `/api/admin/data/stocks/sync-listing` | Sync all listings |
+| `POST` | `/api/admin/data/stocks/sync-ohlcv` | Sync OHLCV (symbol, start, end, interval) |
+
+#### [NEW] `data_admin/service.py`
+
+Service layer wrapping `DuckDBStorage.query()` for reading and [SyncPipeline](file:///Users/recurve/project/test-test/kactus/packages/kactus-data/src/kactus_data/pipeline.py#35-170) for sync.
+
+#### [NEW] `data_admin/schema.py`
+
+Pydantic response schemas for each domain.
+
+#### [MODIFY] `app.py`
+
+Register the data_admin routes as `superuser_routes` (admin-only, no project/permission needed).
+
+---
+
+### Frontend: bloom-ui — Data Admin Service
+
+#### [NEW] `bloom-ui/src/services/dataAdminService.ts`
+
+```
+dataAdminService = {
+  // Company
+  getCompanies, getCompanyDetail, syncCompany,
+  // Finance
+  getFinanceRecords, getFinanceDetail, syncFinance,
+  // Stock
+  getStocks, getStockOhlcv, syncListing, syncOhlcv,
+}
+```
+
+#### [MODIFY] [bloom-ui/src/services/index.ts](file:///Users/recurve/project/test-test/kactus-bloom/packages/bloom-ui/src/services/index.ts)
+
+Add `dataAdminService` export.
+
+---
+
+### Frontend: bloom-app — Admin Pages
+
+Follow existing admin page patterns (flat [.tsx](file:///Users/recurve/project/test-test/kactus-bloom/packages/bloom-app/src/App.tsx) files in `pages/Admin/`, `useState`/`useEffect`, Mantine Table).
+
+#### [NEW] `pages/Admin/Companies.tsx`
+
+- Table: symbol, company_name, industry, exchange, market_cap, synced_at
+- Click row → detail modal (parsed overview_json)
+- Sync button: input symbol → POST sync
+
+#### [NEW] `pages/Admin/Finance.tsx`
+
+- Table: symbol, report_type, period, year, quarter, synced_at
+- Filters: symbol, report_type
+- Click row → detail modal (parsed data_json)
+- Sync button: input symbol, report_type, period → POST sync
+
+#### [NEW] `pages/Admin/Stocks.tsx`
+
+- Table: symbol, organ_name, source, synced_at (from `stock_listing`)
+- Click row → OHLCV detail view (mini table or chart preview)
+- Sync listing button (sync all)
+- Sync OHLCV button: input symbol, date range, interval → POST sync
+
+#### [MODIFY] [pages/Admin/index.tsx](file:///Users/recurve/project/test-test/kactus-bloom/packages/bloom-app/src/pages/Admin/index.tsx)
+
+Add 3 new sidebar items (Company, Finance, Stock) with icons.
+
+#### [MODIFY] [router/index.tsx](file:///Users/recurve/project/test-test/kactus-bloom/packages/bloom-app/src/router/index.tsx)
+
+Add 3 new routes under the admin group:
+```
+/admin/companies → AdminCompaniesPage
+/admin/finance   → AdminFinancePage
+/admin/stocks    → AdminStocksPage
+```
+
+---
+
+## Verification Plan
+
+### Manual Verification
+1. Start kactus-fin dev server (`python manage.py fin dev`)
+2. Start bloom dev server (`pnpm dev`)
+3. Login as superuser → navigate to Admin
+4. Verify new sidebar items appear
+5. Test list/detail/sync for each domain

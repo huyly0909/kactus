@@ -7,10 +7,13 @@ from kactus_common.exceptions import PermissionDeniedError, install_exception_ha
 from kactus_fin.admin.app import admin_app
 from kactus_fin.api.health import router as health_router
 from kactus_fin.auth.app import auth_app
+from kactus_fin.company.app import company_app
 from kactus_fin.config import get_settings
 from kactus_fin.dependencies import get_auth
+from kactus_fin.finance.app import finance_app
 from kactus_fin.permission.app import permission_app
 from kactus_fin.project.app import project_app
+from kactus_fin.stock.app import stock_app
 
 # ---------------------------------------------------------------------------
 # Auth dependencies (set ContextVar + request.state.user)
@@ -40,6 +43,9 @@ app_manager.register(auth_app)
 app_manager.register(project_app)
 app_manager.register(permission_app)
 app_manager.register(admin_app)
+app_manager.register(company_app)
+app_manager.register(finance_app)
+app_manager.register(stock_app)
 app_manager.set_auth_dependencies(
     session_dep=_session_auth,
     superuser_dep=_superuser_auth,
