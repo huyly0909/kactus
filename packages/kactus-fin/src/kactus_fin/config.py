@@ -11,6 +11,7 @@ populated from that single ``.env`` file.
 """
 
 from functools import lru_cache
+from typing import ClassVar
 
 from pydantic_settings import SettingsConfigDict
 
@@ -27,6 +28,8 @@ class Settings(DataSettings):
     # Server
     host: str = "0.0.0.0"
     port: int = 17600
+
+    INSTALLED_PACKAGES: ClassVar[list[str]] = DataSettings.INSTALLED_PACKAGES + ["kactus_fin"]
 
     model_config = SettingsConfigDict(
         env_prefix="KACTUS_",

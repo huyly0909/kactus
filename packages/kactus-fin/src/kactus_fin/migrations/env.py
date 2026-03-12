@@ -2,11 +2,10 @@
 
 from logging.config import fileConfig
 
-import kactus_common.project.model  # noqa: F401 — registers Project, ProjectMember
-import kactus_common.user.model  # noqa: F401 — registers User, UserSession
 from alembic import context
 
 # Import Base and all models so autogenerate can detect them
+from kactus_common.app_registry import load_models
 from kactus_common.database.oltp.models import Base
 
 # Import app settings to get the database URL
@@ -22,6 +21,9 @@ if config.config_file_name is not None:
 # Override sqlalchemy.url from app settings
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", settings.database_url)
+
+# Load all ORM models declared by installed packages
+load_models(settings)
 
 # Set target metadata for autogenerate
 target_metadata = Base.metadata

@@ -177,3 +177,19 @@ class AppManager:
             for role, perm_tuples in app.role_permissions.items():
                 result.setdefault(role, []).extend(perm_tuples)
         return result
+
+
+def load_models(settings) -> None:
+    """Import all ORM model modules from ``settings.INSTALLED_PACKAGES``.
+
+    Each package listed in ``INSTALLED_PACKAGES`` must expose a
+    ``MODELS: list[str]`` attribute in its ``__init__.py``.  Calling
+    this ensures every ORM model is loaded into ``Base.metadata``
+    before Alembic autogenerate runs.
+    """
+    import importlib
+
+    for pkg_name in settings.INSTALLED_PACKAGES:
+        pkg = importlib.import_module(pkg_name)
+        for module_path in getattr(pkg, "MODELS", []):
+            importlib.import_module(module_path)

@@ -21,6 +21,8 @@ Architecture::
           └── gw Settings       ← host, port, … (loads .env)
 """
 
+from typing import ClassVar
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,6 +57,10 @@ class CommonSettings(BaseKactusSettings):
     Contains infrastructure variables shared across all packages:
     database connections, crypto keys, session/auth config, etc.
     """
+
+    # Packages whose MODELS list should be loaded for Alembic autogenerate.
+    # Downstream packages extend this via: parent.INSTALLED_PACKAGES + [...]
+    INSTALLED_PACKAGES: ClassVar[list[str]] = ["kactus_common"]
 
     # OLTP database (PostgreSQL / MySQL)
     database_url: str = "postgresql://kactus:kactus@localhost:5432/kactus"
