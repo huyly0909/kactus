@@ -5,7 +5,7 @@ description: Core architecture, coding conventions, and guardrails for the kactu
 
 # Kactus Monorepo — Project Conventions
 
-> **Other skills**: See `testing.md`, `feature-scaffold.md`, `api-endpoint.md`, `database-migration.md`, `cli-command.md` for detailed workflows.
+> **Related skills**: testing, feature-scaffold, api-endpoint, database-migration, cli-command, model-registration
 
 ## Architecture
 
@@ -137,7 +137,7 @@ class User(Base, ModelMixin, AuditMixin, LogicalDeleteMixin):
 - `AuditCreatorMixin` → `created_by` only
 - `LogicalDeleteMixin` → soft-delete via `deleted_timestamp`
 
-> Custom column types (`PasswordHash`, `DateTimeTzAware`, etc.) — see `database-migration.md`
+> Custom column types (`PasswordHash`, `DateTimeTzAware`, etc.) — see **database-migration** skill
 
 ### Database Access — `get_db()` Singleton
 
@@ -148,7 +148,7 @@ async with get_db().get_session() as session:
     user = await User.get_or_404(session, user_id)
 ```
 
-> Endpoint DB patterns (`provide_session`, etc.) — see `api-endpoint.md`
+> Endpoint DB patterns (`provide_session`, etc.) — see **api-endpoint** skill
 
 ### Settings Pattern
 
@@ -217,7 +217,7 @@ uv sync --package kactus-fin
 pre-commit install && pre-commit run --all-files
 ```
 
-> DB migrations — see `database-migration.md` | Testing — see `testing.md` | CLI — see `cli-command.md`
+> DB migrations — see **database-migration** skill | Testing — see **testing** skill | CLI — see **cli-command** skill
 
 ## Don't Do This
 
