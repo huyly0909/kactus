@@ -134,4 +134,4 @@ python manage.py fin db upgrade
 
 ### 9. Write Tests
 
-See **testing skill** (`.antigravity/skills/testing.md`).
+See the **testing** skill for conventions and fixture patterns.

@@ -1,5 +1,11 @@
 """Kactus Common - Shared utilities, database clients, and common infrastructure."""
 
+# ORM model modules in this package — used by load_models() for Alembic autogenerate
+MODELS = [
+    "kactus_common.user.model",
+    "kactus_common.project.model",
+]
+
 # DuckDB
 from kactus_common.database.duckdb.client import DatabaseClient
 from kactus_common.database.duckdb.schema import Column, Table
