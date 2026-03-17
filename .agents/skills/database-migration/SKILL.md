@@ -23,6 +23,40 @@ python manage.py fin db current          # current revision
 python manage.py fin db history          # migration history
 ```
 
+## `migrations/env.py` Pattern
+
+Each package's `env.py` must call `load_models(settings)` **before** setting
+`target_metadata` so autogenerate can detect all ORM models
+(see **model-registration** skill for the full convention):
+
+```python
+from kactus_common.app_registry import load_models
+from kactus_common.database.oltp.models import Base
+from <package>.config import get_settings
+
+settings = get_settings()
+config.set_main_option("sqlalchemy.url", settings.database_url)
+
+# Load all ORM models declared by installed packages
+load_models(settings)
+
+target_metadata = Base.metadata
+```
+
+> [!CAUTION]
+> Never remove the `load_models(settings)` call. Without it `Base.metadata` is
+> empty and autogenerate will produce `pass`-only migrations.
+
+## Migration File Naming
+
+Migration files use a date-prefixed format configured in `alembic.ini`:
+
+```ini
+file_template = %%(year)d%%(month).2d%%(day).2d_%%(hour).2d%%(minute).2d%%(second).2d_%%(rev)s_%%(slug)s
+```
+
+This produces filenames like `20260224_222830_037b1163582d_add_users_and_sessions.py`, which sort chronologically and include the revision hash + message slug.
+
 ## Workflow
 
 ### 1. Define or modify the model

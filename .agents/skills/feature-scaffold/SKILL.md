@@ -52,6 +52,17 @@ class Invoice(Base, ModelMixin, AuditMixin):
     user_id: Mapped[int] = mapped_column()
 ```
 
+> [!IMPORTANT]
+> After creating `model.py`, register it in the package's `MODELS` list
+> (see **model-registration** skill):
+> ```python
+> # packages/<pkg>/src/<pkg_name>/__init__.py
+> MODELS: list[str] = [
+>     ...,
+>     "<pkg_name>.<feature>.model",  # ← add this
+> ]
+> ```
+
 ### 3. `schema.py` — Pydantic Schemas
 
 ```python
