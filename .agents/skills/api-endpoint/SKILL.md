@@ -86,6 +86,42 @@ async def update_project(request: Request, id: int, body: UpdateRequest) -> Proj
     ...
 ```
 
+## File Upload Endpoints
+
+Use `UploadFile` for file uploads (requires `python-multipart`). Pass identifiers as **query parameters** with defaults, not path or form params:
+
+```python
+from fastapi import UploadFile
+
+@router.post("/")
+async def upload_file(
+    file: UploadFile,               # file must come first (no default)
+    user_id: int = 1,               # query params with defaults
+    session: AsyncSession = None,
+) -> FileSchema:
+    content = await file.read()
+    item = MyFile(file_name=file.filename, file=content, user_id=user_id)
+    await item.save(session)
+    return FileSchema.model_validate(item)
+```
+
+> **Important**: `file: UploadFile` (no default) must be declared **before** parameters with defaults to avoid Python syntax errors.
+
+## File Download Endpoints
+
+Use `FileDownloadResponse` from `kactus_common.responses` for binary file downloads:
+
+```python
+from kactus_common.responses import FileDownloadResponse
+
+@router.get("/download", response_model=None)
+async def download_file(...):
+    item = await MyFile.get_or_404(session, ...)
+    return FileDownloadResponse(content=item.file, filename=item.file_name)
+```
+
+> Set `response_model=None` on download endpoints since they return raw bytes, not a Pydantic model.
+
 ## Schema Rules
 
 - All schemas inherit from `BaseSchema` (never `BaseModel` directly)
