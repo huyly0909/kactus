@@ -73,6 +73,9 @@ class CommonSettings(BaseKactusSettings):
     # Crypto
     encryption_key: str = ""  # Fernet key — generate with CryptoService.generate_key()
 
+    # CORS
+    cors_allowed_origins: list[str] = ["http://localhost:17630"]
+
     # Session / Auth
     session_cookie_secure: bool = False  # True in prod (HTTPS-only cookies)
     session_expiry: int = 7 * 24 * 3600  # 7 days

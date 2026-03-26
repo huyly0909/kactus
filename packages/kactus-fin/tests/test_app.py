@@ -124,5 +124,62 @@ class TestHealthEndpoint:
         assert response.headers["content-type"] == "application/json"
 
 
+class TestSecurityHeaders:
+    """Tests for security headers middleware."""
+
+    @pytest.fixture
+    def client(self):
+        from kactus_fin.app import create_app
+        app = create_app()
+        return TestClient(app)
+
+    def test_x_content_type_options(self, client):
+        response = client.get("/health")
+        assert response.headers["x-content-type-options"] == "nosniff"
+
+    def test_x_frame_options(self, client):
+        response = client.get("/health")
+        assert response.headers["x-frame-options"] == "DENY"
+
+    def test_referrer_policy(self, client):
+        response = client.get("/health")
+        assert response.headers["referrer-policy"] == "strict-origin-when-cross-origin"
+
+    def test_permissions_policy(self, client):
+        response = client.get("/health")
+        assert response.headers["permissions-policy"] == "camera=(), microphone=(), geolocation=()"
+
+
+class TestCORSConfiguration:
+    """Tests for CORS configuration."""
+
+    def test_cors_does_not_allow_wildcard_origin(self):
+        """Verify CORS is not configured with allow_origins=['*']."""
+        from kactus_fin.config import Settings
+        s = Settings()
+        assert s.cors_allowed_origins != ["*"]
+        assert "*" not in s.cors_allowed_origins
+
+    def test_cors_allows_configured_origin(self):
+        from kactus_fin.app import create_app
+        app = create_app()
+        client = TestClient(app)
+        response = client.get(
+            "/health",
+            headers={"Origin": "http://localhost:17630"},
+        )
+        assert response.headers.get("access-control-allow-origin") == "http://localhost:17630"
+
+    def test_cors_blocks_unknown_origin(self):
+        from kactus_fin.app import create_app
+        app = create_app()
+        client = TestClient(app)
+        response = client.get(
+            "/health",
+            headers={"Origin": "http://evil.example.com"},
+        )
+        assert response.headers.get("access-control-allow-origin") is None
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

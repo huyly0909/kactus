@@ -29,7 +29,7 @@ class CompanyService:
     def get_company(storage: DuckDBStorage, symbol: str) -> CompanyDetail | None:
         """Get company detail with parsed overview."""
         df = storage.query(
-            f"SELECT * FROM stock_company WHERE symbol = '{symbol}'"
+            "SELECT * FROM stock_company WHERE symbol = ?", [symbol]
         )
         if df.empty:
             return None

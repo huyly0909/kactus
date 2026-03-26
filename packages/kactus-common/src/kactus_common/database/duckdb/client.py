@@ -1,15 +1,11 @@
 import duckdb
 import pandas as pd
-import logging
-from typing import Optional, List
 from contextlib import contextmanager
+
+from loguru import logger
 
 from kactus_common.database.duckdb.consts import UpdateStrategy
 from kactus_common.database.duckdb.schema import Column, Table
-
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 class MockResult:
     """Mock result object that holds fetched data from closed connections."""
@@ -63,11 +59,19 @@ class DatabaseClient:
                 conn.close()
                 logger.debug(f"Closed connection to {self.db_path}")
     
-    def execute(self, query: str):
-        """Execute a SQL query and return the result."""
+    def execute(self, query: str, params: list | None = None):
+        """Execute a SQL query and return the result.
+
+        Args:
+            query: SQL string. Use ``?`` placeholders for parameters.
+            params: Optional list of parameter values for ``?`` placeholders.
+        """
         try:
             with self.get_connection() as conn:
-                result = conn.execute(query)
+                if params:
+                    result = conn.execute(query, params)
+                else:
+                    result = conn.execute(query)
                 # For SELECT queries, fetch all results before connection closes
                 if query.strip().upper().startswith('SELECT'):
                     return MockResult(result.fetchall(), result.description)
@@ -75,7 +79,7 @@ class DatabaseClient:
                     # For non-SELECT queries, return a mock result that indicates success
                     return MockResult(None, None)
         except Exception as e:
-            logger.error(f"Error executing query: {query}. Error: {str(e)}")
+            logger.error("Error executing query: {}. Error: {}", query, str(e))
             raise
     
     def create_table(self, table_name: str, columns: list[Column]):
@@ -189,38 +193,33 @@ class DatabaseClient:
             with self.get_connection() as conn:
                 # Build WHERE clause for deletion based on primary key values
                 if len(primary_key_columns) == 1:
-                    # Single primary key - use IN clause
+                    # Single primary key - use parameterized IN clause
                     pk_col = primary_key_columns[0]
-                    values_list = data[pk_col].unique()
+                    values_list = [self._to_python_type(v) for v in data[pk_col].unique()]
                     if len(values_list) > 0:
-                        values_str = "', '".join(str(v) for v in values_list)
-                        delete_query = f"DELETE FROM {table.name} WHERE {pk_col} IN ('{values_str}')"
-                        conn.execute(delete_query)
-                        logger.info(f"Deleted existing rows with conflicting {pk_col} values")
+                        placeholders = ", ".join("?" for _ in values_list)
+                        delete_query = f"DELETE FROM {table.name} WHERE {pk_col} IN ({placeholders})"
+                        conn.execute(delete_query, values_list)
+                        logger.info("Deleted existing rows with conflicting {} values", pk_col)
                 else:
-                    # Multiple primary keys - need to build more complex WHERE clause
+                    # Multiple primary keys - use parameterized OR conditions
                     where_conditions = []
+                    params: list = []
                     for _, row in data.iterrows():
                         pk_conditions = []
                         for pk_col in primary_key_columns:
                             value = row[pk_col]
                             if pd.isna(value):
                                 pk_conditions.append(f"{pk_col} IS NULL")
-                            elif isinstance(value, str):
-                                escaped_value = value.replace("'", "''")
-                                pk_conditions.append(f"{pk_col} = '{escaped_value}'")
-                            elif isinstance(value, (int, float)):
-                                pk_conditions.append(f"{pk_col} = {value}")
                             else:
-                                # datetime, date, and other types — quote as string
-                                escaped_value = str(value).replace("'", "''")
-                                pk_conditions.append(f"{pk_col} = '{escaped_value}'")
+                                pk_conditions.append(f"{pk_col} = ?")
+                                params.append(self._to_python_type(value))
                         where_conditions.append(f"({' AND '.join(pk_conditions)})")
-                    
+
                     if where_conditions:
                         delete_query = f"DELETE FROM {table.name} WHERE {' OR '.join(where_conditions)}"
-                        conn.execute(delete_query)
-                        logger.info(f"Deleted existing rows with conflicting primary key combinations")
+                        conn.execute(delete_query, params)
+                        logger.info("Deleted existing rows with conflicting primary key combinations")
                 
                 # Insert the new/updated data
                 if not data.empty:
@@ -244,11 +243,11 @@ class DatabaseClient:
                 with self.get_connection() as conn:
                     for col in partition_columns:
                         if col in data.columns:
-                            unique_values = data[col].unique()
-                            values_str = "', '".join(str(v) for v in unique_values)
-                            delete_query = f"DELETE FROM {table.name} WHERE {col} IN ('{values_str}')"
-                            conn.execute(delete_query)
-                            logger.info(f"Deleted partition data for {col} values: {unique_values}")
+                            unique_values = [self._to_python_type(v) for v in data[col].unique()]
+                            placeholders = ", ".join("?" for _ in unique_values)
+                            delete_query = f"DELETE FROM {table.name} WHERE {col} IN ({placeholders})"
+                            conn.execute(delete_query, unique_values)
+                            logger.info("Deleted partition data for {} values: {}", col, unique_values)
                         else:
                             logger.warning(f"Partition column {col} not found in data, skipping partition deletion")
                     
@@ -268,6 +267,19 @@ class DatabaseClient:
             logger.error(f"Error in INSERT_OVERWRITE operation for {table.name}: {str(e)}")
             raise
     
+    @staticmethod
+    def _to_python_type(value):
+        """Convert numpy/pandas types to native Python types for DuckDB params."""
+        import numpy as np
+
+        if isinstance(value, (np.integer,)):
+            return int(value)
+        if isinstance(value, (np.floating,)):
+            return float(value)
+        if isinstance(value, np.bool_):
+            return bool(value)
+        return value
+
     def _dataframe_to_values(self, data: pd.DataFrame) -> str:
         """Convert DataFrame to VALUES clause format for SQL INSERT."""
         # Handle None/NaN values and proper quoting
@@ -297,7 +309,7 @@ class DatabaseClient:
             with self.get_connection() as conn:
                 conn.execute(f"SELECT 1 FROM {table_name} LIMIT 1")
             return True
-        except:
+        except Exception:
             return False
     
     def get_table_info(self, table_name: str) -> pd.DataFrame:

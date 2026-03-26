@@ -23,16 +23,20 @@ class FinanceService:
     ) -> list[FinanceItem]:
         """List finance records with optional filters."""
         conditions: list[str] = []
+        params: list = []
         if symbol:
-            conditions.append(f"symbol = '{symbol.upper()}'")
+            conditions.append("symbol = ?")
+            params.append(symbol.upper())
         if report_type:
-            conditions.append(f"report_type = '{report_type}'")
+            conditions.append("report_type = ?")
+            params.append(report_type)
 
         where = f" WHERE {' AND '.join(conditions)}" if conditions else ""
         df = storage.query(
-            f"SELECT symbol, period, year, quarter, report_type, source, synced_at "
+            "SELECT symbol, period, year, quarter, report_type, source, synced_at "
             f"FROM stock_finance{where} "
-            f"ORDER BY symbol, year DESC, quarter DESC"
+            "ORDER BY symbol, year DESC, quarter DESC",
+            params or None,
         )
         return [FinanceItem(**row) for row in df.to_dict("records")]
 
@@ -40,8 +44,9 @@ class FinanceService:
     def get_finance(storage: DuckDBStorage, symbol: str) -> list[FinanceDetail]:
         """Get all finance records for a symbol with parsed data."""
         df = storage.query(
-            f"SELECT * FROM stock_finance WHERE symbol = '{symbol}' "
-            f"ORDER BY year DESC, quarter DESC"
+            "SELECT * FROM stock_finance WHERE symbol = ? "
+            "ORDER BY year DESC, quarter DESC",
+            [symbol],
         )
         results: list[FinanceDetail] = []
         for row in df.to_dict("records"):

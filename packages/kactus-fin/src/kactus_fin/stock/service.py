@@ -52,9 +52,10 @@ class StockService:
     def get_ohlcv(storage: DuckDBStorage, symbol: str) -> list[OhlcvItem]:
         """Get OHLCV data for a symbol."""
         df = storage.query(
-            f"SELECT symbol, time, interval, open, high, low, close, volume, source "
-            f"FROM stock_ohlcv WHERE symbol = '{symbol}' "
-            f"ORDER BY time DESC LIMIT 200"
+            "SELECT symbol, time, interval, open, high, low, close, volume, source "
+            "FROM stock_ohlcv WHERE symbol = ? "
+            "ORDER BY time DESC LIMIT 200",
+            [symbol],
         )
         return [OhlcvItem(**row) for row in df.to_dict("records")]
 

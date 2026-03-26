@@ -5,7 +5,10 @@ description = "Kactus monorepo"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "pytest>=7.0.0",
+    "kactus-common",
+    "kactus-data",
+    "kactus-fin",
+    "kactus-fin-gateway",
 ]
 
 [tool.uv.workspace]
@@ -20,5 +23,8 @@ kactus-fin-gateway = { workspace = true }
 
 [dependency-groups]
 dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
     "aiosqlite>=0.22.1",
+    "httpx>=0.28.1",
 ]

@@ -74,9 +74,14 @@ class DuckDBStorage:
     # Query
     # ------------------------------------------------------------------
 
-    def query(self, sql: str) -> pd.DataFrame:
-        """Execute a SQL query and return results as a DataFrame."""
-        result = self._client.execute(sql)
+    def query(self, sql: str, params: list | None = None) -> pd.DataFrame:
+        """Execute a SQL query and return results as a DataFrame.
+
+        Args:
+            sql: SQL string. Use ``?`` placeholders for parameters.
+            params: Optional list of parameter values for ``?`` placeholders.
+        """
+        result = self._client.execute(sql, params)
         if result and hasattr(result, "df"):
             return result.df()
         return pd.DataFrame()

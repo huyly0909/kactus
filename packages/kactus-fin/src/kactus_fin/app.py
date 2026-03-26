@@ -1,7 +1,8 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from kactus_common.app_registry import AppManager
 from kactus_common.exceptions import PermissionDeniedError, install_exception_handlers
 from kactus_fin.admin.app import admin_app
@@ -53,6 +54,29 @@ app_manager.set_auth_dependencies(
 
 
 # ---------------------------------------------------------------------------
+# Security headers middleware
+# ---------------------------------------------------------------------------
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add standard security headers to every response."""
+
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        # HSTS only when cookies are marked secure (i.e. prod with HTTPS)
+        settings = get_settings()
+        if settings.session_cookie_secure:
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=63072000; includeSubDomains"
+            )
+        return response
+
+
+# ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
 
@@ -79,14 +103,17 @@ def create_app() -> FastAPI:
     # Exception handlers
     install_exception_handlers(app)
 
-    # CORS
+    # CORS — use configured origins, never wildcard with credentials
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=settings.cors_allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Security headers
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Health check (no feature, standalone)
     app.include_router(health_router)
