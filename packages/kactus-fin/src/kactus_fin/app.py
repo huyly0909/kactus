@@ -12,6 +12,7 @@ from kactus_fin.company.app import company_app
 from kactus_fin.config import get_settings
 from kactus_fin.dependencies import get_auth
 from kactus_fin.finance.app import finance_app
+from kactus_fin.gold.app import gold_app
 from kactus_fin.permission.app import permission_app
 from kactus_fin.project.app import project_app
 from kactus_fin.stock.app import stock_app
@@ -46,6 +47,7 @@ app_manager.register(permission_app)
 app_manager.register(admin_app)
 app_manager.register(company_app)
 app_manager.register(finance_app)
+app_manager.register(gold_app)
 app_manager.register(stock_app)
 app_manager.set_auth_dependencies(
     session_dep=_session_auth,

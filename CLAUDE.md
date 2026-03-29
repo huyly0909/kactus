@@ -84,7 +84,7 @@ async with get_db().get_session() as session:
 ### API Endpoints
 
 - Use `KactusAPIRouter` from `kactus_common.router` (NOT `fastapi.APIRouter`)
-- KactusAPIRouter auto-wraps returns in `ResponseModel`
+- `KactusAPIRouter` auto-wraps returns in `ResponseModel`
 - Return Pydantic schemas (NEVER raw dicts)
 - Access user via `request.state.user` (NOT `Depends()`)
 - Use `@permission(Permission.xxx, PermissionAct.write)` for authorization
@@ -98,6 +98,7 @@ async with get_db().get_session() as session:
 
 - Subclass `KactusException` (NEVER raise bare `Exception`)
 - Provide: code, title, message, tip, data
+- Available: `InvalidArgumentError`, `NotFoundError`, `ConfigurationError`, `ExternalServiceError`, `DataSourceError`, …
 
 ### Logging
 
@@ -111,6 +112,54 @@ logger.info("Processing user {user_id}", user_id=42)
 - Inheritance: `BaseKactusSettings → CommonSettings → DataSettings → Settings`
 - Access via registry proxy: `from kactus_common.config import settings`
 - Only entry-point packages load `.env` files
+- Add new settings to the lowest layer that needs them:
+  - Data-source API keys → `DataSettings` in `kactus_data/config.py`
+  - Server config → `Settings` in `kactus_fin/config.py`
+- All env vars use prefix `KACTUS_` (e.g. `KACTUS_VNAPPMOB_TOKEN`)
+
+## Data Sources
+
+Data sources live in `kactus-data/sources/<domain>/`. Two base classes:
+
+| Base | Use when |
+|------|---------|
+| `VnstockSource` | Wrapping the vnstock Python library |
+| `HttpDataSource` | Polling an external HTTP API |
+
+All sources implement `sync(start_date, end_date, code) -> SyncDataResponse`.
+
+### Implemented sources
+
+| Domain | Class | Code param | Credentials |
+|--------|-------|-----------|-------------|
+| Stock OHLCV | `VnstockOHLCVSource` | stock symbol (e.g. `VNM`) | none |
+| Stock listing | `VnstockListingSource` | `"ALL"` | none |
+| Company | `VnstockCompanySource` | stock symbol | none |
+| Finance | `VnstockFinanceSource` | stock symbol | none |
+| VN gold | `VNAppMobGoldSource` | brand: `sjc`, `doji`, `pnj` | `KACTUS_VNAPPMOB_TOKEN` (15-day expiry) |
+| Global gold | `MetalsAPISource` | metal: `XAU`, `XAG`, `XPT`, `XPD` | `KACTUS_METALS_API_KEY` |
+| VN gold (legacy) | `MihongGoldSource` | brand code | XSRF token |
+
+### DuckDB tables
+
+All tables are defined in `sources/<domain>/tables.py` using `Table` + `Column` from `kactus_common.database.duckdb.schema`.
+
+| Table | Primary Key | Update strategy |
+|-------|-------------|-----------------|
+| `stock_ohlcv` | symbol, time, interval | UPSERT |
+| `stock_listing` | symbol | UPSERT |
+| `stock_company` | symbol | UPSERT |
+| `stock_finance` | symbol, period, year, quarter, report_type | UPSERT |
+| `gold_vn` | brand, type | UPSERT |
+| `gold_global` | metal, currency | UPSERT |
+
+ALWAYS use parameterized queries — NEVER f-strings:
+```python
+# ✅
+storage.query("SELECT * FROM gold_vn WHERE brand = ?", [brand])
+# ❌
+storage.query(f"SELECT * FROM gold_vn WHERE brand = '{brand}'")
+```
 
 ## Where to Put Code
 
@@ -124,16 +173,25 @@ logger.info("Processing user {user_id}", user_id=42)
 | ETL job | `kactus-data/jobs/` |
 | API endpoint (main) | `kactus-fin/<feature>/api.py` |
 | API endpoint (gateway) | `kactus-fin-gateway/api/` |
+| Data-source API keys | `DataSettings` in `kactus_data/config.py` |
 
 ## Adding a New Feature (Scaffold)
 
-1. Create directory: `<package>/<feature>/`
-2. Files: `const.py`, `model.py`, `schema.py`, `service.py`, `api.py`, `app.py`
-3. Register model in package `__init__.py` `MODELS` list
-4. Register app in main `app.py` via `AppManager`
-5. Add to `Settings.INSTALLED_PACKAGES`
-6. Generate migration: `python manage.py fin db migrate -m "add <feature>"`
-7. Write tests
+### API feature (kactus-fin)
+
+1. Create `packages/kactus-fin/src/kactus_fin/<feature>/`
+2. Files: `__init__.py`, `schema.py`, `service.py`, `api.py`, `app.py`
+3. If you need an OLTP model: add `model.py`, register in `kactus_fin/__init__.py` `MODELS`, generate migration
+4. Register `KactusApp` in `kactus_fin/app.py` via `app_manager.register(<feature>_app)`
+5. Write tests in `packages/kactus-fin/tests/test_<feature>_service.py`
+
+### Data source (kactus-data)
+
+1. Create or extend `packages/kactus-data/src/kactus_data/sources/<domain>/`
+2. Files: `__init__.py`, `<provider>.py` (subclass `HttpDataSource` or `VnstockSource`), `tables.py`
+3. If new credentials needed: add field to `DataSettings` in `kactus_data/config.py`
+4. Update `sources/<domain>/__init__.py` to export source + table
+5. Wire into a service in kactus-fin using `SyncPipeline`
 
 ## Model Registration (Critical)
 
@@ -178,3 +236,5 @@ uv sync --all-packages
 - ❌ `import logging` — use `from loguru import logger`
 - ❌ Manually set `created_by`/`updated_by` — `AuditMixin` auto-populates
 - ❌ Skip tests — every feature needs tests
+- ❌ F-strings in DuckDB queries — always use `?` parameterized queries
+- ❌ Store API keys in code — use `.env` with `KACTUS_` prefix

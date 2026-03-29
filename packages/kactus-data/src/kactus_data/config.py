@@ -37,6 +37,12 @@ class DataSettings(CommonSettings):
 
     data_source: str = "KBS"
 
+    # Gold — VNAppMob API v2 (Vietnamese domestic gold)
+    vnappmob_token: str | None = None
+
+    # Gold — Metals-API (global precious metals)
+    metals_api_key: str | None = None
+
     model_config = SettingsConfigDict(
         env_prefix="KACTUS_",
         env_file=".env",
