@@ -21,4 +21,42 @@ kactus-fin-gateway = { workspace = true }
 [dependency-groups]
 dev = [
     "aiosqlite>=0.22.1",
+    "pytest-asyncio>=0.26.0",
+    "httpx>=0.28.0",
+    "pytest-cov>=7.0.0",
+]
+
+# pytest config is in pytest.ini (single source of truth)
+
+# ---------------------------------------------------------------------------
+# Coverage gate — invoked explicitly by CI as
+#   uv run pytest --cov --cov-fail-under=80
+# Local dev keeps `uv run pytest` fast (no coverage measurement). The 80%
+# threshold is the target; adjust --cov-fail-under as coverage improves.
+# ---------------------------------------------------------------------------
+
+[tool.coverage.run]
+branch = false
+source = [
+    "packages/kactus-common/src/kactus_common",
+    "packages/kactus-data/src/kactus_data",
+    "packages/kactus-fin/src/kactus_fin",
+    "packages/kactus-fin-gateway/src/kactus_fin_gateway",
+]
+omit = [
+    "*/tests/*",
+    "*/migrations/*",
+    "*/__main__.py",
+]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+skip_covered = false
+exclude_also = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "\\.\\.\\.",
 ]

@@ -58,7 +58,10 @@ class KactusAPIRouter(APIRouter):
         module = sys.modules.get(endpoint.__module__, None)
         globalns = getattr(module, "__dict__", None)
         try:
-            hints = get_type_hints(endpoint, globalns=globalns)
+            # include_extras=True preserves Annotated metadata (e.g. the
+            # WithJsonSchema attached to OpaqueDict) so it survives the
+            # ResponseModel[T] generic parameterisation below.
+            hints = get_type_hints(endpoint, globalns=globalns, include_extras=True)
         except Exception:
             hints = {}
         return_type = hints.get("return")
@@ -94,3 +97,81 @@ class KactusAPIRouter(APIRouter):
         actual_wrapper.__signature__ = inspect.signature(endpoint)
 
         return super().add_api_route(path, actual_wrapper, **kwargs)
+
+
+def multipart_upload_openapi(field_name: str = "files") -> dict[str, Any]:
+    """Generate ``openapi_extra`` for a multi-file upload endpoint.
+
+    Swagger UI (as of v5) does not render ``list[UploadFile]`` as file-picker
+    widgets in FastAPI ≥0.100 / OpenAPI 3.1 because the generated schema uses
+    ``contentMediaType`` instead of ``format: binary``.  This helper produces
+    the correct ``openapi_extra`` override so the docs render properly.
+
+    Usage::
+
+        @router.post("", **multipart_upload_openapi("files"))
+        @provide_session
+        async def upload_files(
+            files: list[UploadFile] = File(...),
+            ...
+        ):
+            ...
+    """
+    return {
+        "openapi_extra": {
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "multipart/form-data": {
+                        "schema": {
+                            "type": "object",
+                            "required": [field_name],
+                            "properties": {
+                                field_name: {
+                                    "type": "array",
+                                    "items": {"type": "string", "format": "binary"},
+                                    "title": field_name.replace("_", " ").title(),
+                                }
+                            },
+                        }
+                    }
+                },
+            }
+        }
+    }
+
+
+def multipart_upload_openapi_multi(
+    fields: dict[str, str], *, required: list[str] | None = None
+) -> dict[str, Any]:
+    """Generate ``openapi_extra`` for a typed multi-field file upload endpoint.
+
+    Each entry in ``fields`` becomes one labelled file-picker field in Swagger
+    UI. Use this when the endpoint accepts several distinct file kinds.
+
+    Args:
+        fields: Map of multipart-field-name → human-readable title shown in
+            Swagger UI. Order is preserved.
+        required: Optional subset of ``fields.keys()`` that the endpoint
+            requires. Defaults to none (every field optional).
+    """
+    properties = {
+        name: {
+            "type": "array",
+            "items": {"type": "string", "format": "binary"},
+            "title": title,
+        }
+        for name, title in fields.items()
+    }
+    schema: dict[str, Any] = {"type": "object", "properties": properties}
+    if required:
+        schema["required"] = list(required)
+    return {
+        "openapi_extra": {
+            "requestBody": {
+                "required": bool(required),
+                "content": {"multipart/form-data": {"schema": schema}},
+            }
+        }
+    }
+

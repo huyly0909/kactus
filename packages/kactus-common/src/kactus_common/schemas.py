@@ -1,20 +1,40 @@
 """Shared Pydantic schemas and serialisation helpers."""
 
-from typing import Annotated, Generic, TypeVar, get_args
+from typing import Annotated, Any, Generic, TypeVar, get_args
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     PlainSerializer,
     ValidationInfo,
+    WithJsonSchema,
     field_validator,
 )
 
+# FancyInt serializes int → str in JSON to prevent JavaScript precision loss
 FancyInt = Annotated[
     int, PlainSerializer(lambda v: str(v), return_type=str, when_used="json")
 ]
+
+# FancyFloat serializes float → str in JSON for precision
 FancyFloat = Annotated[
     float, PlainSerializer(lambda v: str(v), return_type=str, when_used="json")
+]
+
+# OpaqueDict: a `dict[str, Any]` whose generated JSON schema uses
+# ``additionalProperties: {}`` (empty schema = "any") instead of the bare
+# ``additionalProperties: true`` Pydantic emits by default. Use this for
+# fields whose shape genuinely varies — keeps openapi-python-client and similar
+# code generators happy without falsely promising a typed structure.
+OpaqueDict = Annotated[
+    dict[str, Any],
+    WithJsonSchema(
+        {
+            "type": "object",
+            "additionalProperties": {},
+            "description": "Opaque object whose shape depends on context.",
+        }
+    ),
 ]
 
 
@@ -30,9 +50,15 @@ class ResponseModel(BaseModel, Generic[T]):
 
 
 class Pagination(BaseModel, Generic[T]):
-    """Paginated list response."""
+    """Paginated list response.
+
+    ``page`` / ``page_size`` carry the echo of the request so the client can
+    render pagination controls without remembering its own request.
+    """
 
     total: int
+    page: int = 1
+    page_size: int = 0
     items: list[T]
 
 
@@ -64,3 +90,15 @@ class BaseSchema(BaseModel):
         if str not in ann_types:
             return None
         return v
+
+
+class MessageResponse(BaseSchema):
+    """Standard message-only response (e.g. for deletes)."""
+
+    message: str = "ok"
+
+
+class OkResponse(BaseSchema):
+    """Simple OK acknowledgement response."""
+
+    message: str = "ok"

@@ -21,6 +21,8 @@ Architecture::
           └── gw Settings       ← host, port, … (loads .env)
 """
 
+from typing import ClassVar
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -55,6 +57,9 @@ class CommonSettings(BaseKactusSettings):
     Contains infrastructure variables shared across all packages:
     database connections, crypto keys, session/auth config, etc.
     """
+
+    # Packages whose MODELS list should be imported by load_models()
+    INSTALLED_PACKAGES: ClassVar[list[str]] = ["kactus_common"]
 
     # OLTP database (PostgreSQL / MySQL)
     database_url: str = "postgresql://kactus:kactus@localhost:5432/kactus"

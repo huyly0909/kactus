@@ -21,6 +21,8 @@ from functools import lru_cache
 
 from pydantic_settings import SettingsConfigDict
 
+from typing import ClassVar
+
 from kactus_common.config import CommonSettings, register_settings
 
 
@@ -34,6 +36,8 @@ class DataSettings(CommonSettings):
     the ``KACTUS_`` prefix.  When inherited by a downstream package
     (e.g. kactus-fin), that package's ``model_config`` takes precedence.
     """
+
+    INSTALLED_PACKAGES: ClassVar[list[str]] = CommonSettings.INSTALLED_PACKAGES + ["kactus_data"]
 
     data_source: str = "KBS"
 
