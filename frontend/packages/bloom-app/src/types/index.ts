@@ -1,6 +1,6 @@
 export type { ApiResponse, PaginatedResponse, ApiError } from './api';
 export type {
-  User,
+  User as AuthUser,
   Role,
   PermissionAct,
   PermissionItem,

@@ -1,12 +1,14 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      '@kactus-bloom/ui': path.resolve(__dirname, '../bloom-ui/src'),
+      '@': path.resolve(__dirname, './src'),
+      '@modules': path.resolve(__dirname, './src/modules'),
     },
   },
   server: {
@@ -21,11 +23,6 @@ export default defineConfig({
         target: 'ws://localhost:17600',
         ws: true,
       },
-    },
-  },
-  css: {
-    postcss: {
-      plugins: [],
     },
   },
 });
