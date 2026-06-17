@@ -5,7 +5,11 @@ description = "Kactus monorepo"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "apscheduler>=3.11.2",
     "pytest>=7.0.0",
+    "pytz>=2026.2",
+    "sse-starlette>=3.4.4",
+    "vnstock>=3.4.2",
 ]
 
 [tool.uv.workspace]

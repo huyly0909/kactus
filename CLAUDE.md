@@ -23,6 +23,10 @@ kactus-fin ──▶ kactus-data ──▶ kactus-common
 
 Never import from app packages into `kactus-common`.
 
+### Planned: Portfolio feature
+
+Multi-asset watchlist (STOCK/GOLD; COIN deferred) + hourly vnstock/mihong crawl cron + in-app SSE broadcast. Design blueprint: [docs/04-portfolio-feature.md](docs/04-portfolio-feature.md) (not yet implemented). When built: ETL/cron in `kactus-data`, API/SSE/scheduler wiring in `kactus-fin`, models + SSE broker in `kactus-common`. Scheduler + SSE broker are in-process → run `uvicorn --workers 1` (scale-out via Redis pub/sub + a Celery/worker for cron). vnstock key is wired via `vnai.setup_api_key()`, not an env var.
+
 ## Tech Stack
 
 ### Backend

@@ -152,6 +152,9 @@
 | Frontend | **WebSocket integration** | 🚧 Hook ready | Chưa có backend WS endpoint |
 | Backend | **Gateway features** | 🚧 Skeleton | Chỉ có health check |
 | Backend | **Coin data source** | 🚧 Module tạo rồi | Chưa implement |
+| Backend | **Portfolio feature (multi-asset)** | 🚧 Design done | Blueprint: [04-portfolio-feature.md](04-portfolio-feature.md) — watchlist STOCK/GOLD, COIN defer |
+| Backend | **Scheduled crawl + SSE broadcast** | 🚧 Design done | APScheduler in-process (single-worker) + SSE "data refreshed" nudge; xem [04](04-portfolio-feature.md) |
+| Frontend | **Portfolio UI** | 🚧 Design done | Pages + asset picker (tag VN30/VN100) + quotes/news + refresh buttons + `useMarketStream` (SSE) |
 
 ---
 

@@ -205,6 +205,36 @@ SyncResult { rows_fetched, rows_stored, duration_ms }
 
 ---
 
+## Portfolio Crawl & SSE Workflow (📋 planned)
+
+> Chi tiết: [04-portfolio-feature.md](04-portfolio-feature.md). Tóm tắt luồng cron → crawl → SSE.
+
+```
+APScheduler (chạy trong kactus-fin lifespan, tz Asia/Ho_Chi_Minh, mon-fri 9-15h)
+   │
+   │ 1. SymbolProvider() — fin mở session, lấy union mã theo asset_type
+   │    get_union_codes_by_type() = DISTINCT(portfolio_items.code) ∪ VN30 ∪ VN100
+   ▼
+kactus_data.jobs.crawl_*(codes)   ← portfolio-ignorant, chỉ nhận list[str]
+   │
+   │ 2. anyio.to_thread.run_sync(...) — vnstock/mihong blocking → DuckDBStorage.store()
+   │    STOCK→vnstock (price_board batch, news, foreign, ratios, ohlcv, events)
+   │    GOLD→mihong (giá vàng)        COIN→defer
+   │    ghi crawl_runs (audit)
+   ▼
+dispatch MarketDataRefreshed{asset_type, kind, codes}  (foreground/blinker)
+   │
+   │ 3. fin handler → SSEBroker.publish(nudge)
+   ▼
+EventSource clients (browser)  →  TanStack Query invalidate  →  refetch REST
+```
+
+**Khác với Data Pipeline thường**: union mã được tính ở `kactus-fin` (biết portfolio) rồi inject `list[str]` xuống `kactus-data` (không biết portfolio) — giữ dependency một chiều. Manual refresh dùng **cùng** code path (one-shot job) + dedup qua `crawl_runs`.
+
+**Lưu ý deploy**: scheduler + SSE broker là **in-process** → v1 chạy `uvicorn --workers 1`. Scale-out: Redis pub/sub cho SSE + Celery/worker riêng cho cron.
+
+---
+
 ## Frontend Application Workflow
 
 ### App Initialization
