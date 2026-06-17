@@ -49,7 +49,40 @@
     "select_project": "Select project",
     "gold": "Gold Prices",
     "stock": "Stock Market",
-    "finance": "Finance"
+    "finance": "Finance",
+    "portfolios": "Portfolios"
+  },
+  "portfolio": {
+    "title": "Watchlists",
+    "subtitle": "Track stocks, gold, and market data",
+    "create_title": "Create portfolio",
+    "name": "Portfolio name",
+    "name_placeholder": "e.g. Long-term holdings",
+    "description": "Description",
+    "empty_list": "No portfolios yet. Create your first one.",
+    "open_detail": "Open detail →",
+    "refresh": "Refresh",
+    "refresh_scheduled": "Data refresh scheduled",
+    "refresh_in_progress": "A refresh is already in progress",
+    "data_refreshed": "{{kind}} data was just updated",
+    "quotes": "Quotes",
+    "news": "News",
+    "empty": "No instruments in this portfolio yet",
+    "search_asset": "Search a code (e.g. FPT, VCB)",
+    "item_added": "Added to portfolio",
+    "item_add_error": "Could not add this code",
+    "asset_type": {
+      "STOCK": "Stock",
+      "GOLD": "Gold",
+      "COIN": "Coin"
+    },
+    "col": {
+      "code": "Code",
+      "type": "Type",
+      "price": "Price",
+      "change": "Change",
+      "volume": "Vol"
+    }
   },
   "errors": {
     "required": "This field is required",

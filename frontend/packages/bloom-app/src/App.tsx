@@ -4,6 +4,8 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { LoginPage } from '@/modules/core/auth/pages/LoginPage';
+import { PortfolioListPage } from '@modules/portfolio/pages/PortfolioListPage';
+import { PortfolioDetailPage } from '@modules/portfolio/pages/PortfolioDetailPage';
 
 /**
  * App shell — mirrors Builtiful's App.tsx pattern:
@@ -20,6 +22,8 @@ function AppRoutes() {
           index
           element={<div className="p-8 text-muted-foreground">Home — select a module</div>}
         />
+        <Route path="portfolios" element={<PortfolioListPage />} />
+        <Route path="portfolios/:id" element={<PortfolioDetailPage />} />
         <Route path="*" element={<div className="p-8 text-muted-foreground">Page not found</div>} />
       </Route>
     </Routes>

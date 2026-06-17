@@ -1,7 +1,16 @@
 import { useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { LayoutDashboard, LogOut, ChevronLeft, ChevronRight, Menu, X, User } from 'lucide-react';
+import {
+  LayoutDashboard,
+  LogOut,
+  ChevronLeft,
+  ChevronRight,
+  Menu,
+  X,
+  User,
+  Briefcase,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
@@ -15,6 +24,7 @@ interface SidebarItem {
 
 const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: 'dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard, path: '/' },
+  { id: 'portfolios', labelKey: 'nav.portfolios', icon: Briefcase, path: '/portfolios' },
 ];
 
 export function DashboardLayout() {

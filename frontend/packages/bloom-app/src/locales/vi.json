@@ -49,7 +49,40 @@
     "select_project": "Chọn dự án",
     "gold": "Giá vàng",
     "stock": "Chứng khoán",
-    "finance": "Tài chính"
+    "finance": "Tài chính",
+    "portfolios": "Danh mục"
+  },
+  "portfolio": {
+    "title": "Danh mục theo dõi",
+    "subtitle": "Theo dõi cổ phiếu, vàng và dữ liệu thị trường",
+    "create_title": "Tạo danh mục",
+    "name": "Tên danh mục",
+    "name_placeholder": "VD: Danh mục dài hạn",
+    "description": "Mô tả",
+    "empty_list": "Chưa có danh mục nào. Tạo danh mục đầu tiên của bạn.",
+    "open_detail": "Mở chi tiết →",
+    "refresh": "Làm mới",
+    "refresh_scheduled": "Đã lên lịch làm mới dữ liệu",
+    "refresh_in_progress": "Đang làm mới, vui lòng đợi",
+    "data_refreshed": "Dữ liệu {{kind}} vừa được cập nhật",
+    "quotes": "Bảng giá",
+    "news": "Tin tức",
+    "empty": "Chưa có mã nào trong danh mục",
+    "search_asset": "Tìm mã (VD: FPT, VCB)",
+    "item_added": "Đã thêm vào danh mục",
+    "item_add_error": "Không thể thêm mã này",
+    "asset_type": {
+      "STOCK": "Cổ phiếu",
+      "GOLD": "Vàng",
+      "COIN": "Tiền số"
+    },
+    "col": {
+      "code": "Mã",
+      "type": "Loại",
+      "price": "Giá",
+      "change": "Thay đổi",
+      "volume": "KL"
+    }
   },
   "errors": {
     "required": "Trường này là bắt buộc",
