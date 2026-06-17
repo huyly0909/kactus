@@ -111,13 +111,28 @@ class DatabaseClient:
         if data.empty:
             logger.warning(f"No data to insert into {table_name}")
             return
-        
-        # Convert DataFrame to records for DuckDB
-        values_str = self._dataframe_to_values(data)
-        query = f"INSERT INTO {table_name} VALUES {values_str}"
+
         with self.get_connection() as conn:
-            conn.execute(query)
+            self._insert_df(conn, table_name, data)
         logger.info(f"Inserted {len(data)} rows into {table_name}")
+
+    def _insert_df(self, conn, table_name: str, data: pd.DataFrame) -> None:
+        """Insert a DataFrame via DuckDB's native registration.
+
+        Registers the DataFrame as a temporary view and runs
+        ``INSERT INTO ... SELECT * FROM view`` instead of building a string
+        ``VALUES`` clause.  This is safe for arbitrary text (e.g. Vietnamese
+        news bodies containing quotes, newlines or backslashes) and far faster
+        for large batches — DuckDB reads the columnar data directly, no manual
+        escaping.  Column matching is positional, matching the previous
+        ``VALUES`` behaviour.
+        """
+        view = "_kactus_insert_view"
+        conn.register(view, data)
+        try:
+            conn.execute(f"INSERT INTO {table_name} SELECT * FROM {view}")
+        finally:
+            conn.unregister(view)
     
     def update_table(self, table: Table, data: pd.DataFrame):
         """Update table based on the specified update strategy."""
@@ -148,11 +163,9 @@ class DatabaseClient:
                 
                 # Insert new data
                 if not data.empty:
-                    values_str = self._dataframe_to_values(data)
-                    query = f"INSERT INTO {table_name} VALUES {values_str}"
-                    conn.execute(query)
+                    self._insert_df(conn, table_name, data)
                     logger.info(f"Inserted {len(data)} rows into {table_name}")
-            
+
         except Exception as e:
             logger.error(f"Error in REPLACE operation for {table_name}: {str(e)}")
             raise
@@ -161,10 +174,8 @@ class DatabaseClient:
         """Append new data to the table without checking for duplicates."""
         try:
             if not data.empty:
-                values_str = self._dataframe_to_values(data)
-                query = f"INSERT INTO {table_name} VALUES {values_str}"
                 with self.get_connection() as conn:
-                    conn.execute(query)
+                    self._insert_df(conn, table_name, data)
                 logger.info(f"Inserted {len(data)} rows into {table_name}")
         except Exception as e:
             logger.error(f"Error in APPEND operation for {table_name}: {str(e)}")
@@ -224,11 +235,9 @@ class DatabaseClient:
                 
                 # Insert the new/updated data
                 if not data.empty:
-                    values_str = self._dataframe_to_values(data)
-                    query = f"INSERT INTO {table.name} VALUES {values_str}"
-                    conn.execute(query)
+                    self._insert_df(conn, table.name, data)
                     logger.info(f"Inserted {len(data)} rows into {table.name}")
-            
+
         except Exception as e:
             logger.error(f"Error in UPSERT operation for {table.name}: {str(e)}")
             raise
@@ -254,9 +263,7 @@ class DatabaseClient:
                     
                     # Insert new data
                     if not data.empty:
-                        values_str = self._dataframe_to_values(data)
-                        query = f"INSERT INTO {table.name} VALUES {values_str}"
-                        conn.execute(query)
+                        self._insert_df(conn, table.name, data)
                         logger.info(f"Inserted {len(data)} rows into {table.name}")
             else:
                 # If no partition columns specified, behave like REPLACE

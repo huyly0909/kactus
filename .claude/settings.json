@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "Edit",
+      "Write",
+      "Read",
+      "WebFetch",
+      "Grep",
+      "Glob",
+      "Agent"
+    ]
+  },
+  "env": {
+    "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1",
+    "MAX_THINKING_TOKENS": "300000"
+  },
+  "autoCompactWindow": 300000
+}

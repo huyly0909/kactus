@@ -41,6 +41,16 @@ class DataSettings(CommonSettings):
 
     data_source: str = "KBS"
 
+    # vnstock paid tier — unlocked via ``vnai.setup_api_key`` (see
+    # ``sources.stock.auth.init_vnstock_auth``), NOT an env var read by vnstock
+    # itself.  With ``env_prefix="KACTUS_"`` this binds to ``KACTUS_VNSTOCK_API_KEY``.
+    # Empty → guest tier (~20 req/min).
+    vnstock_api_key: str = ""
+
+    # mihong.vn XSRF token for gold prices (``KACTUS_MIHONG_XSRF_TOKEN``).
+    # Empty → gold crawl is skipped (logged, not fatal).
+    mihong_xsrf_token: str = ""
+
     model_config = SettingsConfigDict(
         env_prefix="KACTUS_",
         env_file=".env",

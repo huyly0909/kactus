@@ -31,6 +31,11 @@ class Settings(DataSettings):
     host: str = "0.0.0.0"
     port: int = 17600
 
+    # Portfolio crawler — disable in tests / one-off CLI to avoid spinning the
+    # in-process APScheduler.  Single-worker only (in-process scheduler + SSE):
+    # run `uvicorn --workers 1`; scale-out needs Redis pub/sub + a Celery worker.
+    enable_portfolio_scheduler: bool = True
+
     model_config = SettingsConfigDict(
         env_prefix="KACTUS_",
         env_file=".env",

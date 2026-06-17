@@ -139,6 +139,17 @@
 
 ---
 
+#### Portfolio feature (multi-asset watchlist + ETL/cron + SSE) ✅
+
+Đầy đủ blueprint [04-portfolio-feature.md](04-portfolio-feature.md). 280 backend tests pass; frontend `tsc -b` + `vite build` xanh. Chưa verify với dữ liệu vnstock thật.
+
+- [x] **kactus-common** — models (`portfolios`, `portfolio_items`, `supported_assets`, `crawl_runs`) + service (`get_union_codes_by_type`, catalog, crawl-run dedup) + `events` + `sse/broker.py` + `symbol_provider` Protocol
+- [x] **kactus-data** — batch market sources (price_board/news/events/foreign/ratios + catalog VN30/VN100) + `AssetProvider` registry (STOCK→vnstock, GOLD→mihong, COIN defer) + `jobs/crawl.py` + `jobs/scheduler.py` (APScheduler) + CLI `data portfolio`
+- [x] **kactus-fin** — `portfolio/api.py` (user-owned CRUD, items, quotes/news, refresh dedup, SSE `/stream`) + admin + lifespan wiring (auth → SSE handler → scheduler) + Alembic `a1b2c3d4e5f6`
+- [x] **kactus-bloom** — service + hooks (`usePortfolioQuery`, `useMarketStream`) + list/detail pages + i18n (vi+en) + route/sidebar
+- [x] **Phase 0** — `vnstock_api_key`/`mihong_xsrf_token` config + `init_vnstock_auth` + DuckDB `register(df)` (text-safe)
+- [ ] Verify với key vnstock thật + dữ liệu live (cần server chạy)
+
 ## 🚧 Features đang làm (In Progress)
 
 | Area | Feature | Trạng thái | Ghi chú |
@@ -151,10 +162,7 @@
 | Frontend | **Dashboard real data** | 🚧 UI done, data hardcoded | Cần connect API |
 | Frontend | **WebSocket integration** | 🚧 Hook ready | Chưa có backend WS endpoint |
 | Backend | **Gateway features** | 🚧 Skeleton | Chỉ có health check |
-| Backend | **Coin data source** | 🚧 Module tạo rồi | Chưa implement |
-| Backend | **Portfolio feature (multi-asset)** | 🚧 Design done | Blueprint: [04-portfolio-feature.md](04-portfolio-feature.md) — watchlist STOCK/GOLD, COIN defer |
-| Backend | **Scheduled crawl + SSE broadcast** | 🚧 Design done | APScheduler in-process (single-worker) + SSE "data refreshed" nudge; xem [04](04-portfolio-feature.md) |
-| Frontend | **Portfolio UI** | 🚧 Design done | Pages + asset picker (tag VN30/VN100) + quotes/news + refresh buttons + `useMarketStream` (SSE) |
+| Backend | **Coin data source** | 🚧 Module tạo rồi | Chưa implement (COIN provider defer trong portfolio) |
 
 ---
 

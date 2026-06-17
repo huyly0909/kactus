@@ -205,9 +205,9 @@ SyncResult { rows_fetched, rows_stored, duration_ms }
 
 ---
 
-## Portfolio Crawl & SSE Workflow (📋 planned)
+## Portfolio Crawl & SSE Workflow (✅ implemented)
 
-> Chi tiết: [04-portfolio-feature.md](04-portfolio-feature.md). Tóm tắt luồng cron → crawl → SSE.
+> Chi tiết: [04-portfolio-feature.md](04-portfolio-feature.md) (§16 As-built). Tóm tắt luồng cron → crawl → SSE.
 
 ```
 APScheduler (chạy trong kactus-fin lifespan, tz Asia/Ho_Chi_Minh, mon-fri 9-15h)

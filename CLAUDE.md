@@ -23,9 +23,9 @@ kactus-fin ──▶ kactus-data ──▶ kactus-common
 
 Never import from app packages into `kactus-common`.
 
-### Planned: Portfolio feature
+### Portfolio feature (✅ implemented)
 
-Multi-asset watchlist (STOCK/GOLD; COIN deferred) + hourly vnstock/mihong crawl cron + in-app SSE broadcast. Design blueprint: [docs/04-portfolio-feature.md](docs/04-portfolio-feature.md) (not yet implemented). When built: ETL/cron in `kactus-data`, API/SSE/scheduler wiring in `kactus-fin`, models + SSE broker in `kactus-common`. Scheduler + SSE broker are in-process → run `uvicorn --workers 1` (scale-out via Redis pub/sub + a Celery/worker for cron). vnstock key is wired via `vnai.setup_api_key()`, not an env var.
+Multi-asset watchlist (STOCK/GOLD; COIN deferred) + scheduled vnstock/mihong crawl + in-app SSE broadcast. Docs: [docs/04-portfolio-feature.md](docs/04-portfolio-feature.md) (see §16 As-built). ETL/cron/`AssetProvider` registry in `kactus-data`; API/SSE/scheduler wiring + admin in `kactus-fin` (`kactus_fin/portfolio/`); models + service + SSE broker + events in `kactus-common` (`kactus_common/portfolio/`, `kactus_common/sse/`); UI in `kactus-bloom` (`modules/portfolio/`). Portfolios are **user-owned** (ownership in service, not Casbin `@permission`). Scheduler + SSE broker are in-process → run `uvicorn --workers 1` (cờ `enable_portfolio_scheduler`; scale-out via Redis pub/sub + Celery). vnstock key via `vnai.setup_api_key()` reading `KACTUS_VNSTOCK_API_KEY` (no `validation_alias`); gold via `KACTUS_MIHONG_XSRF_TOKEN`. Blocking calls wrapped in `asyncio.to_thread`; DuckDB writes use `conn.register(df)`.
 
 ## Tech Stack
 
