@@ -4,11 +4,13 @@ version = "0.1.0"
 description = "Data scraping, collection, and ETL pipelines"
 requires-python = ">=3.12"
 dependencies = [
+    "apscheduler>=3.11.2",
     "kactus-common",
     "pandas>=3.0.1",
+    "pytz>=2026.2",
     "requests>=2.32.5",
     "typer>=0.24.1",
-    "vnstock>=3.0.0",
+    "vnstock>=3.4.2",
 ]
 
 [tool.uv.sources]

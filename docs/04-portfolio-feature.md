@@ -288,9 +288,9 @@ Implement bám sát thiết kế; các điểm lệch đáng ghi nhớ:
 5. **OHLCV**: tái dùng `VnstockOHLCVSource` + `SyncPipeline` + bảng `stock_ohlcv` có sẵn (job `crawl_ohlcv` riêng trong scheduler), **không** nhồi vào `provider.crawl`. Provider.crawl phụ trách quotes/news/foreign/ratios/events.
 6. **Gold**: cần `KACTUS_MIHONG_XSRF_TOKEN`; thiếu → `GoldAssetProvider.crawl` skip (log, không lỗi). Catalog gold seed sẵn (SJC/999/DOJI/PNJ).
 7. **Frontend**: components `dialog`/`combobox`(asset picker)/`table` **tự viết** bằng primitive có sẵn (button/card/input/badge/skeleton) — **không** chạy shadcn CLI (tránh phụ thuộc mạng/Radix mới). `useMarketStream` mount trong **PortfolioDetailPage** (chưa mount global layout).
-8. **Deps**: `pytz`/`apscheduler`/`sse-starlette` ở **root `pyproject.toml`** (shared venv) — chưa tách per-package.
+8. **Deps**: đã **tách per-package** (2026-06-18) — `apscheduler`/`pytz`/`vnstock` → kactus-data, `sse-starlette` + `kactus-data` → kactus-fin, root chỉ còn `pytest`. Xem [05 §3](05-portfolio-verification-log.md).
 9. **Scheduler toggle**: cờ `enable_portfolio_scheduler` (fin Settings) tắt APScheduler khi test/CLI. Lifespan chỉ chạy khi server thật start (ASGITransport test build runtime trực tiếp).
-10. **Chưa test**: SSE HTTP-stream endpoint (giới hạn ASGITransport với streaming) — đã test broker fan-out + event→broker bridge. Verify với dữ liệu vnstock thật cần key + chạy server.
+10. **Đã verify live** (2026-06-18): quotes + catalog + refresh + SSE chạy E2E qua curl với key thật. **Nhưng** news/events/ratios/foreign_trade **hỏng** trên vnstock 3.4.2 (TCBS chết). Chi tiết + known issues: [05-portfolio-verification-log.md](05-portfolio-verification-log.md).
 
 ### Cách chạy / verify
 

@@ -10,10 +10,13 @@ dependencies = [
     "pydantic-settings>=2.7.0",
     "alembic>=1.18.4",
     "psycopg2-binary>=2.9.11",
+    "sse-starlette>=3.4.4",
+    "kactus-data",
 ]
 
 [tool.uv.sources]
 kactus-common = { workspace = true }
+kactus-data = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
