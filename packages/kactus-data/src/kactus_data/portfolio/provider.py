@@ -22,7 +22,6 @@ from kactus_data.sources.gold.portfolio_tables import GOLD_PRICE_BOARD_TABLE
 from kactus_data.sources.stock.market import StockMarketSource, _to_table_df
 from kactus_data.sources.stock.portfolio_tables import (
     STOCK_EVENTS_TABLE,
-    STOCK_FOREIGN_TRADE_TABLE,
     STOCK_NEWS_TABLE,
     STOCK_PRICE_BOARD_TABLE,
     STOCK_RATIOS_TABLE,
@@ -65,19 +64,32 @@ class AssetProvider(ABC):
 
 
 class StockAssetProvider(AssetProvider):
-    """STOCK provider — vnstock price board, news, foreign flow, ratios, events."""
+    """STOCK provider — vnstock price board, news, ratios, events.
+
+    ``foreign_trade`` is intentionally NOT wired: vnstock 4.x serves stock data via
+    VCI, which does not implement foreign-flow (raises ``NotImplementedError``) — it
+    was only available from the now-dead TCBS provider. The enum/table/market method
+    are kept dormant so it can be re-enabled if a source ever provides it.
+    """
 
     asset_type = AssetType.STOCK
 
     def __init__(
-        self, storage: DuckDBStorage, market: StockMarketSource | None = None
+        self,
+        storage: DuckDBStorage,
+        market: StockMarketSource | None = None,
+        decision_market: StockMarketSource | None = None,
     ) -> None:
         self.storage = storage
+        # ``market`` serves quotes + catalog (settings source, e.g. KBS).
+        # ``decision_market`` serves news/events/ratios — these are near-empty on
+        # KBS (news≈1, events=0 live) but rich on VCI, so they are routed to a
+        # dedicated VCI-backed source regardless of the quotes source.
         self.market = market or StockMarketSource()
+        self.decision_market = decision_market or StockMarketSource(source="VCI")
         self._kind_table: dict[CrawlKind, Table] = {
             CrawlKind.QUOTES: STOCK_PRICE_BOARD_TABLE,
             CrawlKind.NEWS: STOCK_NEWS_TABLE,
-            CrawlKind.FOREIGN_TRADE: STOCK_FOREIGN_TRADE_TABLE,
             CrawlKind.RATIOS: STOCK_RATIOS_TABLE,
             CrawlKind.EVENTS: STOCK_EVENTS_TABLE,
         }
@@ -93,10 +105,9 @@ class StockAssetProvider(AssetProvider):
             return 0
         fetch = {
             CrawlKind.QUOTES: self.market.price_board,
-            CrawlKind.NEWS: self.market.news,
-            CrawlKind.FOREIGN_TRADE: self.market.foreign_trade,
-            CrawlKind.RATIOS: self.market.ratios,
-            CrawlKind.EVENTS: self.market.events,
+            CrawlKind.NEWS: self.decision_market.news,
+            CrawlKind.RATIOS: self.decision_market.ratios,
+            CrawlKind.EVENTS: self.decision_market.events,
         }[kind]
         df = fetch(codes)
         if df.empty:
@@ -192,12 +203,20 @@ def build_providers(
     storage: DuckDBStorage,
     *,
     data_source: str = "VCI",
+    decision_source: str = "VCI",
     mihong_token: str | None = None,
 ) -> dict[AssetType, AssetProvider]:
-    """Construct the provider registry (COIN deferred — no provider yet)."""
+    """Construct the provider registry (COIN deferred — no provider yet).
+
+    ``data_source`` backs quotes + catalog (settings default = KBS in prod);
+    ``decision_source`` backs news/events/ratios and defaults to VCI, which
+    serves those kinds richly (KBS returns news≈1/events=0 live).
+    """
     return {
         AssetType.STOCK: StockAssetProvider(
-            storage, StockMarketSource(source=data_source)
+            storage,
+            StockMarketSource(source=data_source),
+            decision_market=StockMarketSource(source=decision_source),
         ),
         AssetType.GOLD: GoldAssetProvider(storage, xsrf_token=mihong_token),
     }

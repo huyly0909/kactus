@@ -18,10 +18,18 @@ from loguru import logger
 # crawl concurrency semaphore.  Mirrors vnstock's published limits.
 _TIER_RPM: dict[str, int] = {
     "guest": 20,
+    "community": 60,
     "free": 60,
     "paid": 180,
 }
 _DEFAULT_RPM = 20
+# rpm assumed when a key authenticated but vnstock won't name the tier (the
+# Community key resolves with no tier name); the banner advertises 60 req/min.
+_AUTHED_RPM = 60
+
+# Set True by ``init_vnstock_auth`` when a key is successfully applied, so the
+# concurrency sizing can assume a real tier budget even if the tier is unnamed.
+_AUTHENTICATED = False
 
 
 def init_vnstock_auth() -> bool:
@@ -30,6 +38,7 @@ def init_vnstock_auth() -> bool:
     Idempotent and never raises: an auth failure degrades to the guest tier
     rather than crashing app/scheduler startup.  The key value is never logged.
     """
+    global _AUTHENTICATED
     from kactus_common.config import settings
 
     api_key = getattr(settings, "vnstock_api_key", "") or ""
@@ -44,6 +53,7 @@ def init_vnstock_auth() -> bool:
         import vnai
 
         vnai.setup_api_key(api_key)
+        _AUTHENTICATED = True
         logger.info(f"vnstock authenticated (tier={_safe_tier_name() or 'unknown'})")
         return True
     except Exception as exc:  # pragma: no cover - defensive
@@ -69,7 +79,16 @@ def vnstock_max_concurrency() -> int:
 
     Keeps concurrency well under the per-minute budget so the crawler never
     bursts past the rate limit.  Range: 1 (guest) … 8 (paid).
+
+    When a key authenticated but vnstock won't name the tier (the Community key
+    resolves unnamed), assume the advertised 60 req/min rather than collapsing to
+    the guest budget of 1.
     """
-    tier = (_safe_tier_name() or "guest").lower()
-    rpm = _TIER_RPM.get(tier, _DEFAULT_RPM)
+    name = _safe_tier_name()
+    if name:
+        rpm = _TIER_RPM.get(name.lower(), _DEFAULT_RPM)
+    elif _AUTHENTICATED:
+        rpm = _AUTHED_RPM
+    else:
+        rpm = _DEFAULT_RPM
     return max(1, min(8, rpm // 20))

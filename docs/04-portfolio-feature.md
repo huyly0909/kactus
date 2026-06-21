@@ -155,7 +155,7 @@ Tất cả dùng `UpdateStrategy.UPSERT` (key theo `code[+time]`). **Technicals 
 |---------|-----------|----------|---------|
 | price_board (giá) | STOCK | mỗi giờ trong giờ giao dịch | `CronTrigger(day_of_week="mon-fri", hour="9-15", minute=0, timezone="Asia/Ho_Chi_Minh")` |
 | news | STOCK | mỗi giờ (giờ giao dịch) | như trên |
-| foreign_trade, ratios, ohlcv(1D), events | STOCK | hằng ngày sau giờ đóng cửa | cron daily |
+| ratios, ohlcv(1D), events | STOCK | hằng ngày sau giờ đóng cửa | cron daily (foreign_trade đã gỡ — VCI 4.x không hỗ trợ) |
 | `sync_supported` (listing + tag VN30/VN100) | STOCK | hằng ngày trước giờ mở cửa | cron daily |
 | giá vàng | GOLD | mỗi giờ | cron hourly |
 
@@ -285,12 +285,13 @@ Implement bám sát thiết kế; các điểm lệch đáng ghi nhớ:
 2. **vnstock key**: env là `KACTUS_VNSTOCK_API_KEY` → bind trực tiếp qua prefix, **không** `validation_alias`. Xem §10.
 3. **Blocking → async**: dùng **`asyncio.to_thread`** (stdlib) thay `anyio.to_thread.run_sync` → không thêm dep.
 4. **Market schema robust**: mỗi bảng DuckDB giữ vài cột curated + **`raw_json`** catch-all; source normalize qua `_pick(...)` (thử nhiều tên cột) → bền với khác biệt KBS/VCI mà không cần migration khi vnstock đổi cột.
-5. **OHLCV**: tái dùng `VnstockOHLCVSource` + `SyncPipeline` + bảng `stock_ohlcv` có sẵn (job `crawl_ohlcv` riêng trong scheduler), **không** nhồi vào `provider.crawl`. Provider.crawl phụ trách quotes/news/foreign/ratios/events.
+4b. **Nguồn theo kind** (fix 2026-06-20): `quotes`/`catalog` dùng `settings.data_source` (prod=KBS); `news`/`events`/`ratios` route qua **VCI** (`decision_market` riêng trong `StockAssetProvider`) — vì KBS trả news/events gần như rỗng. `ratios` 4.x là frame **chuyển vị** (metric=dòng, quý=cột) → `market.ratios()` pivot thành 1 dòng/`(symbol, quý)`. Xem [05 §1.1](05-portfolio-verification-log.md).
+5. **OHLCV**: tái dùng `VnstockOHLCVSource` + `SyncPipeline` + bảng `stock_ohlcv` có sẵn (job `crawl_ohlcv` riêng trong scheduler), **không** nhồi vào `provider.crawl`. Provider.crawl phụ trách quotes/news/ratios/events (foreign_trade đã gỡ).
 6. **Gold**: cần `KACTUS_MIHONG_XSRF_TOKEN`; thiếu → `GoldAssetProvider.crawl` skip (log, không lỗi). Catalog gold seed sẵn (SJC/999/DOJI/PNJ).
 7. **Frontend**: components `dialog`/`combobox`(asset picker)/`table` **tự viết** bằng primitive có sẵn (button/card/input/badge/skeleton) — **không** chạy shadcn CLI (tránh phụ thuộc mạng/Radix mới). `useMarketStream` mount trong **PortfolioDetailPage** (chưa mount global layout).
 8. **Deps**: đã **tách per-package** (2026-06-18) — `apscheduler`/`pytz`/`vnstock` → kactus-data, `sse-starlette` + `kactus-data` → kactus-fin, root chỉ còn `pytest`. Xem [05 §3](05-portfolio-verification-log.md).
 9. **Scheduler toggle**: cờ `enable_portfolio_scheduler` (fin Settings) tắt APScheduler khi test/CLI. Lifespan chỉ chạy khi server thật start (ASGITransport test build runtime trực tiếp).
-10. **Đã verify live** (2026-06-18): quotes + catalog + refresh + SSE chạy E2E qua curl với key thật. **Nhưng** news/events/ratios/foreign_trade **hỏng** trên vnstock 3.4.2 (TCBS chết). Chi tiết + known issues: [05-portfolio-verification-log.md](05-portfolio-verification-log.md).
+10. **Đã verify live** (2026-06-18 + re-verify 2026-06-20): quotes + catalog + refresh + SSE chạy E2E qua curl với key thật. news/events/ratios từng hỏng trên 3.4.2 → nâng vnstock 4.0.4; **nhưng nâng thôi chưa đủ** — re-verify thật phát hiện news/events gần như rỗng trên nguồn prod **KBS** và ratios crash PK (frame chuyển vị). **Đã fix:** route news/events/ratios qua **VCI** + pivot ratios theo quý. Live prod-shaped: news=100, events=100, ratios=8, quotes=2 ✅. `foreign_trade` vẫn không khả dụng → **đã gỡ** (dormant). Chi tiết: [05 §1.1](05-portfolio-verification-log.md).
 
 ### Cách chạy / verify
 

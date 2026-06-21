@@ -10,6 +10,19 @@ from kactus_common.user.model import User
 cli = AsyncTyper(help="User management commands")
 
 
+@cli.callback()
+def _bootstrap() -> None:
+    """Register fin settings before any user command (create/create-admin/list/...).
+
+    Unlike ``fin dev`` (calls ``get_settings()``) and ``fin db`` (bootstraps via
+    Alembic ``env.py``), the ``user`` group otherwise reaches ``get_db()`` with no
+    settings registered and crashes with ``"No settings registered"``.
+    """
+    from kactus_fin.config import get_settings
+
+    get_settings()  # @lru_cache → calls register_settings() on first use
+
+
 async def _create_user(
     email: str,
     username: str,

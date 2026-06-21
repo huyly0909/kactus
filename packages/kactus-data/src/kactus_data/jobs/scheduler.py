@@ -4,7 +4,7 @@ In-process ``AsyncIOScheduler`` (single-worker v1).  Cadence:
 
 * live quotes  — hourly, Mon–Fri 09:00–15:00 (Asia/Ho_Chi_Minh)
 * news         — hourly, Mon–Fri 09:00–15:00 (offset 5')
-* foreign flow / ratios / events — daily after close (~15:30+)
+* ratios / events — daily after close (~15:30+)
 * OHLCV        — daily after close
 * catalog sync — daily pre-open (~08:30)
 
@@ -59,10 +59,8 @@ def build_scheduler(
         _crawl, _biz(5), args=[CrawlKind.NEWS], id="crawl_news", replace_existing=True
     )
     # After close: decision-support datasets.
-    scheduler.add_job(
-        _crawl, _biz(30, hour="15"), args=[CrawlKind.FOREIGN_TRADE],
-        id="crawl_foreign_trade", replace_existing=True,
-    )
+    # NOTE: foreign_trade is intentionally not scheduled — VCI (vnstock 4.x) does
+    # not implement foreign-flow; it was only served by the now-dead TCBS provider.
     scheduler.add_job(
         _crawl, _biz(35, hour="15"), args=[CrawlKind.RATIOS],
         id="crawl_ratios", replace_existing=True,

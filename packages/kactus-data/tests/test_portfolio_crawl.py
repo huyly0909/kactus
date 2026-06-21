@@ -87,7 +87,8 @@ def test_provider_crawl_quotes_roundtrip(storage):
 
 def test_provider_crawl_news_is_text_safe(storage):
     """Vietnamese news with quotes/newlines round-trips intact (register insert)."""
-    provider = StockAssetProvider(storage, FakeMarket())
+    # news routes to decision_market → back it with the same fake.
+    provider = StockAssetProvider(storage, FakeMarket(), FakeMarket())
     n = provider.crawl(CrawlKind.NEWS, ["FPT"])
     assert n == 1
     rows = provider.read(CrawlKind.NEWS, ["FPT"])

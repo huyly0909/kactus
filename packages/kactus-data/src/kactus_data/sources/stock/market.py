@@ -14,6 +14,7 @@ target table exactly (positional INSERT).
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 
 import pandas as pd
@@ -60,6 +61,18 @@ def _to_float(v: object | None) -> float | None:
         return None if v is None else float(v)
     except (TypeError, ValueError):
         return None
+
+
+# A column header is a *period* (e.g. "2018", "2018-Q1", "2018Q1") when it
+# starts with a 4-digit year.  vnstock 4.x returns the ratio frame transposed —
+# financial metrics as rows, periods as columns — so the period labels live in
+# the column headers, not in a "period" cell.  Metric-label columns
+# (``item`` / ``item_en`` / ``item_id``) never start with a digit.
+_PERIOD_RE = re.compile(r"^\d{4}([-_/ ]?Q?[1-4])?$")
+
+
+def _is_period_col(col: object) -> bool:
+    return bool(_PERIOD_RE.match(str(col).strip()))
 
 
 def _to_table_df(rows: list[dict], table: Table) -> pd.DataFrame:
@@ -222,17 +235,70 @@ class StockMarketSource:
         return self._per_symbol(codes, self._raw_foreign_trade, _map, STOCK_FOREIGN_TRADE_TABLE)
 
     def ratios(self, codes: list[str], period: str = "quarter") -> pd.DataFrame:
-        def _map(symbol, r, now):
-            label = _pick(r, "period", "yearReport", "year") or period
-            return {
-                "symbol": symbol,
-                "period": str(label),
-                "source": self.source,
-                "crawled_at": now,
-                "raw_json": json.dumps(r, default=str, ensure_ascii=False),
-            }
+        """Financial ratios → one row per ``(symbol, period)``.
 
-        return self._per_symbol(codes, self._raw_ratio, _map, STOCK_RATIOS_TABLE)
+        vnstock 4.x returns the ratio frame **transposed** (metrics as rows,
+        periods like ``2025-Q1`` as columns).  We pivot it back: each period
+        column becomes one row whose ``raw_json`` is the ``{metric: value}`` map
+        for that period.  This keeps the ``(symbol, period)`` primary key unique
+        — the pre-pivot shape stamped every row ``period="quarter"`` and blew up
+        the UPSERT.  A tidy frame (period already in a cell) falls back to
+        one-row-per-record.
+        """
+        now = datetime.now()
+        rows: list[dict] = []
+        for code in codes:
+            try:
+                raw = self._raw_ratio(code)
+            except Exception as ex:  # pragma: no cover - network failure path
+                logger.warning(f"{STOCK_RATIOS_TABLE.name} fetch failed for {code}: {ex}")
+                continue
+            if raw is None or (hasattr(raw, "empty") and raw.empty):
+                continue
+            rows.extend(self._ratio_rows(code.upper(), _flatten_columns(raw), period, now))
+        return _to_table_df(rows, STOCK_RATIOS_TABLE)
+
+    def _ratio_rows(
+        self, symbol: str, raw: pd.DataFrame, default_period: str, now: datetime
+    ) -> list[dict]:
+        cols = list(raw.columns)
+        period_cols = [c for c in cols if _is_period_col(c)]
+        if period_cols:
+            label_col = next(
+                (c for c in ("item_id", "item", "item_en") if c in cols), None
+            )
+            records = raw.to_dict(orient="records")
+            out: list[dict] = []
+            for p in period_cols:
+                metrics = {}
+                for r in records:
+                    key = r.get(label_col) if label_col else None
+                    if key is not None and pd.notna(key):
+                        metrics[str(key)] = r.get(p)
+                out.append(
+                    {
+                        "symbol": symbol,
+                        "period": str(p).strip(),
+                        "source": self.source,
+                        "crawled_at": now,
+                        "raw_json": json.dumps(metrics, default=str, ensure_ascii=False),
+                    }
+                )
+            return out
+        # Tidy frame: period already in a cell, one row per record.
+        out = []
+        for r in raw.to_dict(orient="records"):
+            label = _pick(r, "period", "yearReport", "year") or default_period
+            out.append(
+                {
+                    "symbol": symbol,
+                    "period": str(label),
+                    "source": self.source,
+                    "crawled_at": now,
+                    "raw_json": json.dumps(r, default=str, ensure_ascii=False),
+                }
+            )
+        return out
 
     # ------------------------------------------------------------- catalog
     def catalog(self) -> list[dict]:

@@ -63,6 +63,20 @@ class FullFakeMarket(StockMarketSource):
         return ["FPT"] if group == "VN30" else ["FPT", "VCB"]
 
 
+class TransposedRatioMarket(FullFakeMarket):
+    """vnstock 4.x returns ratios *transposed*: metrics as rows, quarters as
+    columns.  Mirrors the live FPT shape so the pivot/PK logic is exercised."""
+
+    def _raw_ratio(self, code):
+        return pd.DataFrame(
+            [
+                {"item": "Năm", "item_id": "year", "2025-Q1": 2025, "2025-Q2": 2025},
+                {"item": "P/E", "item_id": "pe", "2025-Q1": 18.1, "2025-Q2": 17.4},
+                {"item": "P/B", "item_id": "pb", "2025-Q1": 4.2, "2025-Q2": 4.0},
+            ]
+        )
+
+
 @pytest_asyncio.fixture
 async def db():
     manager = DatabaseSessionManager(database_url="sqlite+aiosqlite://")
@@ -104,15 +118,64 @@ def test_market_flatten_multiindex_columns():
 
 # ------------------------------------------------------------------- providers
 @pytest.mark.parametrize(
-    "kind", [CrawlKind.NEWS, CrawlKind.FOREIGN_TRADE, CrawlKind.RATIOS, CrawlKind.EVENTS]
+    "kind", [CrawlKind.NEWS, CrawlKind.RATIOS, CrawlKind.EVENTS]
 )
 def test_stock_provider_crawl_and_read(storage, kind):
-    provider = StockAssetProvider(storage, FullFakeMarket())
+    # decision-support kinds read from decision_market, so fake both seams.
+    provider = StockAssetProvider(storage, FullFakeMarket(), FullFakeMarket())
     assert kind in provider.supported_kinds()
     assert provider.crawl(kind, ["FPT"]) == 1
     rows = provider.read(kind, ["FPT"])
     assert len(rows) == 1
     assert rows[0]["symbol"] == "FPT"
+
+
+def test_ratios_transposed_frame_pivots_per_quarter(storage):
+    """vnstock 4.x transposed ratio frame → one row per (symbol, quarter).
+
+    Regression for the live PK collision: the pre-pivot code stamped every row
+    ``period="quarter"`` → ``(symbol, period)`` UPSERT crash.
+    """
+    m = TransposedRatioMarket(source="VCI")
+    df = m.ratios(["FPT"])
+    assert sorted(df["period"]) == ["2025-Q1", "2025-Q2"]
+    assert df["period"].nunique() == len(df)  # PK (symbol, period) is unique
+    import json as _json
+
+    metrics = _json.loads(df.iloc[0]["raw_json"])
+    assert metrics["pe"] in (18.1, 17.4) and "pb" in metrics
+
+    # Full crawl path must store both quarters without a constraint error.
+    provider = StockAssetProvider(storage, FullFakeMarket(), TransposedRatioMarket())
+    assert provider.crawl(CrawlKind.RATIOS, ["FPT"]) == 2
+    assert len(provider.read(CrawlKind.RATIOS, ["FPT"])) == 2
+
+
+def test_decision_kinds_use_decision_market(storage):
+    """news/events/ratios route to decision_market (VCI), not the quotes market."""
+
+    class EmptyMarket(FullFakeMarket):
+        def _raw_news(self, code):
+            return pd.DataFrame()
+
+        def _raw_events(self, code):
+            return pd.DataFrame()
+
+    # quotes market is "empty" for news; decision_market has data → rows come
+    # from decision_market, proving the routing.
+    provider = StockAssetProvider(storage, EmptyMarket(), FullFakeMarket())
+    assert provider.crawl(CrawlKind.NEWS, ["FPT"]) == 1
+    # and the reverse: a working quotes market does not rescue an empty decision one
+    provider2 = StockAssetProvider(storage, FullFakeMarket(), EmptyMarket())
+    assert provider2.crawl(CrawlKind.NEWS, ["FPT"]) == 0
+
+
+def test_stock_provider_foreign_trade_unsupported(storage):
+    """foreign_trade is not wired — VCI (vnstock 4.x) doesn't implement it."""
+    provider = StockAssetProvider(storage, FullFakeMarket())
+    assert CrawlKind.FOREIGN_TRADE not in provider.supported_kinds()
+    assert provider.crawl(CrawlKind.FOREIGN_TRADE, ["FPT"]) == 0
+    assert provider.read(CrawlKind.FOREIGN_TRADE, ["FPT"]) == []
 
 
 def test_stock_provider_fetch_catalog(storage):
@@ -166,9 +229,11 @@ async def test_build_scheduler_registers_jobs(db, storage):
     )
     ids = {j.id for j in scheduler.get_jobs()}
     assert {
-        "crawl_quotes", "crawl_news", "crawl_foreign_trade",
+        "crawl_quotes", "crawl_news",
         "crawl_ratios", "crawl_events", "crawl_ohlcv", "sync_catalog",
     } <= ids
+    # foreign_trade is intentionally not scheduled (unsupported by VCI in 4.x)
+    assert "crawl_foreign_trade" not in ids
 
 
 # ------------------------------------------------------------------- jobs
@@ -218,13 +283,45 @@ def test_init_vnstock_auth_with_key(monkeypatch):
         vnstock_max_concurrency,
     )
 
+    import kactus_data.sources.stock.auth as auth
+
     try:
         assert init_vnstock_auth() is True
         assert captured["key"] == "secret-key"
         assert _safe_tier_name() == "paid"
         assert vnstock_max_concurrency() == 8  # paid 180//20=9, capped at 8
     finally:
+        auth._AUTHENTICATED = False
         clear_settings()
+
+
+def test_concurrency_authenticated_unnamed_tier(monkeypatch):
+    """Community key authenticates but vnstock won't name the tier → assume 60rpm.
+
+    Without this, the unnamed tier collapses to guest=1 (issue #3).
+    """
+    import kactus_data.sources.stock.auth as auth
+
+    monkeypatch.setattr(auth, "_AUTHENTICATED", True)
+    monkeypatch.setattr(auth, "_safe_tier_name", lambda: None)
+    assert auth.vnstock_max_concurrency() == 3  # 60 // 20
+
+
+def test_concurrency_guest_when_unauthenticated(monkeypatch):
+    """No key, no tier name → guest budget of 1 (safe default preserved)."""
+    import kactus_data.sources.stock.auth as auth
+
+    monkeypatch.setattr(auth, "_AUTHENTICATED", False)
+    monkeypatch.setattr(auth, "_safe_tier_name", lambda: None)
+    assert auth.vnstock_max_concurrency() == 1
+
+
+def test_concurrency_community_named_tier(monkeypatch):
+    """Named 'community' tier resolves to its 60rpm budget."""
+    import kactus_data.sources.stock.auth as auth
+
+    monkeypatch.setattr(auth, "_safe_tier_name", lambda: "Community")
+    assert auth.vnstock_max_concurrency() == 3  # 60 // 20
 
 
 def test_init_vnstock_auth_no_key():

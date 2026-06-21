@@ -43,9 +43,9 @@ class FakeMarket(StockMarketSource):
             [{"id": f"{code}-1", "title": "Báo cáo quý", "public_date": "2026-06-17", "url": "u"}]
         )
 
-    def _raw_foreign_trade(self, code):
+    def _raw_events(self, code):
         return pd.DataFrame(
-            [{"trade_date": "2026-06-17", "buy_value": 100, "sell_value": 40, "net_value": 60}]
+            [{"id": f"{code}-e", "event_title": "ĐHCĐ", "event_date": "2026-06-17"}]
         )
 
     def _raw_all_symbols(self):
@@ -82,7 +82,10 @@ async def app(db, tmp_path):
     auth_mod._auth = None
 
     storage = DuckDBStorage(str(tmp_path / "t.duckdb"))
-    providers = {AssetType.STOCK: StockAssetProvider(storage, FakeMarket())}
+    # FakeMarket also backs decision_market so news/events don't hit the network.
+    providers = {
+        AssetType.STOCK: StockAssetProvider(storage, FakeMarket(), FakeMarket())
+    }
     register_sse_handler()
     set_runtime(
         PortfolioRuntime(
@@ -274,14 +277,14 @@ async def test_news_and_asset_detail_reads(client, db):
     )
     provider = get_runtime().providers[AssetType.STOCK]
     provider.crawl(CrawlKind.NEWS, ["FPT"])
-    provider.crawl(CrawlKind.FOREIGN_TRADE, ["FPT"])
+    provider.crawl(CrawlKind.EVENTS, ["FPT"])
 
     news = (await client.get(f"/api/portfolios/{pid}/news")).json()["data"]
     assert news and news[0]["symbol"] == "FPT"
 
-    detail = (await client.get("/api/assets/STOCK/FPT/foreign_trade")).json()["data"]
+    detail = (await client.get("/api/assets/STOCK/FPT/events")).json()["data"]
     assert detail and detail[0]["symbol"] == "FPT"
-    assert detail[0]["data"]["net_value"] == 60.0
+    assert detail[0]["data"]["title"] == "ĐHCĐ"
 
 
 @pytest.mark.asyncio
