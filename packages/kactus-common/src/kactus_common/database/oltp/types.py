@@ -11,7 +11,7 @@ from uuid import UUID
 
 import orjson
 from pydantic import BaseModel
-from sqlalchemy import JSON, DateTime, Dialect, String, TypeDecorator
+from sqlalchemy import JSON, DateTime, Dialect, String, Text, TypeDecorator
 from sqlalchemy.dialects.mysql import DATETIME, MEDIUMBLOB
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.ext.mutable import Mutable
@@ -226,3 +226,37 @@ class PydanticJSONList(TypeDecorator):
         if value is None:
             return None
         return [self.pydantic_model.model_validate(item) for item in value]
+
+
+class EncryptedJSON(TypeDecorator):
+    """A ``dict`` stored as a Fernet-encrypted JSON string (secrets at rest).
+
+    Encrypt on write / decrypt on read using ``settings.encryption_key`` — same
+    reversible scheme as :class:`PasswordHash` uses one-way hashing. Use for
+    columns that hold credentials (e.g. notification channel configs).
+
+    The column is opaque ciphertext in the DB, so it is **not** queryable /
+    filterable — only round-tripped. Requires ``settings.encryption_key`` to be
+    a valid Fernet key (see ``CryptoService.generate_key()``).
+    """
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value: dict | None, dialect: "Dialect") -> str | None:
+        if value is None:
+            return None
+        from kactus_common.config import settings
+        from kactus_common.crypto import CryptoService
+
+        return CryptoService(settings.encryption_key).encrypt(
+            orjson.dumps(value).decode()
+        )
+
+    def process_result_value(self, value: str | None, dialect: "Dialect") -> dict | None:
+        if value is None:
+            return None
+        from kactus_common.config import settings
+        from kactus_common.crypto import CryptoService
+
+        return orjson.loads(CryptoService(settings.encryption_key).decrypt(value))
