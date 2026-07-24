@@ -8,6 +8,7 @@ masked on the way out; sends/tests run through the :class:`Notifier`.
 from __future__ import annotations
 
 from fastapi import Request
+from kactus_common.config import settings
 from kactus_common.exceptions import ExternalServiceError
 from kactus_common.router import KactusAPIRouter
 from kactus_common.schemas import MessageResponse, Pagination
@@ -15,6 +16,7 @@ from kactus_fin.dependencies import provide_session
 from kactus_notification.const import NotificationChannelType
 from kactus_notification.dispatcher import Notifier
 from kactus_notification.model import NotificationChannel, NotificationLog
+from kactus_notification.queue import enqueue
 from kactus_notification.schema import (
     NotificationChannelCreateRequest,
     NotificationChannelSchema,
@@ -27,6 +29,7 @@ from kactus_notification.service import (
     NotificationChannelService,
     NotificationLogService,
 )
+from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = KactusAPIRouter(prefix="/api/notifications", tags=["notifications"])
@@ -162,7 +165,21 @@ async def test_channel(
     return MessageResponse(message="ok")
 
 
-@router.post("/{channel_id}/send")
+def _queue_enabled() -> bool:
+    """Whether sends go through the Redis Streams queue.
+
+    Both conditions are real: the queue needs Redis, and ``memory`` is a
+    supported single-worker mode where there is none.  Falling back to the
+    inline send there keeps dev and the test suite working without a broker
+    instead of failing at ``XADD``.
+    """
+    return (
+        getattr(settings, "notification_queue_enabled", True)
+        and getattr(settings, "coordination_backend", "memory") == "redis"
+    )
+
+
+@router.post("/{channel_id}/send", status_code=202)
 @provide_session
 async def send_to_channel(
     channel_id: int,
@@ -170,11 +187,26 @@ async def send_to_channel(
     request: Request,
     session: AsyncSession,
 ) -> MessageResponse:
-    """Render an event with the channel's template and deliver it."""
+    """Queue an event for delivery on this channel.
+
+    202 in both modes.  The caller cannot do anything with the transport result
+    — ``send_event`` already retries and writes ``NotificationLog`` — so a
+    stable "accepted" contract beats a status that changes with the deployment's
+    coordination backend.  ``GET /{channel_id}/logs`` is where the outcome is.
+
+    ``POST /{channel_id}/test`` stays synchronous on purpose: there the user is
+    sitting in front of a form waiting to hear whether the credentials work.
+    """
     user = request.state.user
     channel = await NotificationChannelService.get_owned_or_404(
         session, channel_id=channel_id, owner_id=user.id
     )
+
+    if _queue_enabled():
+        message_id = await enqueue(channel_id=channel.id, owner_id=user.id, event=body)
+        logger.info(f"Queued notification {message_id} for channel {channel.id}")
+        return MessageResponse(message="queued")
+
     await Notifier.send_event(session, channel, body)
     await NotificationChannelService.mark_used(session, channel)
     return MessageResponse(message="sent")

@@ -121,6 +121,19 @@ class ConflictError(KactusException):
     title = "Conflict"
 
 
+class GoneError(KactusException):
+    """Raised when a resource existed but is deliberately no longer available.
+
+    Distinct from :class:`NotFoundError` on purpose: 404 says "never heard of
+    it", 410 says "it was real and it has expired". For a one-time action link
+    that difference is the whole message to the user — *the link timed out, ask
+    for a new one* rather than *that link was never valid*.
+    """
+
+    code = "GONE"
+    title = "Gone"
+
+
 class RateLimitError(KactusException):
     """Raised when a rate limit is exceeded."""
 
@@ -160,6 +173,7 @@ _STATUS_CODE_MAP: dict[type[KactusException], int] = {
     PermissionDeniedError: 403,
     NotFoundError: 404,
     ConflictError: 409,
+    GoneError: 410,
     RateLimitError: 429,
     TimeoutError: 504,
     ConfigurationError: 500,

@@ -8,6 +8,7 @@ from kactus_common.app_registry import AppManager
 from kactus_common.exceptions import PermissionDeniedError, install_exception_handlers
 from kactus_common.redis.client import close_redis
 from kactus_common.sse.broker import get_sse_broker, reset_sse_broker
+from kactus_fin.action.app import action_app
 from kactus_fin.admin.app import admin_app
 from kactus_fin.api.health import router as health_router
 from kactus_fin.auth.app import auth_app
@@ -16,6 +17,7 @@ from kactus_fin.data_client import close_client
 from kactus_fin.dependencies import get_auth
 from kactus_fin.market.app import market_app
 from kactus_fin.notification.app import notification_app
+from kactus_fin.notification.consumer import start_consumer, stop_consumer
 from kactus_fin.permission.app import permission_app
 from kactus_fin.portfolio.app import portfolio_app
 from kactus_fin.project.app import project_app
@@ -52,6 +54,7 @@ app_manager.register(admin_app)
 app_manager.register(portfolio_app)
 app_manager.register(notification_app)
 app_manager.register(market_app)
+app_manager.register(action_app)
 app_manager.set_auth_dependencies(
     session_dep=_session_auth,
     superuser_dep=_superuser_auth,
@@ -122,7 +125,21 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     _warn_if_multi_worker(settings)
 
+    # The notification queue consumer is the one long-lived task here, and it is
+    # deliberately per-worker: a Redis consumer group distributes entries across
+    # its members, so N workers means N senders, not N copies of every message.
+    # Skipped on the memory backend, where there is no Redis and the API sends
+    # inline instead (see kactus_fin/notification/api.py::_queue_enabled).
+    consumer_running = getattr(
+        settings, "coordination_backend", "memory"
+    ) == "redis" and getattr(settings, "notification_queue_enabled", True)
+    if consumer_running:
+        await start_consumer()
+
     yield
+
+    if consumer_running:
+        await stop_consumer()
 
     # Stop the SSE broker before the pool it publishes through: on the Redis
     # backend close() cancels the pub/sub listener task, which would otherwise be

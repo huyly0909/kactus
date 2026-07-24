@@ -52,6 +52,16 @@ class Settings(CommonSettings, NotificationSettings):
     host: str = "0.0.0.0"
     port: int = 17600
 
+    # Action links (kactus_fin/action/) — the signed one-time URLs that ride in
+    # a notification. The secret fails closed: unset means action links cannot
+    # be issued *or* verified, which is the right default for a link that
+    # authorises something on a user's behalf. `localhost` default per
+    # .claude/rules/docker-conventions.md; set the real public URL per env or
+    # the link in a chat message points at the reader's own machine.
+    action_token_secret: str = ""
+    action_token_ttl_secs: int = 900  # 15 min — long enough to notice a phone buzz
+    public_base_url: str = "http://localhost:17600"
+
     model_config = SettingsConfigDict(
         env_prefix="KACTUS_",
         env_file=".env",

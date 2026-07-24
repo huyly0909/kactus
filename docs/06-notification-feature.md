@@ -122,6 +122,60 @@ Settings: `notification_max_send_attempts=3`, `notification_retry_base_delay=1.0
 
 ---
 
+## 7.1. Delivery queue — Redis **Streams** (`kactus_notification/queue.py`)
+
+Retry ở §7 chạy **inline trong request**: một Zalo lag giữ request hàng chục giây cho một kết quả caller không làm gì được. `POST /{id}/send` giờ `XADD` rồi trả `202`.
+
+**Streams chứ không pub/sub.** `PUBLISH` không có trí nhớ — consumer restart đúng giây publish là mất vĩnh viễn, và không chỗ nào ghi lại. Mất một alert giá của user là lỗi thật. (Nudge SSE thì ngược lại: browser refetch, mất một cái không tốn gì → pub/sub đúng.)
+
+**Ack semantics là toàn bộ thiết kế:**
+
+| Handler | Kết quả |
+|---|---|
+| return | `XACK` — xong |
+| **raise** | **không ack** → entry nằm pending → `reclaim_stale()` (XPENDING + XCLAIM) replay |
+| quá `notification_queue_max_deliveries` | ack + log ERROR — không có cap thì payload luôn crash sẽ loop vô hạn |
+
+⚠️ Vì vậy **raise nghĩa là "chưa xử lý được"** (crash, DB chết) — **không** phải "gửi thất bại". Một lần gửi hỏng đã ghi `NotificationLog(FAILED)` là **đã xử lý**, handler phải nuốt; để nó raise thì cả vòng retry chạy lại mãi chừng nào channel còn hỏng, mỗi vòng thêm một dòng audit trùng. Xem `kactus_fin/notification/consumer.py::deliver`.
+
+**Consumer chạy ở đâu:** mỗi worker kactus-fin một cái — **lệch plan**, plan đặt ở data plane vì nó single-replica. Lý do đổi: (1) consumer group *chia* entry chứ không broadcast, nên N worker = N sender + tự failover, single-replica là phương án yếu hơn; (2) `kactus-data-server` cố ý không phụ thuộc `kactus-notification` (xem `deploy/Dockerfile.data-server`), đặt consumer ở đó là kéo `zlapi` vào image ETL — đúng thứ Phase 0.6 vừa gỡ khỏi kactus-common; (3) sender + channel row + `NotificationLog` vốn đã ở process này. Vẫn không phát sinh service thứ tư.
+
+`POST /{id}/test` giữ **đồng bộ**: user đang ngồi trước form credential chờ câu trả lời, `202` ở đó không trả lời gì.
+
+Stream có `maxlen` (trim gần đúng) — nó là **buffer**, không phải audit. `NotificationLog` ở Postgres mới là sự thật.
+
+Settings: `notification_queue_enabled`, `notification_queue_maxlen=10000`, `notification_queue_batch=10`, `notification_queue_block_ms=5000`, `notification_queue_claim_idle_ms=60000`, `notification_queue_max_deliveries=5`. Cần `coordination_backend=redis`; backend `memory` thì gửi inline (dev/test không cần broker).
+
+---
+
+## 7.2. Action link — `kactus_fin/action/`
+
+`NotificationEvent.url` **đã có sẵn** và cả 3 template đã render → lớp notification **không sửa gì**.
+
+Token = `<id>.<HMAC-SHA256>` ký trên id + user + action + params. Chữ ký chứng minh hai việc: không ai giả mạo link, **và** vì params nằm ở DB cũng được ký nên một dòng bị sửa sau khi phát hành sẽ không verify nữa. Snowflake id đoán được, nên chữ ký là thứ chịu lực chính chứ không phải id khó đoán.
+
+`KACTUS_ACTION_TOKEN_SECRET` **fail closed**: `compare_digest("","")` là True, coi secret rỗng như "ký bằng rỗng" sẽ nhận **mọi** token kể cả token không ai phát hành — deployment hỏng mà nhìn như đang chạy.
+
+⚠️ **`GET /api/actions/{token}` không thực thi.** Telegram/Slack/Zalo đều fetch URL ngay khi nó xuất hiện trong tin nhắn để render preview — chưa ai bấm gì. `GET` mà thực thi thì mọi notification actionable sẽ tự chạy lúc được gửi, ký đúng, gán đúng user. `GET` render trang xác nhận; chỉ `POST` (form trên trang đó submit) mới consume.
+
+One-time bằng **conditional UPDATE** (`WHERE consumed_at IS NULL`), không phải read-modify-write: hai POST đồng thời đều qua được check trong `resolve()` và đều chạy. DB chọn người thắng, người thua nhận 409 y như double-click.
+
+`execute()` **consume trước rồi mới chạy handler**: handler hỏng giữa chừng không được để lại link còn sống chạy lại phần nó đã kịp làm.
+
+| Tình huống | Mã |
+|---|---|
+| Sai chữ ký / token người khác | 403 |
+| Dùng lại lần hai | 409 |
+| Hết hạn (TTL 15') | 410 (`GoneError`) |
+
+Cả hai verb **yêu cầu session**: token là *pre-authorisation*, không phải credential — ai cầm được link (forward, group chat) vẫn phải đang đăng nhập đúng user.
+
+`POST /api/actions` mint link cho **session user**, không nhận `user_id` từ body.
+
+Handler trong `action/registry.py`, chặn bởi allow-list `ActionType`: `portfolio.add_item`, `portfolio.remove_item`, `portfolio.refresh`, `notification.mute_channel`. **Cố ý không có mua/bán** — repo không có domain khớp lệnh, khai `trade.buy` mà không có gì đứng sau là nói dối đúng chỗ user tin nhất.
+
+---
+
 ## 8. Mã hoá secret
 
 `config` là cột `EncryptedJSON` (Fernet, `settings.encryption_key`) → session token/webhook/cookie **không bao giờ** lưu plaintext. Ra API thì `mask_config(type, config)` thay secret bằng `***` theo `SECRET_FIELDS`.
@@ -160,7 +214,7 @@ Gửi: `send(Message(text), thread_id, ThreadType.USER|GROUP)` (thread_type 0=us
 | PUT | `/{id}` | Sửa name/is_active/config |
 | DELETE | `/{id}` | Xoá mềm |
 | POST | `/{id}/test` | Kiểm tra credentials |
-| POST | `/{id}/send` | Render event + gửi (retry + log) |
+| POST | `/{id}/send` | **Enqueue** vào Redis Stream → trả `202` ngay (§7.1). Backend `memory` thì gửi inline, vẫn `202` |
 | GET | `/{id}/logs` | Lịch sử gửi (`Pagination[NotificationLogSchema]`, `limit`) |
 
 **Zalo PA (`/api/notifications/zalo-pa`, chỉ bước có credential):**
@@ -225,8 +279,10 @@ Clone `modules/portfolio/`. Stack thực tế: React 18 + Vite 6 + **Radix + Tai
 
 ## 15. Deferred (TODO)
 
-- **Event-driven auto-fire** (handler `data_refreshed`/price-alert → `send_event(trigger=EVENT)`).
-- Multi-recipient từ 1 QR session; Zalo attachment/sticker/reply; E2E history (reorc `sync/`+WASM) nếu cần inbound; background/queued retry; Redis QR store + client pool cho multi-worker; Discord/Email.
+- **Event-driven auto-fire** (handler `data_refreshed`/price-alert → `send_event(trigger=EVENT)`). `trigger=EVENT` đã xuyên suốt log + queue, chỉ thiếu producer.
+- **Handler mua/bán cho action link** — repo chưa có domain khớp lệnh, nên `ActionType` cố ý không khai; thêm 1 member + 1 handler khi có tích hợp môi giới.
+- Telegram inline keyboard / Slack Block Kit button — cả hai POST về **cùng** `/api/actions/{token}` nên là *thêm*, không phải *sửa*.
+- Multi-recipient từ 1 QR session; Zalo attachment/sticker/reply; E2E history (reorc `sync/`+WASM) nếu cần inbound; Discord/Email.
 
 ## 16. Cách chạy / verify
 

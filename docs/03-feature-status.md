@@ -270,7 +270,18 @@ Tách `services/kactus-data-server` (port 17602) khỏi `kactus-fin`. 479 backen
 - [x] **kactus-fin** — `data_client.py` (httpx pool + token + timeout, lỗi → `ExternalServiceError`/502, **không** trả `[]`), bỏ dependency `kactus-data`, xoá `olap.py`/`portfolio/runtime.py`/`portfolio/symbol_provider.py`/`portfolio/sse.py`
 - [x] **import-linter** — thêm contract `forbidden`: `kactus_fin` ✗→ `kactus_data`, `duckdb` (contract `layers` một mình vẫn cho services → libs)
 - [x] **Deploy** — `Dockerfile.data-server` + 3 compose; volume DuckDB **chỉ** gắn cho data plane; port 17602 chỉ publish ở dev; `kactus-fin` trở lại 4 worker (prod) / 2 (stag)
-- [ ] `docker compose build` + live smoke 3 env
+- [x] `docker compose build` + live smoke (dev): health `{ok, duckdb:ok, scheduler:running, redis:ok}`, token guard 403/403/200, crawl vàng thật 2 dòng qua kactus-fin đúng decimal (`SJC 135500000 VND/luong`, `XAU 4063 USD/oz`), SSE `data_refreshed` xuyên process qua Redis
+
+#### Notification queue + action link ✅
+
+- [x] **`kactus_notification/queue.py`** — Redis **Streams** (`XADD` → group `notifiers` → `XACK`), **không** pub/sub vì mất một alert là lỗi thật. Handler raise ⇒ **không ack** ⇒ `reclaim_stale()` (XPENDING + XCLAIM) replay; quá `notification_queue_max_deliveries` ⇒ ack + log ERROR (chống poison loop)
+- [x] **`POST /{channel_id}/send` → 202 ngay** (đo được <100ms với channel treo 30s). `POST /{channel_id}/test` giữ **đồng bộ** — user đang chờ kết quả credential
+- [x] **Consumer chạy ở kactus-fin, mỗi worker một cái** (lệch plan: consumer group *chia* việc nên N worker = N sender + failover; và kactus-data-server cố ý không phụ thuộc kactus-notification, đặt ở đó là kéo `zlapi` vào image ETL)
+- [x] **`kactus_fin/action/`** — `ActionToken` (Postgres, TTL 15', consume bằng **conditional UPDATE** nên 2 click đồng thời chỉ 1 chạy), HMAC ký id+user+action+params, secret **fail closed**
+- [x] ⚠️ **`GET /api/actions/{token}` không đổi state** — chỉ render trang xác nhận; chỉ `POST` mới consume + thực thi (Telegram/Slack/Zalo prefetch link để render preview)
+- [x] **Mã lỗi** — sai chữ ký / token người khác → 403, dùng lại → 409, hết hạn → 410 (`GoneError` mới trong kactus-common)
+- [x] **`POST /api/actions`** — mint link cho **session user** (không nhận user_id từ body)
+- [ ] Handler mua/bán — **cố ý chưa có**: repo không có domain khớp lệnh; registry là chỗ để thêm khi có tích hợp môi giới
 
 ### `kactus-fin` — ✅ Auth/Admin/Portfolio/Notification/Market Done
 - Auth module hoàn chỉnh

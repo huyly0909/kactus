@@ -108,6 +108,16 @@ KACTUS_ENCRYPTION_KEY=<fernet-key>
 # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
 KACTUS_INTERNAL_SERVICE_TOKEN=<random-token>
 
+# Signs the one-time action links that ride in notifications. Also fails
+# closed: unset means links can be neither issued nor verified, which is the
+# right default for a URL that authorises something on a user's behalf.
+# Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+KACTUS_ACTION_TOKEN_SECRET=<random-token>
+
+# Where those links point. This is read on someone's phone from a chat app, so
+# the localhost default is wrong anywhere but a dev machine.
+KACTUS_PUBLIC_BASE_URL=https://kactus.example.com
+
 # kactus-fin-gateway
 KACTUS_GW_DATABASE_URL=postgresql+asyncpg://kactus:<password>@postgres:5432/kactus
 KACTUS_GW_DEBUG=false

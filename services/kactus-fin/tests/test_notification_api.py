@@ -7,6 +7,9 @@ exercise routing + ownership + secret-masking without hitting Telegram/Slack.
 
 from __future__ import annotations
 
+import asyncio
+
+import fakeredis.aioredis
 import pytest
 import pytest_asyncio
 from cryptography.fernet import Fernet
@@ -14,10 +17,18 @@ from httpx import ASGITransport, AsyncClient
 from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
+from kactus_common.redis import client as redis_client_mod
 from kactus_common.user import auth as auth_mod
 from kactus_common.user.model import User
+from kactus_fin.notification.consumer import deliver
 from kactus_notification import dispatcher
+from kactus_notification import queue as queue_mod
 from kactus_notification.const import NotificationChannelType
+from kactus_notification.queue import (
+    CONSUMER_GROUP,
+    NotificationQueueConsumer,
+    stream_key,
+)
 from kactus_notification.service import NotificationChannelService
 
 TEST_DB_URL = "sqlite+aiosqlite://"
@@ -63,6 +74,25 @@ async def app(db, tmp_path):
     session_mod._db = None
     auth_mod._auth = None
     clear_settings()
+
+
+@pytest_asyncio.fixture
+async def redis_queue(app, monkeypatch):
+    """Turn the queue on for one test: fake Redis + the ``redis`` backend.
+
+    Both halves are needed — ``_queue_enabled()`` gates on
+    ``coordination_backend`` precisely so a deployment without Redis keeps
+    working, so flipping only the client would still send inline.
+    """
+    from kactus_common.config import settings
+
+    server = fakeredis.aioredis.FakeRedis()
+    for module in (redis_client_mod, queue_mod):
+        monkeypatch.setattr(module, "get_redis", lambda: server, raising=False)
+    monkeypatch.setattr(settings, "coordination_backend", "redis", raising=False)
+    yield server
+    await server.flushall()
+    await server.aclose()
 
 
 @pytest_asyncio.fixture
@@ -193,7 +223,13 @@ async def test_test_endpoint_failure_is_502(client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_send_endpoint(client, monkeypatch):
+async def test_send_endpoint_inline_on_the_memory_backend(client, monkeypatch):
+    """No Redis ⇒ no queue: the endpoint sends inline, as it always did.
+
+    Still 202 — the status describes the contract ("we have taken this"), not
+    which coordination backend happens to be configured, so the frontend does
+    not have to care which deployment it is talking to.
+    """
     cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
         "id"
     ]
@@ -209,10 +245,167 @@ async def test_send_endpoint(client, monkeypatch):
         f"/api/notifications/{cid}/send",
         json={"title": "Giá vàng", "body": "SJC tăng", "level": "warning"},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 202
     assert resp.json()["data"]["message"] == "sent"
     assert captured["title"] == "Giá vàng"
     assert str(captured["channel_id"]) == str(cid)
+
+
+@pytest.mark.asyncio
+async def test_send_queues_instead_of_blocking_on_a_lagging_channel(
+    client, redis_queue, monkeypatch
+):
+    """The reason Phase 3 exists.
+
+    ``Notifier.send_event`` retries inline with exponential backoff, so a
+    channel that hangs used to hold the request for as long as that took. The
+    stand-in here sleeps far longer than any acceptable response; the assertion
+    is that the request never waits for it and the work is on the stream
+    instead.
+    """
+    import time
+
+    cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
+        "id"
+    ]
+
+    async def _hangs(session, channel, event, **kwargs):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(dispatcher.Notifier, "send_event", staticmethod(_hangs))
+
+    started = time.perf_counter()
+    resp = await client.post(
+        f"/api/notifications/{cid}/send",
+        json={"title": "Giá vàng", "body": "SJC tăng", "level": "warning"},
+    )
+    elapsed = time.perf_counter() - started
+
+    assert resp.status_code == 202
+    assert resp.json()["data"]["message"] == "queued"
+    assert elapsed < 0.1  # the plan's bar; the send itself would take 30s
+    assert await redis_queue.xlen(stream_key()) == 1
+
+
+@pytest.mark.asyncio
+async def test_queued_send_is_delivered_by_the_consumer(
+    client, redis_queue, seed_user, monkeypatch
+):
+    """End of the rope: what the endpoint enqueued is what the consumer sends."""
+    cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
+        "id"
+    ]
+
+    captured = {}
+
+    async def _send(session, channel, event, **kwargs):
+        captured["title"] = event.title
+        captured["channel_id"] = channel.id
+        captured["trigger"] = kwargs.get("trigger")
+
+    monkeypatch.setattr(dispatcher.Notifier, "send_event", staticmethod(_send))
+    await client.post(
+        f"/api/notifications/{cid}/send",
+        json={"title": "Giá vàng", "body": "SJC tăng", "level": "warning"},
+    )
+
+    consumer = NotificationQueueConsumer(
+        deliver, consumer_name="test", block_ms=0, claim_idle_ms=0
+    )
+    assert await consumer.run_once() == 1
+    assert captured["title"] == "Giá vàng"
+    assert str(captured["channel_id"]) == str(cid)
+
+
+@pytest.mark.asyncio
+async def test_consumer_drops_an_entry_whose_channel_was_deleted(
+    client, redis_queue, monkeypatch
+):
+    """A queued send outlives its channel — the delete happens meanwhile.
+
+    Redelivering cannot make the channel exist again, so the entry is acked
+    rather than left to be reclaimed forever.
+    """
+    cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
+        "id"
+    ]
+    await client.post(
+        f"/api/notifications/{cid}/send",
+        json={"title": "Giá vàng", "body": "SJC tăng", "level": "info"},
+    )
+    await client.delete(f"/api/notifications/{cid}")
+
+    sent = False
+
+    async def _send(session, channel, event, **kwargs):
+        nonlocal sent
+        sent = True
+
+    monkeypatch.setattr(dispatcher.Notifier, "send_event", staticmethod(_send))
+    consumer = NotificationQueueConsumer(
+        deliver, consumer_name="test", block_ms=0, claim_idle_ms=0
+    )
+    assert await consumer.run_once() == 1  # acked...
+    assert sent is False  # ...without sending
+
+
+@pytest.mark.asyncio
+async def test_consumer_acks_a_permanently_failing_send(
+    client, redis_queue, monkeypatch
+):
+    """A failed send is *handled*, not unhandled.
+
+    ``send_event`` already exhausted its bounded retry and wrote a FAILED
+    ``NotificationLog``. Leaving the entry pending would re-run that whole retry
+    loop for as long as the channel stays broken — a busy loop against a third
+    party, with a duplicate audit row each time round.
+    """
+    from kactus_common.exceptions import ExternalServiceError
+
+    cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
+        "id"
+    ]
+    await client.post(
+        f"/api/notifications/{cid}/send",
+        json={"title": "Giá vàng", "body": "SJC tăng", "level": "info"},
+    )
+
+    async def _fails(session, channel, event, **kwargs):
+        raise ExternalServiceError("telegram: 401 unauthorized")
+
+    monkeypatch.setattr(dispatcher.Notifier, "send_event", staticmethod(_fails))
+    consumer = NotificationQueueConsumer(
+        deliver, consumer_name="test", block_ms=0, claim_idle_ms=0
+    )
+    assert await consumer.run_once() == 1
+    assert (
+        await redis_queue.xpending_range(
+            stream_key(), CONSUMER_GROUP, min="-", max="+", count=10
+        )
+        == []
+    )
+
+
+@pytest.mark.asyncio
+async def test_test_endpoint_stays_synchronous(client, redis_queue, monkeypatch):
+    """``/test`` must not be queued even with the queue on.
+
+    The user is sitting in front of a credentials form waiting to hear whether
+    they work; a 202 there answers nothing.
+    """
+
+    async def _test(channel):
+        return True
+
+    monkeypatch.setattr(dispatcher.Notifier, "test", staticmethod(_test))
+    cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
+        "id"
+    ]
+
+    resp = await client.post(f"/api/notifications/{cid}/test")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["message"] == "ok"
+    assert await redis_queue.xlen(stream_key()) == 0
 
 
 @pytest.mark.asyncio
