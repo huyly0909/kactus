@@ -61,7 +61,7 @@ python manage.py fin db upgrade
 ### 5. Test
 
 ```bash
-uv run pytest packages/kactus-fin/tests
+uv run pytest services/kactus-fin/tests
 ```
 
 ## Model Checklist

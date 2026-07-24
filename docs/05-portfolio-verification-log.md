@@ -85,7 +85,7 @@ Tests: **285/285 pass** (thêm `test_ratios_transposed_frame_pivots_per_quarter`
 
 Xem [04 §16 "Cách chạy / verify"](04-portfolio-feature.md). Cốt lõi: dựng Postgres,
 `fin db upgrade`, `sync-catalog`, rồi `crawl --kind quotes` hoặc E2E curl
-login→create→add→refresh→quotes. Smoke nhanh nhất (không cần DB): từ `packages/kactus-data`
+login→create→add→refresh→quotes. Smoke nhanh nhất (không cần DB): từ `libs/kactus-data`
 gọi `init_vnstock_auth()` + `StockMarketSource().price_board(["FPT","VCB"])`.
 
 > ⚠️ **Nguồn quan trọng khi verify decision-support:** `news`/`events`/`ratios` chỉ giàu dữ

@@ -24,7 +24,7 @@ python manage.py data <command>         # kactus-data commands
 ### 1. Create the command file
 
 ```python
-# packages/kactus-fin/src/kactus_fin/cli/my_command.py
+# services/kactus-fin/src/kactus_fin/cli/my_command.py
 """Description of what these commands do."""
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ async def do_something(
 ### 2. Register in the package's CLI `__init__.py`
 
 ```python
-# packages/kactus-fin/src/kactus_fin/cli/__init__.py
+# services/kactus-fin/src/kactus_fin/cli/__init__.py
 from kactus_common.cli import AsyncTyper
 
 cli = AsyncTyper(help="Kactus Fin CLI")

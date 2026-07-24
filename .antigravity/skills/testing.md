@@ -26,8 +26,8 @@ packages/<package>/tests/
 
 ```bash
 uv run pytest                                    # all packages
-uv run pytest packages/kactus-fin/tests          # one package
-uv run pytest packages/kactus-data/tests/sources # one feature
+uv run pytest services/kactus-fin/tests          # one package
+uv run pytest libs/kactus-data/tests/sources # one feature
 uv run pytest -k "test_login"                    # by name filter
 uv run pytest -m "not slow"                      # exclude slow tests
 ```

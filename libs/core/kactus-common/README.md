@@ -79,5 +79,5 @@ print(result.fetchall())
 ## Testing
 
 ```bash
-uv run pytest packages/kactus-common/tests/ -v
+uv run pytest libs/core/kactus-common/tests/ -v
 ```

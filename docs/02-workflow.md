@@ -371,7 +371,7 @@ Development:
   Frontend:  pnpm dev --filter bloom-app       # vite hot-reload
 
 Docker (dev/stag/prod):
-  cd packages/docker-hub/{env}
+  cd deploy/{env}
   docker compose up -d
 
   # Migrations

@@ -4,24 +4,35 @@
 
 **uv workspaces** monorepo. Fintech platform for financial data (gold prices, stocks, financial reports).
 
-| Package | Import As | Purpose | Port |
-|---------|-----------|---------|------|
-| `kactus-common` | `kactus_common` | Shared infrastructure (DB, schemas, auth, events) | - |
-| `kactus-data` | `kactus_data` | Data ETL (gold, stock, finance scraping) | - |
-| `kactus-fin` | `kactus_fin` | Main API server (FastAPI) | 17600 |
-| `kactus-fin-gateway` | `kactus_fin_gateway` | Public API gateway (FastAPI) | 17601 |
+Directories express the layering: **`services/` sits above `libs/`, which sits above `libs/core/`.**
+Deeper = lower layer, and a lower layer never imports upward.
+
+| Path | Package | Import As | Purpose | Port |
+|------|---------|-----------|---------|------|
+| `libs/core/kactus-common` | `kactus-common` | `kactus_common` | Shared infrastructure (DB, schemas, auth, events) | - |
+| `libs/kactus-data` | `kactus-data` | `kactus_data` | Data ETL (gold, stock, finance scraping) | - |
+| `services/kactus-fin` | `kactus-fin` | `kactus_fin` | Main API server (FastAPI) | 17600 |
+| `services/kactus-fin-gateway` | `kactus-fin-gateway` | `kactus_fin_gateway` | Public API gateway (FastAPI) | 17601 |
+| `deploy/` | - | - | Dockerfiles + per-env compose (not a Python package) | - |
+
+`services/` are the only deployable units; nothing imports *into* them.
 
 ### Dependency Flow (one-way)
 
 ```
-kactus-fin  ──────┐
-kactus-fin-gateway ──┤──▶ kactus-common
-kactus-data  ─────┘
+services/kactus-fin ────────┐
+services/kactus-fin-gateway ─┤──▶ libs/core/kactus-common
+libs/kactus-data ───────────┘
 
-kactus-fin ──▶ kactus-data ──▶ kactus-common
+services/kactus-fin ──▶ libs/kactus-data ──▶ libs/core/kactus-common
 ```
 
 Never import from app packages into `kactus-common`.
+
+**This is enforced, not just documented.** The layer contract lives in
+`pyproject.toml` (`[tool.importlinter]`); run `uv run lint-imports` — it fails the
+build on an upward import. Directory depth alone enforces nothing (Python import
+does not care), which is why the contract exists.
 
 ### Portfolio feature (✅ implemented)
 
@@ -69,15 +80,19 @@ Read-only REST over the **OLAP (DuckDB)** tables the kactus-data ETL writes — 
 python manage.py fin dev                # dev with hot-reload (port 17600)
 python manage.py fin-gw dev             # gateway dev (port 17601)
 
-# Dependencies
-uv sync                                 # sync all deps
+# Dependencies — plain `uv sync` only syncs the root project and PRUNES the
+# workspace members' deps, which breaks the venv. Always pass --all-packages.
+uv sync --all-packages                  # sync all deps
 
 # Pre-commit
 pre-commit install && pre-commit run --all-files
 
+# Layer contract (services -> libs -> core)
+uv run lint-imports
+
 # Tests
 uv run pytest                           # all unit tests
-uv run pytest packages/kactus-fin/tests # one package
+uv run pytest services/kactus-fin/tests # one package
 uv run pytest -k "test_login"           # by name
 ```
 
@@ -87,7 +102,7 @@ uv run pytest -k "test_login"           # by name
 
 ```bash
 uv run pytest                                    # all unit tests
-uv run pytest packages/kactus-common/tests       # one package
+uv run pytest libs/core/kactus-common/tests       # one package
 uv run pytest -k "test_login"                    # by name
 ```
 
@@ -129,7 +144,7 @@ Coverage config lives in `pyproject.toml` (`[tool.coverage.*]`).
 ## Docker Environments
 
 ```bash
-cd packages/docker-hub/{env}
+cd deploy/{env}
 docker compose up -d
 
 # Migrations

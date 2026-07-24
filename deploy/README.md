@@ -40,13 +40,13 @@ cd /opt/kactus
 
 ```bash
 # Development
-cd packages/docker-hub/dev
+cd deploy/dev
 
 # Staging
-cd packages/docker-hub/stag
+cd deploy/stag
 
 # Production
-cd packages/docker-hub/prod
+cd deploy/prod
 ```
 
 ### 3. Configure environment variables
@@ -117,7 +117,7 @@ curl http://localhost:17601/health    # kactus-fin-gateway
 cd /opt/kactus
 git pull origin main
 
-cd packages/docker-hub/<env>
+cd deploy/<env>
 docker compose up -d --build
 ```
 
@@ -184,5 +184,5 @@ docker compose exec redis redis-cli ping
 
 ```bash
 # Fix ownership if bind-mounted source has wrong permissions
-sudo chown -R $(id -u):$(id -g) packages/
+sudo chown -R $(id -u):$(id -g) services/ libs/
 ```

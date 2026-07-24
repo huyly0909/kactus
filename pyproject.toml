@@ -9,8 +9,11 @@ dependencies = [
 ]
 
 [tool.uv.workspace]
-members = ["packages/*"]
-exclude = ["packages/docker-hub"]
+# Layered layout: services/ are deployable, libs/ are imported downward only.
+# `deploy/` no longer needs an exclude — it sits outside the member globs.
+members = ["services/*", "libs/*", "libs/core/*"]
+# `libs/core` is a grouping directory, not a package — `libs/*` would match it.
+exclude = ["libs/core"]
 
 [tool.uv.sources]
 kactus-common = { workspace = true }
@@ -24,9 +27,36 @@ dev = [
     "pytest-asyncio>=0.26.0",
     "httpx>=0.28.0",
     "pytest-cov>=7.0.0",
+    "import-linter>=2.13",
 ]
 
 # pytest config is in pytest.ini (single source of truth)
+
+# ---------------------------------------------------------------------------
+# Layer enforcement — `uv run lint-imports` (also a pre-commit hook).
+#
+# The directory layout (services/ over libs/ over libs/core/) makes the layering
+# visible; Python import does not care about directory depth, so this contract is
+# what actually enforces it. Encodes the CLAUDE.md rule "never import from app
+# packages into kactus-common", plus the one-way flow between the two libs.
+# ---------------------------------------------------------------------------
+
+[tool.importlinter]
+root_packages = [
+    "kactus_common",
+    "kactus_data",
+    "kactus_fin",
+    "kactus_fin_gateway",
+]
+
+[[tool.importlinter.contracts]]
+name = "Kactus layers: services -> libs -> core"
+type = "layers"
+layers = [
+    "kactus_fin | kactus_fin_gateway",
+    "kactus_data",
+    "kactus_common",
+]
 
 # ---------------------------------------------------------------------------
 # Coverage gate — invoked explicitly by CI as
@@ -38,10 +68,10 @@ dev = [
 [tool.coverage.run]
 branch = false
 source = [
-    "packages/kactus-common/src/kactus_common",
-    "packages/kactus-data/src/kactus_data",
-    "packages/kactus-fin/src/kactus_fin",
-    "packages/kactus-fin-gateway/src/kactus_fin_gateway",
+    "libs/core/kactus-common/src/kactus_common",
+    "libs/kactus-data/src/kactus_data",
+    "services/kactus-fin/src/kactus_fin",
+    "services/kactus-fin-gateway/src/kactus_fin_gateway",
 ]
 omit = [
     "*/tests/*",

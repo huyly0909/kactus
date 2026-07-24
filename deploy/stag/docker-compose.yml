@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     env_file: .env
     ports:
       - "5432:5432"
@@ -8,26 +9,28 @@ services:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U kactus" ]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
-      interval: 5s
+      interval: 10s
       timeout: 5s
       retries: 5
 
   kactus-fin:
     build:
       context: ../../
-      dockerfile: packages/docker-hub/Dockerfile.fin
+      dockerfile: deploy/Dockerfile.fin
+    restart: unless-stopped
     env_file: .env
     ports:
       - "17600:17600"
@@ -36,16 +39,20 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ../../packages/kactus-common/src:/app/packages/kactus-common/src
-      - ../../packages/kactus-fin/src:/app/packages/kactus-fin/src
+    # SINGLE WORKER — load-bearing, do not raise. kactus-fin holds three pieces of
+    # in-process state: the portfolio APScheduler (N workers ⇒ N duplicate crawls +
+    # DuckDB write-lock contention), the SSE broker (a client only hears from the
+    # worker it landed on), and the Zalo PA QR-login session store (the 5-step flow
+    # breaks when steps round-robin across workers). Scale-out needs Redis pub/sub
+    # + a shared session store first. kactus-fin-gw below is stateless — it keeps 2.
     command: >
-      uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --reload --log-level debug
+      uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --workers 1 --log-level info
 
   kactus-fin-gw:
     build:
       context: ../../
-      dockerfile: packages/docker-hub/Dockerfile.fin-gw
+      dockerfile: deploy/Dockerfile.fin-gw
+    restart: unless-stopped
     env_file: .env
     ports:
       - "17601:17601"
@@ -54,11 +61,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    volumes:
-      - ../../packages/kactus-common/src:/app/packages/kactus-common/src
-      - ../../packages/kactus-fin-gateway/src:/app/packages/kactus-fin-gateway/src
     command: >
-      uvicorn kactus_fin_gateway.app:app --host 0.0.0.0 --port 17601 --reload --log-level debug
+      uvicorn kactus_fin_gateway.app:app --host 0.0.0.0 --port 17601 --workers 2 --log-level info
 
 volumes:
   postgres_data:

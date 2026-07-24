@@ -210,7 +210,7 @@ python manage.py fin dev                # dev with hot-reload (port 17600)
 python manage.py fin-gw dev             # gateway dev (port 17601)
 
 # Dependencies
-cd packages/kactus-common && uv add <package>
+cd libs/core/kactus-common && uv add <package>
 uv sync --package kactus-fin
 
 # Pre-commit

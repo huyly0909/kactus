@@ -37,7 +37,7 @@ This skill covers the convention that ensures every SQLAlchemy ORM model is visi
 Every package that owns ORM models **must** expose a `MODELS` list in its top-level `__init__.py`:
 
 ```python
-# packages/kactus-common/src/kactus_common/__init__.py
+# libs/core/kactus-common/src/kactus_common/__init__.py
 
 MODELS: list[str] = [
     "kactus_common.user.model",
@@ -46,7 +46,7 @@ MODELS: list[str] = [
 ```
 
 ```python
-# packages/kactus-fin/src/kactus_fin/__init__.py
+# services/kactus-fin/src/kactus_fin/__init__.py
 
 MODELS: list[str] = [
     # "kactus_fin.billing.model",  ← add model module paths here
@@ -66,7 +66,7 @@ MODELS: list[str] = [
 Each package's settings class declares a `ClassVar[list[str]]` called `INSTALLED_PACKAGES`:
 
 ```python
-# packages/kactus-common/src/kactus_common/config.py
+# libs/core/kactus-common/src/kactus_common/config.py
 
 class CommonSettings(BaseKactusSettings):
     INSTALLED_PACKAGES: ClassVar[list[str]] = ["kactus_common"]
@@ -75,7 +75,7 @@ class CommonSettings(BaseKactusSettings):
 Entry-point packages **must extend the parent's list**:
 
 ```python
-# packages/kactus-fin/src/kactus_fin/config.py
+# services/kactus-fin/src/kactus_fin/config.py
 
 class Settings(DataSettings):
     INSTALLED_PACKAGES: ClassVar[list[str]] = DataSettings.INSTALLED_PACKAGES + ["kactus_fin"]

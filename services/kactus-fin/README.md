@@ -69,7 +69,7 @@ kactus_fin/
 1. Create a new router file in `api/`:
 
 ```python
-# packages/kactus-fin/src/kactus_fin/api/prices.py
+# services/kactus-fin/src/kactus_fin/api/prices.py
 from fastapi import APIRouter
 from kactus_common import DatabaseClient
 
@@ -94,5 +94,5 @@ app.include_router(prices_router)
 ## Testing
 
 ```bash
-uv run pytest packages/kactus-fin/tests/ -v
+uv run pytest services/kactus-fin/tests/ -v
 ```

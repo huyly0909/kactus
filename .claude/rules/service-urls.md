@@ -69,7 +69,7 @@ Each `*.example` MUST carry a header comment explaining "Dockerfile bakes K8s-pr
 
 ## Where container names are NOT allowed
 
-- `packages/*/src/**/config.py` defaults — use `localhost`
+- `services/*/src/**/config.py` and `libs/**/src/**/config.py` defaults — use `localhost`
 - `docker-hub/dockerfiles/*.Dockerfile` `ENV` directives — use `127.0.0.1`
 - Inline URLs in Python source code (build URLs from settings)
 - Default URLs in prompt templates rendered for the LLM — substitute from settings via the template render context

@@ -121,5 +121,5 @@ result = pipeline.run(table=table, code="SJC", ..., transform=transform_mihong)
 ## Tests
 
 ```bash
-uv run pytest packages/kactus-data/tests/ -v
+uv run pytest libs/kactus-data/tests/ -v
 ```

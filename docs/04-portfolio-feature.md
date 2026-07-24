@@ -1,7 +1,7 @@
 # Portfolio Feature — Multi-Asset Watchlist + ETL/Cron + SSE
 
 > **Trạng thái**: ✅ **Implemented** (backend + frontend; 280 backend tests pass, frontend `tsc -b` + `vite build` xanh). Chưa verify với dữ liệu vnstock thật (cần key + chạy server). Xem **§16 As-built notes** cho các điểm khác blueprint gốc.
-> **Liên quan**: [01-tech-stack.md](01-tech-stack.md) · [02-workflow.md](02-workflow.md) · [03-feature-status.md](03-feature-status.md) · vnstock reference: [../packages/kactus-fin/docs/vnstock/README.md](../packages/kactus-fin/docs/vnstock/README.md), [data-collection.md](../packages/kactus-fin/docs/vnstock/data-collection.md)
+> **Liên quan**: [01-tech-stack.md](01-tech-stack.md) · [02-workflow.md](02-workflow.md) · [03-feature-status.md](03-feature-status.md) · vnstock reference: [../services/kactus-fin/docs/vnstock/README.md](../services/kactus-fin/docs/vnstock/README.md), [data-collection.md](../services/kactus-fin/docs/vnstock/data-collection.md)
 
 ---
 
@@ -209,8 +209,8 @@ Cron/manual crawl xong (kactus-data)
 
 vnstock **không** đọc env var trực tiếp; auth qua package **`vnai`**.
 
-1. Field trong `DataSettings`: `vnstock_api_key: str = ""`. ⚠️ **Đính chính so với blueprint**: biến trong [../packages/kactus-data/.env](../packages/kactus-data/.env) thực tế là **`KACTUS_VNSTOCK_API_KEY`** (đã có prefix), nên với `env_prefix="KACTUS_"` field bind **trực tiếp — KHÔNG cần `validation_alias`**. (Thêm `mihong_xsrf_token: str = ""` cho gold; thiếu → bỏ qua crawl vàng, log cảnh báo.)
-2. `init_vnstock_auth()` ([auth.py](../packages/kactus-data/src/kactus_data/sources/stock/auth.py)): đọc `settings.vnstock_api_key`; nếu có → `import vnai; vnai.setup_api_key(key)` — **dùng `vnai.setup_api_key`, KHÔNG phải `register_user`**. Idempotent, không raise, **không bao giờ log key** (chỉ log tier). Nếu rỗng → return sớm (không import vnstock), chạy guest tier.
+1. Field trong `DataSettings`: `vnstock_api_key: str = ""`. ⚠️ **Đính chính so với blueprint**: biến trong [../libs/kactus-data/.env](../libs/kactus-data/.env) thực tế là **`KACTUS_VNSTOCK_API_KEY`** (đã có prefix), nên với `env_prefix="KACTUS_"` field bind **trực tiếp — KHÔNG cần `validation_alias`**. (Thêm `mihong_xsrf_token: str = ""` cho gold; thiếu → bỏ qua crawl vàng, log cảnh báo.)
+2. `init_vnstock_auth()` ([auth.py](../libs/kactus-data/src/kactus_data/sources/stock/auth.py)): đọc `settings.vnstock_api_key`; nếu có → `import vnai; vnai.setup_api_key(key)` — **dùng `vnai.setup_api_key`, KHÔNG phải `register_user`**. Idempotent, không raise, **không bao giờ log key** (chỉ log tier). Nếu rỗng → return sớm (không import vnstock), chạy guest tier.
 3. `vnstock_max_concurrency()` size `Semaphore` theo `vnai.get_tier_info()` — guest 20 / free 60 / paid 180 req/phút (map về 1…8 luồng).
 4. **Lưu ý vận hành**: scheduler crawl chạy *trong* process `kactus-fin`. Chưa có file `.env` cho fin → key phải đến qua **env thật `KACTUS_VNSTOCK_API_KEY`** (docker env / export). Local dev: `export KACTUS_VNSTOCK_API_KEY=...` trước khi `python manage.py fin dev`.
 
@@ -259,10 +259,10 @@ Stack: React 18 + Vite + TanStack Query v5 + Zustand + shadcn/ui + i18next + **s
 
 ## 14. Implementation checklist — ✅ done
 
-- [x] **Phase 0**: deps (`pytz`/`apscheduler`/`sse-starlette` ở root pyproject); wire `vnstock_api_key` + `mihong_xsrf_token` ([config.py](../packages/kactus-data/src/kactus_data/config.py)) + `init_vnstock_auth` ([auth.py](../packages/kactus-data/src/kactus_data/sources/stock/auth.py)); DuckDB INSERT → `register(df)` ([client.py](../packages/kactus-common/src/kactus_common/database/duckdb/client.py)).
-- [x] **kactus-common**: [model](../packages/kactus-common/src/kactus_common/portfolio/model.py) (`portfolios`, `portfolio_items`, `supported_assets`, `crawl_runs`) + [schema](../packages/kactus-common/src/kactus_common/portfolio/schema.py) + [service](../packages/kactus-common/src/kactus_common/portfolio/service.py) (`get_union_codes_by_type`) + [events](../packages/kactus-common/src/kactus_common/portfolio/events.py) + [sse/broker.py](../packages/kactus-common/src/kactus_common/sse/broker.py) + [symbol_provider](../packages/kactus-common/src/kactus_common/portfolio/symbol_provider.py) Protocol; thêm vào `MODELS`.
-- [x] **kactus-data**: [market.py](../packages/kactus-data/src/kactus_data/sources/stock/market.py) (price_board/news/events/foreign/ratios/catalog) + DuckDB tables + [jobs/crawl.py](../packages/kactus-data/src/kactus_data/jobs/crawl.py) + [jobs/scheduler.py](../packages/kactus-data/src/kactus_data/jobs/scheduler.py) + [AssetProvider registry](../packages/kactus-data/src/kactus_data/portfolio/provider.py) (STOCK, GOLD) + [CLI](../packages/kactus-data/src/kactus_data/cli/portfolio.py).
-- [x] **kactus-fin**: [portfolio/api.py](../packages/kactus-fin/src/kactus_fin/portfolio/api.py) + [admin.py](../packages/kactus-fin/src/kactus_fin/portfolio/admin.py) + [app.py](../packages/kactus-fin/src/kactus_fin/app.py) lifespan (auth → SSE handler → scheduler) + Alembic migration `a1b2c3d4e5f6`.
+- [x] **Phase 0**: deps (`pytz`/`apscheduler`/`sse-starlette` ở root pyproject); wire `vnstock_api_key` + `mihong_xsrf_token` ([config.py](../libs/kactus-data/src/kactus_data/config.py)) + `init_vnstock_auth` ([auth.py](../libs/kactus-data/src/kactus_data/sources/stock/auth.py)); DuckDB INSERT → `register(df)` ([client.py](../libs/core/kactus-common/src/kactus_common/database/duckdb/client.py)).
+- [x] **kactus-common**: [model](../libs/core/kactus-common/src/kactus_common/portfolio/model.py) (`portfolios`, `portfolio_items`, `supported_assets`, `crawl_runs`) + [schema](../libs/core/kactus-common/src/kactus_common/portfolio/schema.py) + [service](../libs/core/kactus-common/src/kactus_common/portfolio/service.py) (`get_union_codes_by_type`) + [events](../libs/core/kactus-common/src/kactus_common/portfolio/events.py) + [sse/broker.py](../libs/core/kactus-common/src/kactus_common/sse/broker.py) + [symbol_provider](../libs/core/kactus-common/src/kactus_common/portfolio/symbol_provider.py) Protocol; thêm vào `MODELS`.
+- [x] **kactus-data**: [market.py](../libs/kactus-data/src/kactus_data/sources/stock/market.py) (price_board/news/events/foreign/ratios/catalog) + DuckDB tables + [jobs/crawl.py](../libs/kactus-data/src/kactus_data/jobs/crawl.py) + [jobs/scheduler.py](../libs/kactus-data/src/kactus_data/jobs/scheduler.py) + [AssetProvider registry](../libs/kactus-data/src/kactus_data/portfolio/provider.py) (STOCK, GOLD) + [CLI](../libs/kactus-data/src/kactus_data/cli/portfolio.py).
+- [x] **kactus-fin**: [portfolio/api.py](../services/kactus-fin/src/kactus_fin/portfolio/api.py) + [admin.py](../services/kactus-fin/src/kactus_fin/portfolio/admin.py) + [app.py](../services/kactus-fin/src/kactus_fin/app.py) lifespan (auth → SSE handler → scheduler) + Alembic migration `a1b2c3d4e5f6`.
 - [x] **kactus-bloom**: [service](../../kactus-bloom/packages/bloom-app/src/services/portfolioService.ts) + hooks ([usePortfolioQuery](../../kactus-bloom/packages/bloom-app/src/hooks/usePortfolioQuery.ts), [useMarketStream](../../kactus-bloom/packages/bloom-app/src/hooks/useMarketStream.ts)) + pages + i18n (vi+en); **components tự viết** (dialog/picker/table) thay vì shadcn CLI.
 - [x] **Tests**: service union/dedup, sources (fake vnstock), crawl→DuckDB (text-safe tiếng Việt), API (create→add→quotes), manual-refresh dedup, SSE bridge — **280 pass**. Coverage tổng **77%** (module mới 80–100%; baseline repo ~71%, gate 80 chưa từng đạt). SSE HTTP-stream endpoint chưa test (giới hạn ASGITransport) — broker + event bridge đã test.
 
@@ -270,9 +270,9 @@ Stack: React 18 + Vite + TanStack Query v5 + Zustand + shadcn/ui + i18next + **s
 
 ## 15. References
 
-- vnstock API: [../packages/kactus-fin/docs/vnstock/api-reference.md](../packages/kactus-fin/docs/vnstock/api-reference.md)
-- vnstock cron/backfill: [../packages/kactus-fin/docs/vnstock/data-collection.md](../packages/kactus-fin/docs/vnstock/data-collection.md), [backfill-strategies.md](../packages/kactus-fin/docs/vnstock/backfill-strategies.md)
-- vnstock auth/tier: [../packages/kactus-fin/docs/vnstock/authentication.md](../packages/kactus-fin/docs/vnstock/authentication.md)
+- vnstock API: [../services/kactus-fin/docs/vnstock/api-reference.md](../services/kactus-fin/docs/vnstock/api-reference.md)
+- vnstock cron/backfill: [../services/kactus-fin/docs/vnstock/data-collection.md](../services/kactus-fin/docs/vnstock/data-collection.md), [backfill-strategies.md](../services/kactus-fin/docs/vnstock/backfill-strategies.md)
+- vnstock auth/tier: [../services/kactus-fin/docs/vnstock/authentication.md](../services/kactus-fin/docs/vnstock/authentication.md)
 - Feature app pattern & data pipeline: [02-workflow.md](02-workflow.md)
 
 ---

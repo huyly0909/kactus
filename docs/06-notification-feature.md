@@ -208,7 +208,7 @@ Clone `modules/portfolio/`. Stack thực tế: React 18 + Vite 6 + **Radix + Tai
 ## 16. Cách chạy / verify
 
 ```bash
-.venv/bin/python -m pytest packages/kactus-common/tests packages/kactus-fin/tests -q   # 337 pass
+.venv/bin/python -m pytest libs/core/kactus-common/tests services/kactus-fin/tests -q   # 337 pass
 .venv/bin/python manage.py fin db upgrade      # tạo notification_logs (cần Postgres)
 cd ../kactus-bloom/packages/bloom-app && npx tsc -b && npx vite build   # xanh
 ```
