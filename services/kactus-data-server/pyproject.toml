@@ -1,23 +1,20 @@
 [project]
-name = "kactus-fin"
+name = "kactus-data-server"
 version = "0.1.0"
-description = "Kactus financial backend API (FastAPI)"
+description = "Kactus data plane — owns DuckDB, the crawl scheduler and the vnstock session"
 requires-python = ">=3.12"
 dependencies = [
     "kactus-common",
+    "kactus-data",
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "pydantic-settings>=2.7.0",
-    "alembic>=1.18.4",
     "psycopg2-binary>=2.9.11",
-    "sse-starlette>=3.4.4",
-    "httpx>=0.28.1",
-    "kactus-notification",
 ]
 
 [tool.uv.sources]
 kactus-common = { workspace = true }
-kactus-notification = { workspace = true }
+kactus-data = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -31,4 +28,4 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/kactus_fin"]
+packages = ["src/kactus_data_server"]

@@ -2,18 +2,27 @@
 
 from kactus_common.config import BaseKactusSettings, CommonSettings, clear_settings
 from kactus_common.config import get_settings as get_global_settings
-from kactus_data.config import DataSettings
 from kactus_fin.config import Settings, get_settings
+from kactus_notification.config import NotificationSettings
 
 
 class TestFinSettings:
-    """Tests for kactus-fin Settings (inherits DataSettings)."""
+    """Tests for kactus-fin Settings (CommonSettings + NotificationSettings)."""
 
-    def test_inherits_data_settings(self):
+    def test_merges_both_branches(self):
         s = Settings()
-        assert isinstance(s, DataSettings)
         assert isinstance(s, CommonSettings)
+        assert isinstance(s, NotificationSettings)
         assert isinstance(s, BaseKactusSettings)
+
+    def test_does_not_inherit_data_settings(self):
+        """The ETL knobs left with the data plane.
+
+        Not a style preference: kactus-fin has no kactus-data dependency any
+        more, so importing DataSettings here would not even resolve. Asserting
+        on the field is the cheap version of that check.
+        """
+        assert not hasattr(Settings(), "data_source")
 
     def test_default_values(self):
         s = Settings()
@@ -32,10 +41,11 @@ class TestFinSettings:
         assert s.db_path == "kactus.duckdb"
         assert s.encryption_key == ""
 
-    def test_inherited_data_defaults(self):
-        """DataSettings fields are available via inheritance."""
+    def test_data_plane_defaults(self):
+        """How this process finds the service that does own the ETL."""
         s = Settings()
-        assert s.data_source == "KBS"
+        assert s.data_plane_url == "http://localhost:17602"
+        assert s.internal_service_token == ""
 
     def test_inherited_base_defaults(self):
         """BaseKactusSettings fields are available via inheritance."""
@@ -52,13 +62,13 @@ class TestFinSettings:
         monkeypatch.setenv("KACTUS_APP_NAME", "Custom Fin")
         monkeypatch.setenv("KACTUS_PORT", "9999")
         monkeypatch.setenv("KACTUS_DB_PATH", "/data/fin.duckdb")
-        monkeypatch.setenv("KACTUS_DATA_SOURCE", "VCI")
+        monkeypatch.setenv("KACTUS_DATA_PLANE_URL", "http://data:17602")
         monkeypatch.setenv("KACTUS_APP_ENV", "prod")
         s = Settings()
         assert s.app_name == "Custom Fin"
         assert s.port == 9999
         assert s.db_path == "/data/fin.duckdb"
-        assert s.data_source == "VCI"
+        assert s.data_plane_url == "http://data:17602"
         assert s.app_env == "prod"
         assert s.is_prod() is True
 
@@ -67,11 +77,20 @@ class TestFinSettings:
         assert not hasattr(s, "unknown_field")
 
     def test_mro(self):
-        """Verify the full method resolution order."""
+        """Verify the full method resolution order.
+
+        CommonSettings must precede NotificationSettings: both descend from
+        BaseKactusSettings, and this is the order that decides which branch wins
+        if the two ever declare the same field name.
+        """
         mro_names = [c.__name__ for c in Settings.__mro__]
-        assert mro_names.index("Settings") < mro_names.index("DataSettings")
-        assert mro_names.index("DataSettings") < mro_names.index("CommonSettings")
-        assert mro_names.index("CommonSettings") < mro_names.index("BaseKactusSettings")
+        assert mro_names.index("Settings") < mro_names.index("CommonSettings")
+        assert mro_names.index("CommonSettings") < mro_names.index(
+            "NotificationSettings"
+        )
+        assert mro_names.index("NotificationSettings") < mro_names.index(
+            "BaseKactusSettings"
+        )
 
 
 class TestFinGetSettings:

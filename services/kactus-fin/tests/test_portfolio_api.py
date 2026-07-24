@@ -1,13 +1,15 @@
 """Tests for the kactus-fin portfolio API.
 
-In-memory SQLite (OLTP) + tmp-file DuckDB (OLAP) + a fake market source (no
-network).  ASGITransport does not run lifespan, so the portfolio runtime is
-built directly in the fixture.
+In-memory SQLite for the OLTP side — portfolios, items and the crawl audit are
+still this service's data. Market rows are not: they come from the fake data
+plane in ``conftest.py``, which is where the DuckDB used to be.
+
+``ASGITransport`` does not run lifespan, so the SSE handler is registered by the
+fixture.
 """
 
 from __future__ import annotations
 
-import pandas as pd
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -16,55 +18,13 @@ from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.portfolio.const import AssetType, CrawlKind
 from kactus_common.portfolio.events import MarketDataRefreshedPayload
+from kactus_common.portfolio.schema import MarketRowSchema
 from kactus_common.portfolio.service import CrawlRunService, SupportedAssetService
 from kactus_common.sse.broker import get_sse_broker
 from kactus_common.user import auth as auth_mod
 from kactus_common.user.model import User
-from kactus_data.portfolio.provider import StockAssetProvider
-from kactus_data.sources.stock.market import StockMarketSource
-from kactus_data.storage.duckdb import DuckDBStorage
 
 TEST_DB_URL = "sqlite+aiosqlite://"
-
-
-class FakeMarket(StockMarketSource):
-    def _raw_price_board(self, codes):
-        return pd.DataFrame(
-            [
-                {
-                    "symbol": c,
-                    "match_price": 25.5,
-                    "ref_price": 25.0,
-                    "ceiling": 26.0,
-                    "floor": 24.0,
-                    "accumulated_volume": 500,
-                }
-                for c in codes
-            ]
-        )
-
-    def _raw_news(self, code):
-        return pd.DataFrame(
-            [
-                {
-                    "id": f"{code}-1",
-                    "title": "Báo cáo quý",
-                    "public_date": "2026-06-17",
-                    "url": "u",
-                }
-            ]
-        )
-
-    def _raw_events(self, code):
-        return pd.DataFrame(
-            [{"id": f"{code}-e", "event_title": "ĐHCĐ", "event_date": "2026-06-17"}]
-        )
-
-    def _raw_all_symbols(self):
-        return pd.DataFrame([{"symbol": "FPT", "organ_name": "FPT Corp"}])
-
-    def _raw_group(self, group):
-        return ["FPT"]
 
 
 @pytest_asyncio.fixture
@@ -79,40 +39,20 @@ async def db():
 
 
 @pytest_asyncio.fixture
-async def app(db, tmp_path):
+async def app(db):
     from kactus_common.config import clear_settings, register_settings
-    from kactus_common.sse.market import register_sse_handler
+    from kactus_common.sse.market import register_sse_handler, reset_sse_handler
     from kactus_fin.app import create_app
     from kactus_fin.config import Settings
-    from kactus_fin.portfolio.runtime import PortfolioRuntime, set_runtime
-    from kactus_fin.portfolio.symbol_provider import FinSymbolProvider
 
-    register_settings(
-        Settings(enable_portfolio_scheduler=False, db_path=str(tmp_path / "t.duckdb"))
-    )
+    register_settings(Settings(internal_service_token="test-token"))
     session_mod._db = db
     auth_mod._auth = None
-
-    storage = DuckDBStorage(str(tmp_path / "t.duckdb"))
-    # FakeMarket also backs decision_market so news/events don't hit the network.
-    providers = {
-        AssetType.STOCK: StockAssetProvider(storage, FakeMarket(), FakeMarket())
-    }
     register_sse_handler()
-    set_runtime(
-        PortfolioRuntime(
-            db=db,
-            providers=providers,
-            storage=storage,
-            symbol_provider=FinSymbolProvider(db),
-            scheduler=None,
-        )
-    )
 
-    _app = create_app()
-    yield _app
+    yield create_app()
 
-    set_runtime(None)
+    reset_sse_handler()
     session_mod._db = None
     auth_mod._auth = None
     clear_settings()
@@ -154,6 +94,19 @@ async def _seed_catalog(db, *codes):
             asset_type=AssetType.STOCK,
             entries=[{"code": c, "name": c, "tags": ["VN30"]} for c in codes],
         )
+
+
+async def _make_portfolio(client, db, *codes):
+    await _seed_catalog(db, *codes)
+    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"][
+        "id"
+    ]
+    for code in codes:
+        await client.post(
+            f"/api/portfolios/{pid}/items",
+            json={"asset_type": "STOCK", "code": code},
+        )
+    return pid
 
 
 # --------------------------------------------------------------------------- #
@@ -219,19 +172,24 @@ async def test_add_item_uncatalogued_is_404(client):
 
 
 @pytest.mark.asyncio
-async def test_quotes_read_after_crawl(client, db):
-    from kactus_fin.portfolio.runtime import get_runtime
+async def test_quotes_projects_data_plane_rows(client, db, data_plane):
+    """The portfolio's own codes go out; the rows come back projected.
 
-    await _seed_catalog(db, "FPT")
-    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"][
-        "id"
+    The projection (opaque ``data`` dict → ``MarketQuoteSchema``) is what this
+    service still owns after the split, so it is what is asserted here.
+    """
+    pid = await _make_portfolio(client, db, "FPT")
+    data_plane.asset_rows[("STOCK", "quotes")] = [
+        MarketRowSchema(
+            symbol="FPT",
+            data={
+                "match_price": 25.5,
+                "ref_price": 25.0,
+                "accumulated_volume": 500,
+                "source": "KBS",
+            },
+        )
     ]
-    await client.post(
-        f"/api/portfolios/{pid}/items", json={"asset_type": "STOCK", "code": "FPT"}
-    )
-
-    # Populate DuckDB via the (fake) provider, then read through the API.
-    get_runtime().providers[AssetType.STOCK].crawl(CrawlKind.QUOTES, ["FPT"])
 
     resp = await client.get(f"/api/portfolios/{pid}/quotes")
     assert resp.status_code == 200
@@ -240,6 +198,33 @@ async def test_quotes_read_after_crawl(client, db):
     assert quotes[0]["code"] == "FPT"
     # FancyFloat serialises to string in JSON.
     assert quotes[0]["match_price"] == "25.5"
+    # `accumulated_volume` is renamed to `volume` on the way out.
+    assert quotes[0]["volume"] == "500.0"
+    assert data_plane.last("assets")["code"] == ["FPT"]
+
+
+@pytest.mark.asyncio
+async def test_quotes_asks_only_for_the_types_the_portfolio_holds(
+    client, db, data_plane
+):
+    """A stock-only watchlist must not trigger a gold read.
+
+    Every asset type is a separate round trip now; asking for types the user
+    does not hold is pure latency on the page that loads most often.
+    """
+    pid = await _make_portfolio(client, db, "FPT")
+    await client.get(f"/api/portfolios/{pid}/quotes")
+    asset_calls = [p for c, p in data_plane.calls if c == "assets"]
+    assert [p["asset_type"] for p in asset_calls] == ["STOCK"]
+
+
+@pytest.mark.asyncio
+async def test_empty_portfolio_makes_no_data_plane_call(client, data_plane):
+    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"][
+        "id"
+    ]
+    assert (await client.get(f"/api/portfolios/{pid}/quotes")).json()["data"] == []
+    assert not [c for c, _ in data_plane.calls if c == "assets"]
 
 
 @pytest.mark.asyncio
@@ -252,22 +237,62 @@ async def test_catalog_search(client, db):
 
 
 @pytest.mark.asyncio
-async def test_manual_refresh_dedup(client, db):
-    await _seed_catalog(db, "FPT")
-    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"][
-        "id"
-    ]
-    await client.post(
-        f"/api/portfolios/{pid}/items", json={"asset_type": "STOCK", "code": "FPT"}
-    )
-    # Pre-existing in-flight quotes crawl → refresh must be skipped.
+async def test_manual_refresh_forwards_to_the_data_plane(client, db, data_plane):
+    pid = await _make_portfolio(client, db, "FPT")
+    resp = await client.post(f"/api/portfolios/{pid}/refresh")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["skipped"] is False
+
+    sent = data_plane.last("crawl")
+    assert sent["kind"] == "quotes"
+    assert sent["codes_by_type"] == {"STOCK": ["FPT"]}
+    assert sent["portfolio_id"] == str(pid)
+    assert sent["trigger"] == "manual"
+    assert sent["dedup"] is True
+
+
+@pytest.mark.asyncio
+async def test_manual_refresh_dedup_stops_at_the_control_plane(client, db, data_plane):
+    """The in-flight guard runs here, against the shared Postgres.
+
+    Both planes see the same ``CrawlRun`` table, so the check could live on
+    either side — doing it here means a duplicate refresh costs no round trip
+    and the user gets the real reason back, not a generic "scheduled".
+    """
+    pid = await _make_portfolio(client, db, "FPT")
     async with db.get_session() as session:
         await CrawlRunService.start(
             session, asset_type=AssetType.STOCK, kind=CrawlKind.QUOTES
         )
+
     resp = await client.post(f"/api/portfolios/{pid}/refresh")
-    assert resp.status_code == 200
     assert resp.json()["data"]["skipped"] is True
+    assert not [c for c, _ in data_plane.calls if c == "crawl"]
+
+
+@pytest.mark.asyncio
+async def test_refresh_reports_a_dead_data_plane_instead_of_lying(client, db):
+    """A "Refresh scheduled" that never happened is the worse failure.
+
+    The call is awaited rather than fired into a local BackgroundTasks
+    precisely so this surfaces.
+    """
+    import httpx
+    from kactus_fin import data_client
+
+    pid = await _make_portfolio(client, db, "FPT")
+
+    async def boom(*args, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+    original = data_client.get_client().request
+    data_client.get_client().request = boom
+    try:
+        resp = await client.post(f"/api/portfolios/{pid}/refresh")
+    finally:
+        data_client.get_client().request = original
+
+    assert resp.status_code == 502
 
 
 @pytest.mark.asyncio
@@ -287,19 +312,23 @@ async def test_sse_handler_bridges_event_to_broker(app):
 
 
 @pytest.mark.asyncio
-async def test_news_and_asset_detail_reads(client, db):
-    from kactus_fin.portfolio.runtime import get_runtime
-
-    await _seed_catalog(db, "FPT")
-    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"][
-        "id"
+async def test_news_and_asset_detail_reads(client, db, data_plane):
+    pid = await _make_portfolio(client, db, "FPT")
+    data_plane.asset_rows[("STOCK", "news")] = [
+        MarketRowSchema(
+            symbol="FPT",
+            data={
+                "symbol": "FPT",
+                "news_id": "FPT-1",
+                "title": "Báo cáo quý",
+                "published_at": "2026-06-17",
+                "url": "u",
+            },
+        )
     ]
-    await client.post(
-        f"/api/portfolios/{pid}/items", json={"asset_type": "STOCK", "code": "FPT"}
-    )
-    provider = get_runtime().providers[AssetType.STOCK]
-    provider.crawl(CrawlKind.NEWS, ["FPT"])
-    provider.crawl(CrawlKind.EVENTS, ["FPT"])
+    data_plane.asset_rows[("STOCK", "events")] = [
+        MarketRowSchema(symbol="FPT", data={"title": "ĐHCĐ"})
+    ]
 
     news = (await client.get(f"/api/portfolios/{pid}/news")).json()["data"]
     assert news and news[0]["symbol"] == "FPT"
@@ -307,6 +336,12 @@ async def test_news_and_asset_detail_reads(client, db):
     detail = (await client.get("/api/assets/STOCK/FPT/events")).json()["data"]
     assert detail and detail[0]["symbol"] == "FPT"
     assert detail[0]["data"]["title"] == "ĐHCĐ"
+
+
+@pytest.mark.asyncio
+async def test_asset_detail_upper_cases_the_code(client, data_plane):
+    await client.get("/api/assets/STOCK/fpt/events")
+    assert data_plane.last("assets")["code"] == ["FPT"]
 
 
 @pytest.mark.asyncio
@@ -322,29 +357,6 @@ async def test_update_and_empty_refresh(client):
     # Empty portfolio → refresh is a no-op, reported as skipped.
     resp = await client.post(f"/api/portfolios/{pid}/refresh")
     assert resp.json()["data"]["skipped"] is True
-
-
-@pytest.mark.asyncio
-async def test_fin_symbol_provider_union_plus_baseline(db):
-    from kactus_fin.portfolio.symbol_provider import FinSymbolProvider
-
-    async with db.get_session() as session:
-        # FPT tagged VN30 (baseline), VCB plain — both crawlable.
-        await SupportedAssetService.upsert_many(
-            session,
-            asset_type=AssetType.STOCK,
-            entries=[{"code": "FPT", "tags": ["VN30"]}, {"code": "VCB", "tags": []}],
-        )
-        from kactus_common.portfolio.service import PortfolioService
-
-        p = await PortfolioService.create(session, name="P", owner_id=1)
-        await PortfolioService.add_item(
-            session, portfolio_id=p.id, asset_type=AssetType.STOCK, code="VCB"
-        )
-
-    codes = await FinSymbolProvider(db).get_codes_by_type()
-    # VCB from the watchlist union; FPT from the VN30 baseline.
-    assert set(codes[str(AssetType.STOCK)]) == {"FPT", "VCB"}
 
 
 @pytest_asyncio.fixture
@@ -371,26 +383,29 @@ async def admin_client(app, db):
 
 
 @pytest.mark.asyncio
-async def test_admin_endpoints(admin_client, db):
+async def test_admin_endpoints(admin_client, db, data_plane):
     # list all portfolios
     assert (await admin_client.get("/api/admin/portfolios")).status_code == 200
-    # crawl runs
+    # crawl runs — still read from this service's Postgres
     assert (
         await admin_client.get("/api/admin/portfolios/crawl-runs")
     ).status_code == 200
-    # crawl status (scheduler off in tests)
+    # crawl status is now the data plane's answer, forwarded
     status = (await admin_client.get("/api/admin/portfolios/crawl-status")).json()[
         "data"
     ]
-    assert status["scheduler_running"] is False
-    # trigger crawl (background task scheduled)
+    assert status["scheduler_running"] is True
+    assert [j["id"] for j in status["jobs"]] == ["crawl_quotes"]
+    # trigger crawl
     assert (await admin_client.post("/api/admin/portfolios/crawl/run-now")).json()[
         "data"
     ]["skipped"] is False
+    assert data_plane.last("crawl")["kind"] == "quotes"
     # catalog sync
     assert (
         await admin_client.post("/api/admin/portfolios/catalog/sync")
     ).status_code == 200
+    assert data_plane.last("catalog_sync") == {}
 
 
 @pytest.mark.asyncio
@@ -398,24 +413,3 @@ async def test_admin_requires_superuser(client):
     # A normal (non-superuser) session is rejected from admin routes.
     resp = await client.get("/api/admin/portfolios")
     assert resp.status_code in (401, 403)
-
-
-@pytest.mark.asyncio
-async def test_build_runtime_helper(db, tmp_path):
-    """Covers the lifespan runtime builder (scheduler disabled, no network)."""
-    from kactus_common.config import clear_settings, register_settings
-    from kactus_fin.app import _build_portfolio_runtime, _shutdown_portfolio_runtime
-    from kactus_fin.config import Settings
-
-    register_settings(
-        Settings(enable_portfolio_scheduler=False, db_path=str(tmp_path / "rt.duckdb"))
-    )
-    session_mod._db = db
-    try:
-        runtime = _build_portfolio_runtime(Settings(enable_portfolio_scheduler=False))
-        assert runtime.scheduler is None
-        assert AssetType.STOCK in runtime.providers
-    finally:
-        _shutdown_portfolio_runtime(runtime)
-        session_mod._db = None
-        clear_settings()

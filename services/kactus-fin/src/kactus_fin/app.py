@@ -5,27 +5,19 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from kactus_common.app_registry import AppManager
-from kactus_common.database.oltp.session import get_db
 from kactus_common.exceptions import PermissionDeniedError, install_exception_handlers
 from kactus_common.redis.client import close_redis
 from kactus_common.sse.broker import get_sse_broker, reset_sse_broker
-from kactus_common.sse.market import register_sse_handler
-from kactus_data.jobs.scheduler import build_scheduler
-from kactus_data.portfolio.provider import build_providers
-from kactus_data.sources.stock.auth import init_vnstock_auth
-from kactus_data.storage.duckdb import DuckDBStorage
 from kactus_fin.admin.app import admin_app
 from kactus_fin.api.health import router as health_router
 from kactus_fin.auth.app import auth_app
 from kactus_fin.config import get_settings
+from kactus_fin.data_client import close_client
 from kactus_fin.dependencies import get_auth
 from kactus_fin.market.app import market_app
 from kactus_fin.notification.app import notification_app
-from kactus_fin.olap import set_olap_storage
 from kactus_fin.permission.app import permission_app
 from kactus_fin.portfolio.app import portfolio_app
-from kactus_fin.portfolio.runtime import PortfolioRuntime, set_runtime
-from kactus_fin.portfolio.symbol_provider import FinSymbolProvider
 from kactus_fin.project.app import project_app
 from loguru import logger
 
@@ -91,20 +83,17 @@ def _detected_worker_count() -> int | None:
 
 
 def _warn_if_multi_worker(settings) -> None:
-    """Log loudly when several workers would each run their own scheduler.
+    """Warn when several workers would share no cross-process state.
 
-    Two independent hazards, reported separately because they are fixed
-    separately:
+    kactus-fin is free to scale out now — the scheduler and the DuckDB handle
+    that used to pin it to one process live in the data plane. What is still
+    per-process on the ``memory`` backend is the SSE broker and the Zalo QR
+    session store, so that combination is the one remaining way a multi-worker
+    deployment breaks.
 
-    * ``coordination_backend="memory"`` — the SSE broker and the Zalo QR session
-      store are per-process. Fixed by switching to ``redis``.
-    * the portfolio scheduler — still in-process whatever the backend is, so N
-      workers means N schedulers. Only the data-plane split fixes that; until
-      then a multi-worker deployment must disable the scheduler on all but one.
-
-    Deliberately only warnings: with no leader election, self-disabling here
-    would disable the scheduler in *every* worker and silently stop all crawling —
-    strictly worse than duplicate crawls. The operator has to make the call.
+    A warning, not a refusal: the failure it describes is partial (some clients
+    miss some events), and an operator who has read this and decided otherwise
+    should not have the process refuse to boot.
     """
     workers = _detected_worker_count()
     if workers is None or workers <= 1:
@@ -119,97 +108,28 @@ def _warn_if_multi_worker(settings) -> None:
             "workers. Set KACTUS_COORDINATION_BACKEND=redis."
         )
 
-    logger.warning(
-        f"kactus-fin looks like it is running with {workers} workers and the "
-        "portfolio scheduler is enabled in each of them. Expect duplicate crawls "
-        "and DuckDB write-lock errors. Run --workers 1, or set "
-        "KACTUS_ENABLE_PORTFOLIO_SCHEDULER=false on all but one process."
-    )
-
-
-def _build_portfolio_runtime(settings) -> PortfolioRuntime:
-    """Authenticate vnstock, build providers, register SSE, start scheduler."""
-    init_vnstock_auth()
-
-    db = get_db()
-    # One DuckDB handle per process, shared with the read-only `market` feature
-    # (a second handle on the same file would contend for the write lock).
-    storage = DuckDBStorage(settings.db_path)
-    set_olap_storage(storage)
-    providers = build_providers(
-        storage,
-        data_source=settings.data_source,
-        mihong_token=getattr(settings, "mihong_xsrf_token", ""),
-    )
-    symbol_provider = FinSymbolProvider(db)
-
-    # MUST precede scheduler start (blinker KeyError otherwise).
-    register_sse_handler()
-
-    scheduler = None
-    if getattr(settings, "enable_portfolio_scheduler", True):
-        _warn_if_multi_worker(settings)
-        scheduler = build_scheduler(
-            db=db,
-            providers=providers,
-            symbol_provider=symbol_provider,
-            storage=storage,
-            data_source=settings.data_source,
-        )
-        try:
-            scheduler.start()
-        except Exception as ex:  # pragma: no cover - defensive
-            logger.warning(f"Portfolio scheduler failed to start: {ex}")
-            scheduler = None
-
-    runtime = PortfolioRuntime(
-        db=db,
-        providers=providers,
-        storage=storage,
-        symbol_provider=symbol_provider,
-        scheduler=scheduler,
-    )
-    set_runtime(runtime)
-    logger.info(
-        f"Portfolio runtime initialised (scheduler={'on' if scheduler else 'off'})"
-    )
-    return runtime
-
-
-def _shutdown_portfolio_runtime(runtime: PortfolioRuntime | None) -> None:
-    if runtime is not None and runtime.scheduler is not None:
-        try:
-            runtime.scheduler.shutdown(wait=False)
-        except Exception:  # pragma: no cover - defensive
-            pass
-    set_runtime(None)
-    set_olap_storage(None)
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan — also boots the portfolio crawler + SSE.
+    """Application lifespan.
 
-    Order is load-bearing:
-      1. authenticate vnstock (paid tier, else guest),
-      2. register the SSE handler BEFORE the scheduler starts (blinker raises
-         ``KeyError`` on a foreground dispatch with no handler registered yet),
-      3. build + start the in-process scheduler and publish the runtime.
+    Short by design. Everything that used to be built here — vnstock auth, the
+    DuckDB handle, the asset providers, the crawl scheduler — moved to
+    kactus-data-server. This process owns no long-lived resource beyond its
+    connection pools, which is what lets it run at more than one worker.
     """
-    from loguru import logger
-
     settings = get_settings()
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
+    _warn_if_multi_worker(settings)
 
-    runtime = _build_portfolio_runtime(settings)
     yield
-    _shutdown_portfolio_runtime(runtime)
 
     # Stop the SSE broker before the pool it publishes through: on the Redis
     # backend close() cancels the pub/sub listener task, which would otherwise be
     # reading from a connection that has just been torn out from under it.
     await get_sse_broker().close()
     reset_sse_broker()
+    await close_client()
     if getattr(settings, "coordination_backend", "memory") == "redis":
         await close_redis()
 

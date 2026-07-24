@@ -9,7 +9,7 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Copy workspace manifests first (cache-friendly layer). `uv sync --frozen`
-# resolves against uv.lock, which names every workspace member, so all five
+# resolves against uv.lock, which names every workspace member, so all six
 # manifests must be present even though this image only runs the gateway.
 COPY pyproject.toml uv.lock ./
 COPY libs/core/kactus-common/pyproject.toml libs/core/kactus-common/pyproject.toml
@@ -17,6 +17,7 @@ COPY libs/kactus-data/pyproject.toml libs/kactus-data/pyproject.toml
 COPY libs/kactus-notification/pyproject.toml libs/kactus-notification/pyproject.toml
 COPY services/kactus-fin/pyproject.toml services/kactus-fin/pyproject.toml
 COPY services/kactus-fin-gateway/pyproject.toml services/kactus-fin-gateway/pyproject.toml
+COPY services/kactus-data-server/pyproject.toml services/kactus-data-server/pyproject.toml
 
 # Create stub packages so uv can resolve
 RUN mkdir -p libs/core/kactus-common/src/kactus_common && \
@@ -28,7 +29,9 @@ RUN mkdir -p libs/core/kactus-common/src/kactus_common && \
     mkdir -p services/kactus-fin/src/kactus_fin && \
     touch services/kactus-fin/src/kactus_fin/__init__.py && \
     mkdir -p services/kactus-fin-gateway/src/kactus_fin_gateway && \
-    touch services/kactus-fin-gateway/src/kactus_fin_gateway/__init__.py
+    touch services/kactus-fin-gateway/src/kactus_fin_gateway/__init__.py && \
+    mkdir -p services/kactus-data-server/src/kactus_data_server && \
+    touch services/kactus-data-server/src/kactus_data_server/__init__.py
 
 # Install dependencies only (cached unless pyproject.toml changes)
 RUN uv sync --package kactus-fin-gateway --frozen --no-install-project

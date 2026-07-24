@@ -39,6 +39,7 @@ services:
       # Shared SSE broker + shared Zalo QR session store. Set here rather than in
       # .env so it cannot drift out of sync with the redis service above.
       KACTUS_COORDINATION_BACKEND: redis
+      KACTUS_DATA_PLANE_URL: http://kactus-data-server:17602
     ports:
       - "17600:17600"
     depends_on:
@@ -46,15 +47,39 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # SINGLE WORKER — load-bearing, do not raise. Two of the three reasons are now
-    # gone: with KACTUS_COORDINATION_BACKEND=redis the SSE broker and the Zalo PA
-    # QR session store are both shared across processes. What remains is the
-    # portfolio APScheduler, which is still in-process — N workers would mean N
-    # schedulers, so N duplicate crawls and DuckDB write-lock contention. Raising
-    # this needs the scheduler to move into its own single-replica data-plane
-    # service. kactus-fin-gw below is stateless — it keeps 2.
+    # Multi-worker again, and now safe. All three reasons it had to be 1 are
+    # gone: KACTUS_COORDINATION_BACKEND=redis shares the SSE broker and the Zalo
+    # PA QR session store across processes, and the scheduler + DuckDB write
+    # handle have moved into kactus-data-server, which runs a single replica.
     command: >
-      uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --workers 1 --log-level info
+      uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --workers 2 --log-level info
+
+  # The data plane — not published, same as prod. Staging shares the vnstock
+  # rate-limit budget with prod if it points at the same key, so consider
+  # KACTUS_ENABLE_PORTFOLIO_SCHEDULER=false here to keep it from competing.
+  kactus-data-server:
+    build:
+      context: ../../
+      dockerfile: deploy/Dockerfile.data-server
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      KACTUS_REDIS_URL: redis://redis:6379/0
+      KACTUS_COORDINATION_BACKEND: redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - duckdb_data:/data
+    # ONE WORKER AND ONE REPLICA — load-bearing, do not raise either. Only this
+    # process may hold the DuckDB write handle, and only one copy of the crawl
+    # scheduler may run. See the prod compose for the full reasoning.
+    deploy:
+      replicas: 1
+    command: >
+      uvicorn kactus_data_server.app:app --host 0.0.0.0 --port 17602 --workers 1 --log-level info
 
   kactus-fin-gw:
     build:
@@ -75,3 +100,5 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  # Mounted by kactus-data-server ONLY — see the worker note on that service.
+  duckdb_data:

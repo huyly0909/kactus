@@ -1,16 +1,19 @@
-"""Market API — read-only access to the crawled gold / stock / finance data.
+"""``/internal/market/*`` — the seven MarketService reads, over HTTP.
 
-The rows come from DuckDB, but not from this process: the data plane owns that
-file and serves it over ``/internal/market/*``. Reads are session-authenticated
-but not project-scoped: market data is public reference data, not user-owned.
+A one-to-one mirror of :class:`kactus_data.market.service.MarketService`, on
+purpose: kactus-fin's ``/api/market/*`` endpoints keep their shape and swap a
+direct call for a client call. Query-parameter names match the public API too,
+so the client is a pass-through and there is no translation layer to get wrong.
+
+Nothing here decides anything. Authorization, 404 semantics and error copy stay
+in the control plane; this returns rows or an empty list.
 """
 
 from __future__ import annotations
 
 import datetime
 
-from fastapi import Query
-from kactus_common.exceptions import NotFoundError
+from fastapi import Depends, Query
 from kactus_common.market.const import (
     DEFAULT_FINANCE_LIMIT,
     DEFAULT_LIST_LIMIT,
@@ -30,32 +33,33 @@ from kactus_common.market.schema import (
     StockQuoteSchema,
 )
 from kactus_common.router import KactusAPIRouter
-from kactus_fin import data_client
+from kactus_data.market.service import MarketService
+from kactus_data_server.runtime import get_runtime
+from kactus_data_server.security import require_service_token
 
-router = KactusAPIRouter(prefix="/api/market", tags=["market"])
+router = KactusAPIRouter(
+    prefix="/internal/market",
+    tags=["internal-market"],
+    dependencies=[Depends(require_service_token)],
+)
 
 
-# --------------------------------------------------------------------------- #
-# Gold
-# --------------------------------------------------------------------------- #
 @router.get("/gold")
 async def list_gold_prices(
     code: list[str] | None = Query(default=None),
 ) -> list[GoldPriceSchema]:
     """Latest gold quotes (VND per lượng), optionally filtered by code."""
-    return await data_client.list_gold(codes=code)
+    return await MarketService.list_gold(get_runtime().storage, codes=code)
 
 
-# --------------------------------------------------------------------------- #
-# Stocks — static segments first so they never match "/{symbol}".
-# --------------------------------------------------------------------------- #
+# Static segments first so they never match "/{symbol}".
 @router.get("/stocks")
 async def search_stocks(
     q: str | None = None,
     limit: int = DEFAULT_LIST_LIMIT,
 ) -> list[StockListingSchema]:
     """Search the listed-symbol catalogue by ticker or company name."""
-    return await data_client.search_stocks(q=q, limit=limit)
+    return await MarketService.search_stocks(get_runtime().storage, q=q, limit=limit)
 
 
 @router.get("/stocks/quotes")
@@ -64,16 +68,20 @@ async def list_stock_quotes(
     limit: int = DEFAULT_LIST_LIMIT,
 ) -> list[StockQuoteSchema]:
     """Latest price-board snapshots for the given symbols (or the whole board)."""
-    return await data_client.list_quotes(symbols=symbol, limit=limit)
+    return await MarketService.list_quotes(
+        get_runtime().storage, symbols=symbol, limit=limit
+    )
 
 
 @router.get("/stocks/{symbol}")
-async def get_stock(symbol: str) -> StockDetailSchema:
-    """Symbol overview — catalogue entry, company profile and latest quote."""
-    detail = await data_client.get_stock(symbol)
-    if detail is None:
-        raise NotFoundError(f"No market data for symbol '{symbol.upper()}'")
-    return detail
+async def get_stock(symbol: str) -> StockDetailSchema | None:
+    """Symbol overview, or ``null`` when the symbol is in no source table.
+
+    Returns null rather than 404: whether an unknown symbol is an error is the
+    control plane's call, and it owns the message the user reads. A 404 here
+    would also be indistinguishable from a mistyped route.
+    """
+    return await MarketService.get_stock(get_runtime().storage, symbol)
 
 
 @router.get("/stocks/{symbol}/ohlcv")
@@ -85,8 +93,13 @@ async def list_ohlcv(
     limit: int = DEFAULT_OHLCV_LIMIT,
 ) -> list[OHLCVSchema]:
     """Candles for a symbol, oldest → newest."""
-    return await data_client.list_ohlcv(
-        symbol, interval=str(interval), start=start, end=end, limit=limit
+    return await MarketService.list_ohlcv(
+        get_runtime().storage,
+        symbol,
+        interval=str(interval),
+        start=start,
+        end=end,
+        limit=limit,
     )
 
 
@@ -96,12 +109,9 @@ async def list_stock_news(
     limit: int = DEFAULT_NEWS_LIMIT,
 ) -> list[StockNewsSchema]:
     """Recent news for a symbol."""
-    return await data_client.list_news(symbol, limit=limit)
+    return await MarketService.list_news(get_runtime().storage, symbol, limit=limit)
 
 
-# --------------------------------------------------------------------------- #
-# Finance
-# --------------------------------------------------------------------------- #
 @router.get("/stocks/{symbol}/finance")
 async def list_finance_reports(
     symbol: str,
@@ -110,9 +120,10 @@ async def list_finance_reports(
     limit: int = DEFAULT_FINANCE_LIMIT,
 ) -> list[FinanceReportSchema]:
     """Financial reports for a symbol, newest period first."""
-    return await data_client.list_finance(
+    return await MarketService.list_finance(
+        get_runtime().storage,
         symbol,
-        report_type=str(report_type),
-        period=str(period) if period is not None else None,
+        report_type=report_type,
+        period=period,
         limit=limit,
     )

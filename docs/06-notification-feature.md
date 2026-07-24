@@ -144,7 +144,7 @@ Gửi: `send(Message(text), thread_id, ThreadType.USER|GROUP)` (thread_type 0=us
 - **Không chính thức → rủi ro khoá tài khoản**; có thể vỡ khi Zalo đổi.
 - **Residential proxy** bắt buộc ở non-dev (`KACTUS_ZALO_PA_PROXY_URL`); datacenter IP/TLS bị chặn.
 - **Session hết hạn** → send/test raise `ExternalServiceError` (non-retryable) → re-login = quét QR lại → `reauth`.
-- **Single-worker**: QR-session store + dựng client mỗi lần gửi (đã chạy `uvicorn --workers 1`). Scale-out cần Redis + client pool.
+- ~~**Single-worker**~~ → **đã gỡ**: QR-session store chạy trên Redis + TTL (Fernet-encrypted) khi `KACTUS_COORDINATION_BACKEND=redis`, nên 5 bước QR có thể rơi vào các worker khác nhau. Client vẫn dựng lại mỗi lần gửi — Zalo PA không ngậm connection nào, nên không có gì để "sở hữu".
 
 ---
 
@@ -195,7 +195,7 @@ Clone `modules/portfolio/`. Stack thực tế: React 18 + Vite 6 + **Radix + Tai
 - `Notifier.send_event` **cần `session`** (arg đầu) — nó tự ghi log. Caller cũ phải cập nhật.
 - `impl.retryable_exceptions` được check **trước** `ExternalServiceError` — đảm bảo `ExternalServiceError` không nằm trong tuple retryable của bất kỳ channel nào.
 - Zalo `thread_type`: 0=user, 1=group (khớp `ThreadType`).
-- QR-session store là **in-process** → chỉ đúng với single-worker.
+- QR-session store: **in-process** (`memory`) hoặc **Redis + TTL** (`redis`) — chỉ backend `memory` mới ràng buộc single-worker. Interface là **async** (`await get_session_store().load(...)`).
 - Frontend numeric ids là **string** (FancyInt → string).
 
 ---

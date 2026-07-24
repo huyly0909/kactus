@@ -14,33 +14,42 @@ Manual deployment guide for Kactus services using Docker Compose.
 |---------|-------|------|-------------|
 | `postgres` | `postgres:16-alpine` | 5432 | PostgreSQL database |
 | `redis` | `redis:7-alpine` | 6379 | Redis cache |
-| `kactus-fin` | Built from `Dockerfile.fin` | 17600 | Main API server |
+| `kactus-fin` | Built from `Dockerfile.fin` | 17600 | Main API server (control plane) |
 | `kactus-fin-gw` | Built from `Dockerfile.fin-gw` | 17601 | Gateway API server |
+| `kactus-data-server` | Built from `Dockerfile.data-server` | 17602 | ETL + DuckDB + crawl scheduler (data plane) |
 
 ## Environment Comparison
 
 | | `dev` | `stag` | `prod` |
 |---|---|---|---|
-| `kactus-fin` workers | 1 (reload) | 1 | 1 |
+| `kactus-fin` workers | 1 (reload) | 2 | 4 |
 | `kactus-fin-gw` workers | 1 (reload) | 2 | 4 |
+| `kactus-data-server` workers | **1** (reload) | **1** | **1** |
+| `kactus-data-server` port published | ✅ 17602 | ❌ | ❌ |
 | Log level | debug | info | warning |
 | Restart | no | unless-stopped | always |
 | Source volumes | ✅ (hot-reload) | ❌ | ❌ |
 
-### Why `kactus-fin` is pinned to one worker
+### Why `kactus-data-server` is pinned to one worker and one replica
 
-It runs the portfolio APScheduler in-process. N workers would be N schedulers:
-N duplicate crawls per tick, N× the vnstock rate limit burned, and DuckDB
-`IOException: Could not set lock on file` when they collide on a write. The
-scheduler has to move into its own single-replica service before this can be
-raised.
+It holds the only read-write DuckDB handle in the deployment and runs the crawl
+APScheduler in-process. A second process of either kind means
+`IOException: Could not set lock on file` on every write and N× the vnstock rate
+limit burned per tick, with no leader election to fall back on. Scaling the crawl
+out is a Redis-queue project, not a `--workers` change.
 
-The other two reasons are already gone. With `KACTUS_COORDINATION_BACKEND=redis`
-(set in every compose file) the SSE broker publishes through Redis so a client
-hears events from any worker, and the Zalo QR session store lives in Redis so
-the 5 login steps may land on different workers.
+The service warns loudly at boot if it detects more than one worker
+(`WEB_CONCURRENCY` or `--workers N`), and again if
+`KACTUS_COORDINATION_BACKEND` is not `redis` — on `memory` its crawl
+completions go to its own in-process broker and no browser ever sees them.
 
-`kactus-fin-gw` is stateless and keeps its worker count.
+### Why `kactus-fin` is no longer pinned to one worker
+
+All three reasons are gone. `KACTUS_COORDINATION_BACKEND=redis` (set in every
+compose file) shares the SSE broker and the Zalo QR session store across
+processes, and the scheduler plus the DuckDB handle now live in
+`kactus-data-server`. The control plane holds no OLAP state and reads market
+data over HTTP.
 
 ## Deploy Steps
 
@@ -93,10 +102,20 @@ KACTUS_DEBUG=false
 # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 KACTUS_ENCRYPTION_KEY=<fernet-key>
 
+# Shared secret between kactus-fin and kactus-data-server. Every /internal
+# route on the data plane requires it in an X-Service-Token header, and an
+# unset value fails every request rather than waving them through.
+# Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+KACTUS_INTERNAL_SERVICE_TOKEN=<random-token>
+
 # kactus-fin-gateway
 KACTUS_GW_DATABASE_URL=postgresql+asyncpg://kactus:<password>@postgres:5432/kactus
 KACTUS_GW_DEBUG=false
 ```
+
+`KACTUS_DATA_PLANE_URL` and `KACTUS_DB_PATH` are set by the compose files and
+the data-plane image respectively — they should not be put in `.env`, where they
+could drift out of sync with the service name and the volume mount.
 
 ### 4. Build and start services
 
@@ -122,12 +141,38 @@ docker compose exec kactus-fin python manage.py fin db upgrade
 docker compose exec kactus-fin-gw python manage.py fin-gw db upgrade
 ```
 
+`kactus-data-server` ships no Alembic config on purpose: it declares no ORM
+models of its own and shares kactus-fin's migration head on the same Postgres.
+Two services migrating one database is how you get two heads.
+
 ### 6. Verify deployment
 
 ```bash
 # Health checks
 curl http://localhost:17600/health    # kactus-fin
 curl http://localhost:17601/health    # kactus-fin-gateway
+
+# The data plane is only published in dev; elsewhere, from inside the network:
+docker compose exec kactus-fin curl -s http://kactus-data-server:17602/health
+```
+
+The data plane reports the three things that make it useful, and answers
+`degraded` rather than failing when one is missing:
+
+```json
+{"status": "ok", "duckdb": "ok", "scheduler": "running", "redis": "ok"}
+```
+
+Its `/internal` routes are the only way to reach market data, and they require
+the service token:
+
+```bash
+# 403 — no token
+docker compose exec kactus-fin curl -s http://kactus-data-server:17602/internal/market/gold
+# 200
+docker compose exec kactus-fin curl -s \
+  -H "X-Service-Token: $KACTUS_INTERNAL_SERVICE_TOKEN" \
+  http://kactus-data-server:17602/internal/market/gold
 ```
 
 `kactus-fin` reports Redis whenever it depends on it:

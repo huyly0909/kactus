@@ -231,7 +231,7 @@ EventSource clients (browser)  →  TanStack Query invalidate  →  refetch REST
 
 **Khác với Data Pipeline thường**: union mã được tính ở `kactus-fin` (biết portfolio) rồi inject `list[str]` xuống `kactus-data` (không biết portfolio) — giữ dependency một chiều. Manual refresh dùng **cùng** code path (one-shot job) + dedup qua `crawl_runs`.
 
-**Lưu ý deploy**: scheduler + SSE broker là **in-process** → v1 chạy `uvicorn --workers 1`. Scale-out: Redis pub/sub cho SSE + Celery/worker riêng cho cron.
+**Lưu ý deploy (đã cập nhật)**: SSE broker fan-out qua **Redis pub/sub**, scheduler + DuckDB nằm trong `services/kactus-data-server` (**1 worker / 1 replica**, không đổi được). `kactus-fin` do đó multi-worker bình thường. Union mã bây giờ tính ở data plane (`WatchlistSymbolProvider` đọc thẳng Postgres) — crawl không phụ thuộc kactus-fin còn sống hay không.
 
 ---
 

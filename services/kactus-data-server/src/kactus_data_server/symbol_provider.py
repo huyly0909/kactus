@@ -1,8 +1,14 @@
-"""kactus-fin implementation of the ``SymbolProvider`` seam.
+"""Data-plane implementation of the ``SymbolProvider`` seam.
 
 Computes the crawl universe = (union of all users' watchlists) ∪ (VN30/VN100
-baseline).  Injected into kactus-data crawl jobs so the data layer never imports
-kactus-fin and stays portfolio-ignorant.
+baseline).  Injected into the kactus-data crawl jobs so the data library stays
+portfolio-ignorant.
+
+It reads the watchlists straight from the shared Postgres rather than asking the
+control plane for them. Both are equally correct, but this way a crawl cannot be
+blocked by kactus-fin being down or slow, and the union — potentially every
+symbol every user watches — never has to travel over the wire just so the data
+plane can be told what it could have looked up itself.
 """
 
 from __future__ import annotations
@@ -12,7 +18,7 @@ from kactus_common.portfolio.const import AssetType
 from kactus_common.portfolio.service import PortfolioService, SupportedAssetService
 
 
-class FinSymbolProvider:
+class WatchlistSymbolProvider:
     """Live crawl-code provider backed by the OLTP database."""
 
     def __init__(

@@ -1,8 +1,9 @@
 """Portfolio API — user-owned watchlists, market reads, manual refresh, SSE.
 
 Portfolios are user-owned: every route resolves ownership via
-``request.state.user`` (not project-scoped Casbin).  Market data is read from
-DuckDB through the asset-type providers (blocking → ``asyncio.to_thread``).
+``request.state.user`` (not project-scoped Casbin).  Market data comes from the
+data plane over HTTP — this process cannot open DuckDB, which the crawler holds
+read-write.
 """
 
 from __future__ import annotations
@@ -10,9 +11,8 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import defaultdict
-from decimal import Decimal
 
-from fastapi import BackgroundTasks, Request
+from fastapi import Request
 from kactus_common.portfolio.const import AssetType, CrawlKind, CrawlTrigger
 from kactus_common.portfolio.schema import (
     CrawlTriggerResponse,
@@ -31,11 +31,10 @@ from kactus_common.portfolio.service import (
     SupportedAssetService,
 )
 from kactus_common.router import KactusAPIRouter
-from kactus_common.schemas import MessageResponse, Pagination, decimal_to_str
+from kactus_common.schemas import MessageResponse, Pagination
 from kactus_common.sse.broker import get_sse_broker
-from kactus_data.jobs.crawl import run_crawl
+from kactus_fin import data_client
 from kactus_fin.dependencies import provide_session
-from kactus_fin.portfolio.runtime import get_runtime
 from kactus_fin.portfolio.schema import MarketNewsSchema, MarketQuoteSchema
 from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
@@ -199,7 +198,7 @@ async def remove_item(
 
 
 # --------------------------------------------------------------------------- #
-# Market reads (from DuckDB via providers)
+# Market reads (from the data plane over HTTP)
 # --------------------------------------------------------------------------- #
 async def _items_by_type(
     session: AsyncSession, portfolio_id: int
@@ -222,18 +221,15 @@ async def get_quotes(
         session, portfolio_id=portfolio_id, owner_id=user.id
     )
     grouped = await _items_by_type(session, portfolio_id)
-    runtime = get_runtime()
     out: list[MarketQuoteSchema] = []
     for asset_type, codes in grouped.items():
-        provider = runtime.providers.get(asset_type)
-        if provider is None or CrawlKind.QUOTES not in provider.supported_kinds():
-            continue
-        rows = await asyncio.to_thread(provider.read, CrawlKind.QUOTES, codes)
-        for r in rows:
+        rows = await data_client.read_assets(asset_type, CrawlKind.QUOTES, codes)
+        for row in rows:
+            r = row.data
             out.append(
                 MarketQuoteSchema(
                     asset_type=asset_type,
-                    code=r.get("symbol") or r.get("code"),
+                    code=row.symbol,
                     match_price=r.get("match_price"),
                     ref_price=r.get("ref_price"),
                     ceiling=r.get("ceiling"),
@@ -260,14 +256,10 @@ async def get_news(
         session, portfolio_id=portfolio_id, owner_id=user.id
     )
     grouped = await _items_by_type(session, portfolio_id)
-    runtime = get_runtime()
     out: list[MarketNewsSchema] = []
     for asset_type, codes in grouped.items():
-        provider = runtime.providers.get(asset_type)
-        if provider is None or CrawlKind.NEWS not in provider.supported_kinds():
-            continue
-        rows = await asyncio.to_thread(provider.read, CrawlKind.NEWS, codes)
-        out.extend(MarketNewsSchema.model_validate(r) for r in rows)
+        rows = await data_client.read_assets(asset_type, CrawlKind.NEWS, codes)
+        out.extend(MarketNewsSchema.model_validate(row.data) for row in rows)
     return out
 
 
@@ -276,7 +268,6 @@ async def get_news(
 async def refresh_portfolio(
     portfolio_id: int,
     request: Request,
-    background: BackgroundTasks,
     session: AsyncSession,
     kind: CrawlKind = CrawlKind.QUOTES,
 ) -> CrawlTriggerResponse:
@@ -297,14 +288,13 @@ async def refresh_portfolio(
                 skipped=True, message="A refresh is already in progress"
             )
 
-    runtime = get_runtime()
-    codes_by_type = {str(at): codes for at, codes in grouped.items()}
-    background.add_task(
-        run_crawl,
-        db=runtime.db,
-        providers=runtime.providers,
+    # Awaited, not fired into a local BackgroundTasks: the data plane already
+    # returns as soon as it has queued the crawl, and awaiting means a data
+    # plane that is down surfaces as an error to the user instead of a
+    # "Refresh scheduled" that quietly never happened.
+    await data_client.trigger_crawl(
         kind=kind,
-        codes_by_type=codes_by_type,
+        codes_by_type={str(at): codes for at, codes in grouped.items()},
         trigger=CrawlTrigger.MANUAL,
         portfolio_id=portfolio_id,
         dedup=True,
@@ -337,28 +327,9 @@ async def search_supported_assets(
 async def get_asset_detail(
     asset_type: AssetType, code: str, kind: CrawlKind, request: Request
 ) -> list[MarketRowSchema]:
-    """Decision-support detail (foreign trade / ratios / events) for one asset."""
-    runtime = get_runtime()
-    provider = runtime.providers.get(asset_type)
-    if provider is None or kind not in provider.supported_kinds():
-        return []
-    rows = await asyncio.to_thread(provider.read, kind, [code.upper()])
-    out: list[MarketRowSchema] = []
-    for r in rows:
-        symbol = r.get("symbol") or r.get("code")
-        data = {k: _jsonable(v) for k, v in r.items() if k not in ("raw_json",)}
-        out.append(MarketRowSchema(symbol=symbol, data=data))
-    return out
+    """Decision-support detail (foreign trade / ratios / events) for one asset.
 
-
-def _jsonable(value: object) -> object:
-    """Normalise a DuckDB cell for an untyped (``OpaqueDict``) payload.
-
-    Money columns are DECIMAL, so they arrive as ``Decimal``. Inside an ``Any``
-    field Pydantic would emit those as JSON *strings* while floats stay bare
-    numbers — an inconsistent shape for one row. Render them as strings
-    explicitly, matching how ``FancyDecimal`` serialises the typed routes.
+    A straight pass-through: the data plane already normalises the DuckDB cells
+    into JSON-safe values, so there is nothing left to project here.
     """
-    if isinstance(value, Decimal):
-        return decimal_to_str(value)
-    return value
+    return await data_client.read_assets(asset_type, kind, [code.upper()])

@@ -3,33 +3,44 @@ kactus-fin application settings.
 
 Merges two branches of the settings tree::
 
-    BaseKactusSettings ─┬─ CommonSettings ── DataSettings ─┬─ Settings
-                        └─ NotificationSettings ───────────┘
+    BaseKactusSettings ─┬─ CommonSettings ─────────┬─ Settings
+                        └─ NotificationSettings ───┘
 
 kactus-fin is the only entry point that sends notifications, so it is the only
 one that mixes ``NotificationSettings`` in — the gateway's settings do not carry
 ``zalo_pa_*`` at all.
 
-``Settings`` loads ``.env`` from the kactus-fin package root.
-All inherited env variables (database_url, db_path, data_source, …) are
-populated from that single ``.env`` file.
+It no longer inherits ``DataSettings``: after the data-plane split this process
+neither crawls nor opens DuckDB, so ``data_source``, ``vnstock_api_key`` and
+``db_path`` are not its business. They live on kactus-data-server's settings.
+What replaced them is ``data_plane_url`` + ``internal_service_token`` on
+``CommonSettings`` — the address of the service that does own them.
+
+``Settings`` loads ``.env`` from the kactus-fin package root; all inherited env
+variables are populated from that single file.
 """
 
 from functools import lru_cache
 from typing import ClassVar
 
-from kactus_common.config import register_settings
-from kactus_data.config import DataSettings
+from kactus_common.config import CommonSettings, register_settings
 from kactus_notification.config import NotificationSettings
 from pydantic_settings import SettingsConfigDict
 
 
-class Settings(DataSettings, NotificationSettings):
+class Settings(CommonSettings, NotificationSettings):
     """kactus-fin settings — entry-point package that loads .env."""
 
     # Extend, never overwrite: a replaced list drops the upstream MODELS and
     # Alembic autogenerate emits DROP TABLE for every table it can no longer see.
-    INSTALLED_PACKAGES: ClassVar[list[str]] = DataSettings.INSTALLED_PACKAGES + [
+    #
+    # ``kactus_data`` drops off the list with the dependency. It is safe only
+    # because it declares no ORM models — every Postgres table the crawler
+    # touches (CrawlRun, SupportedAsset, PortfolioItem) is defined in
+    # kactus-common and still loaded. If the data plane ever adds a table of its
+    # own, it must be declared here, because kactus-fin still owns the single
+    # Alembic head for the shared database.
+    INSTALLED_PACKAGES: ClassVar[list[str]] = CommonSettings.INSTALLED_PACKAGES + [
         "kactus_notification",
         "kactus_fin",
     ]
@@ -40,11 +51,6 @@ class Settings(DataSettings, NotificationSettings):
     # Server
     host: str = "0.0.0.0"
     port: int = 17600
-
-    # Portfolio crawler — disable in tests / one-off CLI to avoid spinning the
-    # in-process APScheduler.  Single-worker only (in-process scheduler + SSE):
-    # run `uvicorn --workers 1`; scale-out needs Redis pub/sub + a Celery worker.
-    enable_portfolio_scheduler: bool = True
 
     model_config = SettingsConfigDict(
         env_prefix="KACTUS_",

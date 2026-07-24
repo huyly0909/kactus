@@ -171,7 +171,7 @@
 REST API đọc thẳng các bảng OLAP (DuckDB) do ETL kactus-data ghi — không có ETL mới, không có bảng mới. 366 backend tests pass (12 test riêng cho market); frontend `tsc -b` + `vite build` + vitest xanh. Chưa live-smoke với DuckDB có dữ liệu thật.
 
 - [x] **kactus-common/data** — `DatabaseClient.execute(sql, params)` + `DuckDBStorage.query(sql, params)` nhận positional params (hết nội suy chuỗi cho giá trị từ client)
-- [x] **kactus-fin** — `olap.py` (một `DuckDBStorage` dùng chung cho cả process) + `market/` (`const`/`schema`/`service`/`api`/`app`), `KactusApp(name="market", session_routes=[router])`
+- [x] **kactus-fin** — `market/` (`api`/`app`), `KactusApp(name="market", session_routes=[router])`. Sau khi tách data plane: `olap.py` bị xoá, `const`/`schema` lên `kactus_common/market/`, `service.py` xuống `kactus_data/market/`; mỗi endpoint chỉ `await data_client.X(...)`
 - [x] **Endpoints** — `GET /api/market/gold`, `/stocks` (search), `/stocks/quotes`, `/stocks/{symbol}`, `/stocks/{symbol}/ohlcv`, `/stocks/{symbol}/news`, `/stocks/{symbol}/finance`
 - [x] **Đọc blocking → `asyncio.to_thread`**, limit bị chặn trần (`MAX_LIMIT=2000`), bảng chưa crawl = list rỗng chứ không 500
 - [x] **kactus-bloom** — `modules/market/` (Gold board, Stock list + detail có chart recharts + news, Finance pivot theo kỳ) + `useMarketQuery` + i18n vi+en + route/sidebar
@@ -256,10 +256,21 @@ REST API đọc thẳng các bảng OLAP (DuckDB) do ETL kactus-data ghi — kh�
 ### `kactus-data` — ✅ Core Done, 🚧 Needs More Sources
 - SyncPipeline framework hoạt động
 - 5 data sources implemented (Gold, Stock OHLCV, Stock Listing, Finance, Company)
-- DuckDB storage operational
+- DuckDB storage operational (chỉ được mở read-write bởi `kactus-data-server`)
 - ❌ Coin source chưa implement
-- ❌ Scheduled sync chưa có
+- ✅ Scheduled sync — APScheduler trong `services/kactus-data-server`
 - ❌ Sync history/retry chưa có
+
+#### Data plane / control plane split ✅
+
+Tách `services/kactus-data-server` (port 17602) khỏi `kactus-fin`. 479 backend tests pass; `uv run lint-imports` KEPT cả 2 contract. ⚠️ **Chưa build được Docker image** (Docker daemon không chạy trên máy dev) — compose chỉ mới validate bằng `docker compose config`.
+
+- [x] **kactus-data-server** — `config`/`app`/`runtime` (`DataRuntime`: DuckDB + providers + scheduler)/`security` (`X-Service-Token`, `hmac.compare_digest`, unset token = fail closed)/`symbol_provider` (`WatchlistSymbolProvider` đọc thẳng Postgres) + CLI (**không có** `--workers`, cố định 1)
+- [x] **`/internal` API** — `market/*` (7 endpoint ↔ 7 method `MarketService`), `assets/{asset_type}/{kind}` (thay cả 3 chỗ `provider.read`), `crawl`, `catalog/sync`, `scheduler/status`. `/health` là route duy nhất không cần token
+- [x] **kactus-fin** — `data_client.py` (httpx pool + token + timeout, lỗi → `ExternalServiceError`/502, **không** trả `[]`), bỏ dependency `kactus-data`, xoá `olap.py`/`portfolio/runtime.py`/`portfolio/symbol_provider.py`/`portfolio/sse.py`
+- [x] **import-linter** — thêm contract `forbidden`: `kactus_fin` ✗→ `kactus_data`, `duckdb` (contract `layers` một mình vẫn cho services → libs)
+- [x] **Deploy** — `Dockerfile.data-server` + 3 compose; volume DuckDB **chỉ** gắn cho data plane; port 17602 chỉ publish ở dev; `kactus-fin` trở lại 4 worker (prod) / 2 (stag)
+- [ ] `docker compose build` + live smoke 3 env
 
 ### `kactus-fin` — ✅ Auth/Admin/Portfolio/Notification/Market Done
 - Auth module hoàn chỉnh

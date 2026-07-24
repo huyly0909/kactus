@@ -1,33 +1,36 @@
-"""Tests for the kactus-fin market API (gold / stock / finance reads).
+"""``/api/market/*`` — the control plane's half of the market reads.
 
-In-memory SQLite (OLTP) for auth + a tmp-file DuckDB (OLAP) seeded directly with
-ETL-shaped rows.  ASGITransport does not run lifespan, so the OLAP storage is
-published by the fixture instead of the app factory.
+After the data-plane split there is no DuckDB in this process, so what is left
+to test here is exactly what kactus-fin still owns: the session requirement,
+the translation of query parameters into a data-plane call, the 404 policy for
+an unknown symbol, and what a user sees when the data plane is unreachable.
+
+The row-level assertions (derived spreads, exact decimals, ordering) moved to
+``services/kactus-data-server/tests/test_market_api.py`` along with the storage
+that produces them.
+
+Requests reach a fake data plane over an in-process ASGI transport (see
+``conftest.py``), so the real ``data_client`` — params, envelope unwrapping,
+schema parsing, error mapping — runs end to end.
 """
 
 from __future__ import annotations
 
-import json
-from datetime import datetime
-
-import pandas as pd
+import httpx
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
+from kactus_common.market.schema import (
+    GoldPriceSchema,
+    StockDetailSchema,
+    StockListingSchema,
+    StockQuoteSchema,
+)
 from kactus_common.user import auth as auth_mod
 from kactus_common.user.model import User
-from kactus_data.sources.company.tables import COMPANY_TABLE
-from kactus_data.sources.finance.tables import FINANCE_TABLE
-from kactus_data.sources.gold.portfolio_tables import GOLD_PRICE_BOARD_TABLE
-from kactus_data.sources.stock.portfolio_tables import (
-    STOCK_NEWS_TABLE,
-    STOCK_PRICE_BOARD_TABLE,
-)
-from kactus_data.sources.stock.tables import STOCK_LISTING_TABLE, STOCK_OHLCV_TABLE
-from kactus_data.storage.duckdb import DuckDBStorage
 
 TEST_DB_URL = "sqlite+aiosqlite://"
 
@@ -43,178 +46,18 @@ async def db():
     await manager.close()
 
 
-@pytest.fixture
-def storage(tmp_path) -> DuckDBStorage:
-    """A DuckDB file seeded with one row per market table."""
-    store = DuckDBStorage(str(tmp_path / "market.duckdb"))
-    now = datetime(2026, 7, 24, 9, 30)
-
-    store.store(
-        GOLD_PRICE_BOARD_TABLE,
-        pd.DataFrame(
-            [
-                {
-                    "code": "SJC",
-                    "buy_price": 121_000_000.0,
-                    "sell_price": 123_000_000.0,
-                    "unit": "VND/luong",
-                    "source": "sjc",
-                    "crawled_at": now,
-                    "raw_json": "{}",
-                },
-                {
-                    "code": "999",
-                    "buy_price": 118_000_000.0,
-                    "sell_price": 119_500_000.0,
-                    "unit": "VND/luong",
-                    "source": "mihong",
-                    "crawled_at": now,
-                    "raw_json": "{}",
-                },
-                {
-                    "code": "XAU",
-                    "buy_price": 4037.6999,
-                    "sell_price": 4037.6999,
-                    "unit": "USD/oz",
-                    "source": "yahoo",
-                    "crawled_at": now,
-                    "raw_json": "{}",
-                },
-            ]
-        ),
-    )
-    store.store(
-        STOCK_LISTING_TABLE,
-        pd.DataFrame(
-            [
-                {
-                    "symbol": "FPT",
-                    "organ_name": "FPT Corp",
-                    "source": "KBS",
-                    "synced_at": now,
-                },
-                {
-                    "symbol": "VNM",
-                    "organ_name": "Vinamilk",
-                    "source": "KBS",
-                    "synced_at": now,
-                },
-            ]
-        ),
-    )
-    store.store(
-        COMPANY_TABLE,
-        pd.DataFrame(
-            [
-                {
-                    "symbol": "FPT",
-                    "company_name": "FPT Corporation",
-                    "short_name": "FPT",
-                    "industry": "Technology",
-                    "exchange": "HOSE",
-                    "market_cap": 1.0e14,
-                    "outstanding_shares": 1.4e9,
-                    "overview_json": "{}",
-                    "source": "KBS",
-                    "synced_at": now,
-                }
-            ]
-        ),
-    )
-    store.store(
-        STOCK_PRICE_BOARD_TABLE,
-        pd.DataFrame(
-            [
-                {
-                    "symbol": "FPT",
-                    "match_price": 110.0,
-                    "ref_price": 100.0,
-                    "ceiling": 107.0,
-                    "floor": 93.0,
-                    "accumulated_volume": 1_000_000.0,
-                    "source": "KBS",
-                    "crawled_at": now,
-                    "raw_json": "{}",
-                }
-            ]
-        ),
-    )
-    store.store(
-        STOCK_OHLCV_TABLE,
-        pd.DataFrame(
-            [
-                {
-                    "symbol": "FPT",
-                    "time": datetime(2026, 7, day, 15, 0),
-                    "interval": "1D",
-                    "open": 100.0 + day,
-                    "high": 102.0 + day,
-                    "low": 99.0 + day,
-                    "close": 101.0 + day,
-                    "volume": 1000.0 * day,
-                    "source": "KBS",
-                }
-                for day in (20, 21, 22)
-            ]
-        ),
-    )
-    store.store(
-        STOCK_NEWS_TABLE,
-        pd.DataFrame(
-            [
-                {
-                    "symbol": "FPT",
-                    "news_id": "n1",
-                    "title": "FPT ký hợp đồng mới",
-                    "published_at": "2026-07-23",
-                    "url": "https://example.test/n1",
-                    "source": "KBS",
-                    "crawled_at": now,
-                    "raw_json": "{}",
-                }
-            ]
-        ),
-    )
-    store.store(
-        FINANCE_TABLE,
-        pd.DataFrame(
-            [
-                {
-                    "symbol": "FPT",
-                    "period": "quarter",
-                    "year": year,
-                    "quarter": 2,
-                    "report_type": "income_statement",
-                    "data_json": json.dumps({"revenue": 1000 * year}),
-                    "source": "KBS",
-                    "synced_at": now,
-                }
-                for year in (2025, 2026)
-            ]
-        ),
-    )
-    return store
-
-
 @pytest_asyncio.fixture
-async def app(db, storage, tmp_path):
+async def app(db):
     from kactus_common.config import clear_settings, register_settings
     from kactus_fin.app import create_app
     from kactus_fin.config import Settings
-    from kactus_fin.olap import set_olap_storage
 
-    register_settings(
-        Settings(
-            enable_portfolio_scheduler=False, db_path=str(tmp_path / "market.duckdb")
-        )
-    )
+    register_settings(Settings(internal_service_token="test-token"))
     session_mod._db = db
     auth_mod._auth = None
-    set_olap_storage(storage)
 
     yield create_app()
 
-    set_olap_storage(None)
     session_mod._db = None
     auth_mod._auth = None
     clear_settings()
@@ -259,155 +102,178 @@ async def test_requires_auth(app):
 
 
 @pytest.mark.asyncio
-async def test_gold_board_and_filter(client):
-    resp = await client.get("/api/market/gold")
-    assert resp.status_code == 200
-    rows = resp.json()["data"]
-    assert {r["code"] for r in rows} == {"999", "SJC", "XAU"}
-
-    sjc = next(r for r in rows if r["code"] == "SJC")
-    # spread is derived, not stored
-    assert float(sjc["spread"]) == pytest.approx(2_000_000.0)
-
-    filtered = await client.get("/api/market/gold", params={"code": "SJC"})
-    assert [r["code"] for r in filtered.json()["data"]] == ["SJC"]
-
-
-@pytest.mark.asyncio
-async def test_gold_prices_are_exact_and_unit_tagged(client):
-    """Money survives the round trip as an exact decimal string, not a float.
-
-    Domestic gold (~1.2e8 VND) is past float32's exact range and lands on
-    binary fractions in float64, so the board stores DECIMAL and the API
-    serialises it as a string.  ``unit`` is what tells VND/lượng apart from
-    the USD/oz world price on the same board.
-    """
-    rows = (await client.get("/api/market/gold")).json()["data"]
-    by_code = {r["code"]: r for r in rows}
-
-    assert by_code["SJC"]["buy_price"] == "121000000"
-    assert by_code["SJC"]["spread"] == "2000000"
-    assert by_code["SJC"]["unit"] == "VND/luong"
-
-    # World gold shares the board but is quoted per troy ounce in USD.
-    assert by_code["XAU"]["unit"] == "USD/oz"
-    assert by_code["XAU"]["buy_price"] == "4037.6999"
-
-
-@pytest.mark.asyncio
-async def test_stock_search_by_symbol_and_name(client):
-    all_rows = await client.get("/api/market/stocks")
-    assert [r["symbol"] for r in all_rows.json()["data"]] == ["FPT", "VNM"]
-
-    by_symbol = await client.get("/api/market/stocks", params={"q": "fpt"})
-    assert [r["symbol"] for r in by_symbol.json()["data"]] == ["FPT"]
-
-    by_name = await client.get("/api/market/stocks", params={"q": "vinamilk"})
-    assert [r["symbol"] for r in by_name.json()["data"]] == ["VNM"]
-
-
-@pytest.mark.asyncio
-async def test_stock_detail_merges_company_and_quote(client):
-    resp = await client.get("/api/market/stocks/fpt")
-    assert resp.status_code == 200
-    data = resp.json()["data"]
-    assert data["symbol"] == "FPT"
-    assert data["organ_name"] == "FPT Corp"
-    assert data["company"]["industry"] == "Technology"
-    # change/change_pct derived from match vs ref
-    assert float(data["quote"]["change"]) == pytest.approx(10.0)
-    assert float(data["quote"]["change_pct"]) == pytest.approx(10.0)
-
-
-@pytest.mark.asyncio
-async def test_unknown_symbol_is_404(client):
-    resp = await client.get("/api/market/stocks/NOPE")
-    assert resp.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_quotes_board(client):
-    resp = await client.get("/api/market/stocks/quotes", params={"symbol": "fpt"})
-    assert resp.status_code == 200
-    rows = resp.json()["data"]
-    assert len(rows) == 1 and rows[0]["symbol"] == "FPT"
-
-
-@pytest.mark.asyncio
-async def test_ohlcv_is_ascending_and_capped(client):
-    resp = await client.get("/api/market/stocks/FPT/ohlcv")
-    assert resp.status_code == 200
-    rows = resp.json()["data"]
-    assert [r["time"][:10] for r in rows] == ["2026-07-20", "2026-07-21", "2026-07-22"]
-
-    # limit keeps the *newest* rows, still returned oldest → newest
-    capped = await client.get("/api/market/stocks/FPT/ohlcv", params={"limit": 2})
-    assert [r["time"][:10] for r in capped.json()["data"]] == [
-        "2026-07-21",
-        "2026-07-22",
+async def test_gold_passes_through_rows_and_filter(client, data_plane):
+    data_plane.gold = [
+        GoldPriceSchema(
+            code="SJC",
+            buy_price="121000000",
+            sell_price="123000000",
+            spread="2000000",
+            unit="VND/luong",
+            source="sjc",
+        )
     ]
 
+    resp = await client.get("/api/market/gold", params={"code": "SJC"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["code"] == "0"
+    assert body["data"][0]["code"] == "SJC"
+    # Exact decimals survive both hops — the value crosses JSON twice now.
+    assert body["data"][0]["buy_price"] == "121000000"
+    # The filter reached the data plane rather than being applied here.
+    assert data_plane.last("gold")["code"] == ["SJC"]
+
 
 @pytest.mark.asyncio
-async def test_ohlcv_date_range_and_unknown_interval(client):
-    ranged = await client.get(
+async def test_repeated_code_params_stay_a_list(client, data_plane):
+    """``?code=SJC&code=999`` must not collapse into one comma-joined string.
+
+    httpx encodes a list as repeated params only if it is still a list by the
+    time it reaches the client; a str() anywhere in between turns it into
+    ``['SJC', '999']`` as a literal, which the data plane would match against
+    no row at all — and return an empty board rather than an error.
+    """
+    await client.get("/api/market/gold", params=[("code", "SJC"), ("code", "999")])
+    assert data_plane.last("gold")["code"] == ["SJC", "999"]
+
+
+@pytest.mark.asyncio
+async def test_search_forwards_query_and_limit(client, data_plane):
+    data_plane.listings = [
+        StockListingSchema(symbol="FPT", organ_name="FPT Corp", source="KBS")
+    ]
+    resp = await client.get("/api/market/stocks", params={"q": "fpt", "limit": 5})
+    assert [r["symbol"] for r in resp.json()["data"]] == ["FPT"]
+    assert data_plane.last("stocks") == {"q": "fpt", "limit": 5}
+
+
+@pytest.mark.asyncio
+async def test_quotes_forwards_symbols(client, data_plane):
+    data_plane.quotes = [StockQuoteSchema(symbol="FPT", source="KBS")]
+    resp = await client.get("/api/market/stocks/quotes", params={"symbol": "fpt"})
+    assert [r["symbol"] for r in resp.json()["data"]] == ["FPT"]
+    assert data_plane.last("quotes")["symbol"] == ["fpt"]
+
+
+@pytest.mark.asyncio
+async def test_stock_detail(client, data_plane):
+    data_plane.detail = StockDetailSchema(symbol="FPT", organ_name="FPT Corp")
+    resp = await client.get("/api/market/stocks/fpt")
+    assert resp.status_code == 200
+    assert resp.json()["data"]["symbol"] == "FPT"
+
+
+@pytest.mark.asyncio
+async def test_unknown_symbol_is_404_here(client, data_plane):
+    """The data plane says ``null``; turning that into a 404 is this side's job.
+
+    Keeping the decision here means the user-facing message has one home, and
+    the data plane can stay a dumb reader.
+    """
+    data_plane.detail = None
+    resp = await client.get("/api/market/stocks/NOPE")
+    assert resp.status_code == 404
+    body = resp.json()
+    assert body["code"] == "NOT_FOUND"
+    assert "NOPE" in body["message"]
+
+
+@pytest.mark.asyncio
+async def test_ohlcv_forwards_interval_and_dates(client, data_plane):
+    await client.get(
         "/api/market/stocks/FPT/ohlcv",
-        params={"start": "2026-07-21", "end": "2026-07-21"},
+        params={"interval": "1D", "start": "2026-07-21", "end": "2026-07-22"},
     )
-    assert [r["time"][:10] for r in ranged.json()["data"]] == ["2026-07-21"]
-
-    # an interval that was never crawled is empty, not an error
-    empty = await client.get("/api/market/stocks/FPT/ohlcv", params={"interval": "1W"})
-    assert empty.json()["data"] == []
-
-    # an interval outside the enum is rejected up front
-    bad = await client.get("/api/market/stocks/FPT/ohlcv", params={"interval": "3Y"})
-    assert bad.status_code == 422
+    assert data_plane.last("ohlcv")["symbol"] == "FPT"
+    assert data_plane.last("ohlcv")["interval"] == "1D"
 
 
 @pytest.mark.asyncio
-async def test_news(client):
-    resp = await client.get("/api/market/stocks/FPT/news")
-    rows = resp.json()["data"]
-    assert len(rows) == 1
-    assert rows[0]["url"] == "https://example.test/n1"
+async def test_interval_outside_the_enum_never_reaches_the_data_plane(
+    client, data_plane
+):
+    """Validation stays at the edge: a bad interval is 422, not a 502."""
+    resp = await client.get("/api/market/stocks/FPT/ohlcv", params={"interval": "3Y"})
+    assert resp.status_code == 422
+    assert not [c for c, _ in data_plane.calls if c == "ohlcv"]
 
 
 @pytest.mark.asyncio
-async def test_finance_reports_newest_first(client):
-    resp = await client.get(
+async def test_finance_forwards_report_type_as_a_plain_string(client, data_plane):
+    """The enum must be sent by *value*, not as ``ReportType.INCOME_STATEMENT``.
+
+    A str() of the enum member would produce a query the data plane rejects —
+    the kind of mismatch that only shows up across a process boundary.
+    """
+    await client.get(
         "/api/market/stocks/FPT/finance",
-        params={"report_type": "income_statement", "period": "quarter"},
+        params={"report_type": "balance_sheet", "period": "quarter"},
     )
-    assert resp.status_code == 200
-    rows = resp.json()["data"]
-    assert [r["year"] for r in rows] == ["2026", "2025"]
-    # data_json is exploded back into a dict
-    assert rows[0]["data"]["revenue"] == 2026 * 1000
-
-    # a report type with no crawled rows is empty, not an error
-    empty = await client.get(
-        "/api/market/stocks/FPT/finance", params={"report_type": "cash_flow"}
-    )
-    assert empty.json()["data"] == []
+    assert data_plane.last("finance")["report_type"] == "balance_sheet"
 
 
 @pytest.mark.asyncio
-async def test_missing_tables_return_empty(client, tmp_path):
-    """A DuckDB file with no ETL tables yet reads as 'no data', not a 500."""
-    from kactus_fin.olap import set_olap_storage
+async def test_data_plane_failure_is_502_not_an_empty_list(client, monkeypatch):
+    """An unreachable data plane must not render as "no data".
 
-    set_olap_storage(DuckDBStorage(str(tmp_path / "empty.duckdb")))
+    Returning ``[]`` would show an empty board to a user with ten positions —
+    a worse lie than an error, and one nothing downstream can detect.
+    """
+    from kactus_fin import data_client
+
+    async def boom(*args, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(data_client.get_client(), "request", boom)
+
     resp = await client.get("/api/market/gold")
-    assert resp.status_code == 200
-    assert resp.json()["data"] == []
+    assert resp.status_code == 502
+    assert resp.json()["code"] == "EXTERNAL_SERVICE_ERROR"
 
 
 @pytest.mark.asyncio
-async def test_olap_storage_not_initialised():
-    from kactus_common.exceptions import InternalError
-    from kactus_fin.olap import get_olap_storage, set_olap_storage
+async def test_data_plane_error_envelope_is_surfaced(client, monkeypatch):
+    """A 403 from the data plane keeps its message in this service's logs/body.
 
-    set_olap_storage(None)
-    with pytest.raises(InternalError):
-        get_olap_storage()
+    "Invalid or missing X-Service-Token" is a far more actionable line than a
+    bare "502 from data plane", and this is the wire on which a token
+    mismatch actually shows up.
+    """
+    from kactus_fin import data_client
+
+    async def forbidden(*args, **kwargs):
+        return httpx.Response(
+            403,
+            json={"code": "PERMISSION_DENIED", "message": "Invalid or missing token"},
+            request=httpx.Request("GET", "http://data-plane/internal/market/gold"),
+        )
+
+    monkeypatch.setattr(data_client.get_client(), "request", forbidden)
+
+    resp = await client.get("/api/market/gold")
+    assert resp.status_code == 502
+    assert "Invalid or missing token" in resp.json()["message"]
+
+
+@pytest.mark.asyncio
+async def test_this_service_holds_no_duckdb():
+    """The invariant the whole phase exists to create, asserted in code.
+
+    ``kactus_fin`` no longer depends on kactus-data, and an import-linter
+    ``forbidden`` contract keeps it that way — but a dependency can be re-added
+    in one line by someone who does not know why it left, and the linter only
+    runs in CI and pre-commit.
+    """
+    import sys
+
+    import kactus_fin  # noqa: F401
+
+    assert "kactus_fin.olap" not in sys.modules
+    # Nothing under kactus_fin may pull the ETL library in transitively.
+    offenders = [
+        name
+        for name in sys.modules
+        if name.startswith("kactus_fin") and "kactus_data" in name
+    ]
+    assert offenders == []

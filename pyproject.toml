@@ -21,6 +21,7 @@ kactus-data = { workspace = true }
 kactus-notification = { workspace = true }
 kactus-fin = { workspace = true }
 kactus-fin-gateway = { workspace = true }
+kactus-data-server = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -44,24 +45,44 @@ dev = [
 # ---------------------------------------------------------------------------
 
 [tool.importlinter]
+# Required by the "Control plane owns no DuckDB" contract below: `duckdb` is a
+# third-party package, and grimp only builds the external-import graph when
+# asked to (it is the slower analysis).
+include_external_packages = true
 root_packages = [
     "kactus_common",
     "kactus_data",
     "kactus_notification",
     "kactus_fin",
     "kactus_fin_gateway",
+    "kactus_data_server",
 ]
 
 [[tool.importlinter.contracts]]
 name = "Kactus layers: services -> libs -> core"
 type = "layers"
 layers = [
-    "kactus_fin | kactus_fin_gateway",
+    # Sibling services: independently deployable, they talk over HTTP only.
+    # kactus_fin importing kactus_data_server (or the reverse) would put the
+    # data plane back inside the control-plane process, which is the exact thing
+    # the split exists to prevent.
+    "kactus_fin | kactus_fin_gateway | kactus_data_server",
     # Sibling libs: neither may import the other. kactus-data must not learn to
     # send notifications, and kactus-notification must not learn to crawl.
     "kactus_data | kactus_notification",
     "kactus_common",
 ]
+
+# kactus-fin must not reach for DuckDB again. The layered contract above allows
+# services → libs, so it would happily permit `from kactus_data...` creeping
+# back into kactus-fin; only this forbids it. The dependency is already gone
+# from its pyproject, but a dependency can be re-added in one line by someone
+# who does not know why it left.
+[[tool.importlinter.contracts]]
+name = "Control plane owns no DuckDB"
+type = "forbidden"
+source_modules = ["kactus_fin"]
+forbidden_modules = ["kactus_data", "duckdb"]
 
 # ---------------------------------------------------------------------------
 # Coverage gate — invoked explicitly by CI as
@@ -78,6 +99,7 @@ source = [
     "libs/kactus-notification/src/kactus_notification",
     "services/kactus-fin/src/kactus_fin",
     "services/kactus-fin-gateway/src/kactus_fin_gateway",
+    "services/kactus-data-server/src/kactus_data_server",
 ]
 omit = [
     "*/tests/*",

@@ -10,6 +10,8 @@ Usage:
 
     python manage.py fin-gw dev          # Start gateway in dev mode
     python manage.py fin-gw db migrate -m "init"
+
+    python manage.py data-server dev     # Start the data plane (port 17602)
 """
 
 import typer
@@ -34,6 +36,15 @@ def register_packages():
 
         app.add_typer(
             gw_cli, name="fin-gw", help="Kactus Fin Gateway — public API server"
+        )
+    except ImportError:
+        pass
+
+    try:
+        from kactus_data_server.cli import cli as ds_cli
+
+        app.add_typer(
+            ds_cli, name="data-server", help="Kactus Data Server — data plane (ETL)"
         )
     except ImportError:
         pass
