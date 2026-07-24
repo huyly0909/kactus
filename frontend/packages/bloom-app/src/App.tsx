@@ -4,6 +4,7 @@ import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { LoginPage } from '@/modules/core/auth/pages/LoginPage';
+import { AdminGuard } from '@modules/admin/components/AdminGuard';
 
 // Route-level code splitting — each page becomes its own async chunk, loaded on
 // demand behind the DashboardLayout's <Suspense> boundary (named → default).
@@ -32,6 +33,29 @@ const NotificationDetailPage = lazy(() =>
     default: m.NotificationDetailPage,
   })),
 );
+const GoldPricesPage = lazy(() =>
+  import('@modules/market/pages/GoldPricesPage').then((m) => ({ default: m.GoldPricesPage })),
+);
+const StockMarketPage = lazy(() =>
+  import('@modules/market/pages/StockMarketPage').then((m) => ({ default: m.StockMarketPage })),
+);
+const StockDetailPage = lazy(() =>
+  import('@modules/market/pages/StockDetailPage').then((m) => ({ default: m.StockDetailPage })),
+);
+const FinancePage = lazy(() =>
+  import('@modules/market/pages/FinancePage').then((m) => ({ default: m.FinancePage })),
+);
+const AdminUsersPage = lazy(() =>
+  import('@modules/admin/pages/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })),
+);
+const AdminProjectsPage = lazy(() =>
+  import('@modules/admin/pages/AdminProjectsPage').then((m) => ({ default: m.AdminProjectsPage })),
+);
+const AdminAuthorizationPage = lazy(() =>
+  import('@modules/admin/pages/AdminAuthorizationPage').then((m) => ({
+    default: m.AdminAuthorizationPage,
+  })),
+);
 
 /**
  * App shell — mirrors Builtiful's App.tsx pattern:
@@ -49,6 +73,16 @@ function AppRoutes() {
         <Route path="portfolios/:id" element={<PortfolioDetailPage />} />
         <Route path="notifications" element={<NotificationListPage />} />
         <Route path="notifications/:id" element={<NotificationDetailPage />} />
+        <Route path="market/gold" element={<GoldPricesPage />} />
+        <Route path="market/stocks" element={<StockMarketPage />} />
+        <Route path="market/stocks/:symbol" element={<StockDetailPage />} />
+        <Route path="market/finance" element={<FinancePage />} />
+        <Route path="admin" element={<AdminGuard />}>
+          <Route index element={<AdminUsersPage />} />
+          <Route path="users" element={<AdminUsersPage />} />
+          <Route path="projects" element={<AdminProjectsPage />} />
+          <Route path="authorization" element={<AdminAuthorizationPage />} />
+        </Route>
         <Route path="*" element={<div className="p-8 text-muted-foreground">Page not found</div>} />
       </Route>
     </Routes>

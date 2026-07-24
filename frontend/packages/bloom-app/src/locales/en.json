@@ -63,6 +63,51 @@
     "quick_actions": "Quick actions",
     "view_all": "View all"
   },
+  "admin": {
+    "forbidden_title": "Access denied",
+    "forbidden_message": "You need superuser privileges to view this page.",
+    "users": {
+      "title": "Users",
+      "subtitle": "Manage accounts, roles and access",
+      "create_title": "New user",
+      "name": "Name",
+      "email": "Email",
+      "password": "Password",
+      "role": "Role",
+      "role_member": "Member",
+      "role_superuser": "Superuser",
+      "status": "Status",
+      "empty": "No users found",
+      "make_superuser": "Grant superuser",
+      "make_superuser_confirm": "Grant superuser privileges to {{name}}?",
+      "revoke_superuser": "Revoke superuser",
+      "revoke_superuser_confirm": "Revoke superuser privileges from {{name}}?",
+      "reset_password": "Reset password",
+      "reset_password_confirm": "Generate a new random password for {{name}}? The current password stops working immediately.",
+      "new_password_title": "New password",
+      "new_password_desc": "Copy this password now — it is shown only once. Share it with {{name}} over a secure channel.",
+      "deactivate": "Deactivate",
+      "deactivate_confirm": "Deactivate {{name}}? They will no longer be able to sign in.",
+      "deactivate_ok": "User deactivated"
+    },
+    "projects": {
+      "title": "Projects",
+      "subtitle": "Every project in the system",
+      "name": "Name",
+      "code": "Code",
+      "description": "Description",
+      "status": "Status",
+      "empty": "No projects found"
+    },
+    "authorization": {
+      "title": "Authorization",
+      "subtitle": "Role to permission mapping (Casbin)",
+      "permission": "Permission",
+      "act": "Action",
+      "permission_count": "{{total}} permissions",
+      "empty": "No roles configured"
+    }
+  },
   "portfolio": {
     "title": "Watchlists",
     "subtitle": "Track stocks, gold, and market data",
@@ -93,6 +138,64 @@
       "price": "Price",
       "change": "Change",
       "volume": "Vol"
+    }
+  },
+  "market": {
+    "source": "Source",
+    "updated_at": "Updated",
+    "empty": "No data yet — the crawler has not stored anything for this dataset.",
+    "gold": {
+      "title": "Gold Prices",
+      "subtitle": "Latest domestic gold board (VND per lượng)",
+      "code": "Code",
+      "buy": "Buy",
+      "sell": "Sell",
+      "spread": "Spread"
+    },
+    "stock": {
+      "title": "Stock Market",
+      "subtitle": "Listed symbols and their latest board quote",
+      "search_placeholder": "Symbol or company name",
+      "symbol": "Symbol",
+      "company": "Company",
+      "price": "Price",
+      "change": "Change",
+      "volume": "Volume",
+      "ref": "Reference",
+      "ceiling": "Ceiling",
+      "floor": "Floor",
+      "quote": "Quote",
+      "profile": "Profile",
+      "market_cap": "Market cap",
+      "shares": "Shares outstanding",
+      "price_history": "Price history",
+      "no_history": "No price history for this interval yet",
+      "news": "News",
+      "no_news": "No news yet",
+      "not_found": "No market data for this symbol"
+    },
+    "interval": {
+      "1D": "Daily",
+      "1W": "Weekly",
+      "1M": "Monthly"
+    },
+    "finance": {
+      "title": "Finance",
+      "subtitle": "Financial statements and ratios per symbol",
+      "symbol_placeholder": "e.g. FPT",
+      "pick_symbol": "Enter a symbol to load its financial reports",
+      "empty": "No reports stored for this symbol and report type",
+      "metric": "Metric",
+      "report_type": {
+        "income_statement": "Income statement",
+        "balance_sheet": "Balance sheet",
+        "cash_flow": "Cash flow",
+        "ratio": "Ratios"
+      },
+      "period": {
+        "year": "Yearly",
+        "quarter": "Quarterly"
+      }
     }
   },
   "errors": {

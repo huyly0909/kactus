@@ -63,6 +63,51 @@
     "quick_actions": "Thao tác nhanh",
     "view_all": "Xem tất cả"
   },
+  "admin": {
+    "forbidden_title": "Không có quyền truy cập",
+    "forbidden_message": "Bạn cần quyền quản trị viên cấp cao để xem trang này.",
+    "users": {
+      "title": "Người dùng",
+      "subtitle": "Quản lý tài khoản, vai trò và quyền truy cập",
+      "create_title": "Tạo người dùng",
+      "name": "Tên",
+      "email": "Email",
+      "password": "Mật khẩu",
+      "role": "Vai trò",
+      "role_member": "Thành viên",
+      "role_superuser": "Quản trị cấp cao",
+      "status": "Trạng thái",
+      "empty": "Không tìm thấy người dùng",
+      "make_superuser": "Cấp quyền quản trị",
+      "make_superuser_confirm": "Cấp quyền quản trị cấp cao cho {{name}}?",
+      "revoke_superuser": "Thu hồi quyền quản trị",
+      "revoke_superuser_confirm": "Thu hồi quyền quản trị cấp cao của {{name}}?",
+      "reset_password": "Đặt lại mật khẩu",
+      "reset_password_confirm": "Tạo mật khẩu ngẫu nhiên mới cho {{name}}? Mật khẩu hiện tại sẽ ngừng hoạt động ngay lập tức.",
+      "new_password_title": "Mật khẩu mới",
+      "new_password_desc": "Hãy sao chép mật khẩu ngay — mật khẩu chỉ hiển thị một lần. Gửi cho {{name}} qua kênh an toàn.",
+      "deactivate": "Vô hiệu hoá",
+      "deactivate_confirm": "Vô hiệu hoá {{name}}? Người dùng này sẽ không thể đăng nhập.",
+      "deactivate_ok": "Đã vô hiệu hoá người dùng"
+    },
+    "projects": {
+      "title": "Dự án",
+      "subtitle": "Toàn bộ dự án trong hệ thống",
+      "name": "Tên",
+      "code": "Mã",
+      "description": "Mô tả",
+      "status": "Trạng thái",
+      "empty": "Không tìm thấy dự án"
+    },
+    "authorization": {
+      "title": "Phân quyền",
+      "subtitle": "Ánh xạ vai trò và quyền (Casbin)",
+      "permission": "Quyền",
+      "act": "Hành động",
+      "permission_count": "{{total}} quyền",
+      "empty": "Chưa cấu hình vai trò nào"
+    }
+  },
   "portfolio": {
     "title": "Danh mục theo dõi",
     "subtitle": "Theo dõi cổ phiếu, vàng và dữ liệu thị trường",
@@ -93,6 +138,64 @@
       "price": "Giá",
       "change": "Thay đổi",
       "volume": "KL"
+    }
+  },
+  "market": {
+    "source": "Nguồn",
+    "updated_at": "Cập nhật",
+    "empty": "Chưa có dữ liệu — trình thu thập chưa lưu dữ liệu cho tập này.",
+    "gold": {
+      "title": "Giá vàng",
+      "subtitle": "Bảng giá vàng trong nước mới nhất (VND/lượng)",
+      "code": "Mã",
+      "buy": "Mua vào",
+      "sell": "Bán ra",
+      "spread": "Chênh lệch"
+    },
+    "stock": {
+      "title": "Chứng khoán",
+      "subtitle": "Danh sách mã niêm yết và giá bảng mới nhất",
+      "search_placeholder": "Mã hoặc tên công ty",
+      "symbol": "Mã",
+      "company": "Công ty",
+      "price": "Giá",
+      "change": "Thay đổi",
+      "volume": "Khối lượng",
+      "ref": "Tham chiếu",
+      "ceiling": "Trần",
+      "floor": "Sàn",
+      "quote": "Giá hiện tại",
+      "profile": "Hồ sơ",
+      "market_cap": "Vốn hoá",
+      "shares": "Số cổ phiếu lưu hành",
+      "price_history": "Lịch sử giá",
+      "no_history": "Chưa có lịch sử giá cho khung thời gian này",
+      "news": "Tin tức",
+      "no_news": "Chưa có tin tức",
+      "not_found": "Không có dữ liệu cho mã này"
+    },
+    "interval": {
+      "1D": "Theo ngày",
+      "1W": "Theo tuần",
+      "1M": "Theo tháng"
+    },
+    "finance": {
+      "title": "Tài chính",
+      "subtitle": "Báo cáo tài chính và chỉ số theo mã",
+      "symbol_placeholder": "VD: FPT",
+      "pick_symbol": "Nhập mã để xem báo cáo tài chính",
+      "empty": "Chưa có báo cáo cho mã và loại báo cáo này",
+      "metric": "Chỉ tiêu",
+      "report_type": {
+        "income_statement": "Kết quả kinh doanh",
+        "balance_sheet": "Cân đối kế toán",
+        "cash_flow": "Lưu chuyển tiền tệ",
+        "ratio": "Chỉ số"
+      },
+      "period": {
+        "year": "Theo năm",
+        "quarter": "Theo quý"
+      }
     }
   },
   "errors": {

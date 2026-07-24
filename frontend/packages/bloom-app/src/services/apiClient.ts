@@ -7,6 +7,8 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
  *
  * - withCredentials: true → browser sends httpOnly cookies automatically
  * - On 401, redirects to /login (session expired or missing)
+ * - Array params repeat the key (`?code=SJC&code=999`) instead of axios's
+ *   default `code[]=` form, which FastAPI does not parse into a list.
  */
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -15,6 +17,7 @@ export const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  paramsSerializer: { indexes: null },
 });
 
 // Response interceptor — redirect to login on 401

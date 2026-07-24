@@ -26,6 +26,8 @@ export default defineConfig({
             '@radix-ui/react-slot',
           ],
           'i18n-vendor': ['i18next', 'react-i18next'],
+          // Charts are heavy and only reached from the market routes.
+          'chart-vendor': ['recharts'],
         },
       },
     },

@@ -12,6 +12,12 @@ import {
   Briefcase,
   Bell,
   Loader2,
+  Users,
+  FolderKanban,
+  ShieldCheck,
+  Coins,
+  LineChart,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
@@ -22,12 +28,35 @@ interface SidebarItem {
   labelKey: string;
   icon: React.ElementType;
   path: string;
+  /** Only rendered for superusers. */
+  adminOnly?: boolean;
 }
 
 const SIDEBAR_ITEMS: SidebarItem[] = [
   { id: 'dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard, path: '/' },
   { id: 'portfolios', labelKey: 'nav.portfolios', icon: Briefcase, path: '/portfolios' },
   { id: 'notifications', labelKey: 'nav.notifications', icon: Bell, path: '/notifications' },
+  { id: 'gold', labelKey: 'nav.gold', icon: Coins, path: '/market/gold' },
+  { id: 'stocks', labelKey: 'nav.stock', icon: LineChart, path: '/market/stocks' },
+  { id: 'finance', labelKey: 'nav.finance', icon: FileSpreadsheet, path: '/market/finance' },
+];
+
+const ADMIN_ITEMS: SidebarItem[] = [
+  { id: 'admin-users', labelKey: 'nav.users', icon: Users, path: '/admin/users', adminOnly: true },
+  {
+    id: 'admin-projects',
+    labelKey: 'nav.projects',
+    icon: FolderKanban,
+    path: '/admin/projects',
+    adminOnly: true,
+  },
+  {
+    id: 'admin-authorization',
+    labelKey: 'nav.authorization',
+    icon: ShieldCheck,
+    path: '/admin/authorization',
+    adminOnly: true,
+  },
 ];
 
 export function DashboardLayout() {
@@ -37,6 +66,32 @@ export function DashboardLayout() {
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const renderNavItem = (item: SidebarItem) => {
+    const isActive =
+      location.pathname === item.path ||
+      (item.path !== '/' && location.pathname.startsWith(item.path));
+    const Icon = item.icon;
+    return (
+      <button
+        key={item.id}
+        onClick={() => {
+          navigate(item.path);
+          setMobileOpen(false);
+        }}
+        className={cn(
+          'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+          isActive
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+            : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
+          collapsed && 'justify-center px-2',
+        )}
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        {!collapsed && <span className="truncate">{t(item.labelKey)}</span>}
+      </button>
+    );
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -93,31 +148,21 @@ export function DashboardLayout() {
 
         {/* Navigation */}
         <nav className="flex-1 space-y-1 p-2 overflow-y-auto">
-          {SIDEBAR_ITEMS.map((item) => {
-            const isActive =
-              location.pathname === item.path ||
-              (item.path !== '/' && location.pathname.startsWith(item.path));
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  navigate(item.path);
-                  setMobileOpen(false);
-                }}
-                className={cn(
-                  'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                    : 'text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground',
-                  collapsed && 'justify-center px-2',
+          {SIDEBAR_ITEMS.map(renderNavItem)}
+
+          {/* Admin section — superusers only */}
+          {user?.is_superuser && (
+            <>
+              <div className="my-2 border-t border-sidebar-border pt-2">
+                {!collapsed && (
+                  <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    {t('nav.admin')}
+                  </p>
                 )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                {!collapsed && <span className="truncate">{t(item.labelKey)}</span>}
-              </button>
-            );
-          })}
+              </div>
+              {ADMIN_ITEMS.map(renderNavItem)}
+            </>
+          )}
         </nav>
 
         {/* Footer — user + logout */}

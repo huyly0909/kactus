@@ -8,3 +8,10 @@ export type {
   LoginResponse,
 } from './auth';
 export type { Project, ProjectMember, PermissionsResponse } from './project';
+export type {
+  AdminUser,
+  AuthorizationMap,
+  CreateUserPayload,
+  ResetPasswordResponse,
+  UpdateUserRolePayload,
+} from './admin';
