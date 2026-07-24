@@ -12,8 +12,12 @@ from __future__ import annotations
 import uuid
 
 from fastapi import Request
-from kactus_common.notification.const import NotificationChannelType
-from kactus_common.notification.schema import (
+from kactus_common.router import KactusAPIRouter
+from kactus_common.schemas import Pagination
+from kactus_fin.dependencies import provide_session
+from kactus_fin.notification.api import _to_schema
+from kactus_notification.const import NotificationChannelType
+from kactus_notification.schema import (
     NotificationChannelSchema,
     Recipient,
     ZaloPAChannelCreateRequest,
@@ -22,8 +26,8 @@ from kactus_common.notification.schema import (
     ZaloPAQRStatusResponse,
     ZaloPAReauthRequest,
 )
-from kactus_common.notification.service import NotificationChannelService
-from kactus_common.notification.zalo_pa import (
+from kactus_notification.service import NotificationChannelService
+from kactus_notification.zalo_pa import (
     build_channel_config,
     complete_login,
     generate_qr,
@@ -32,10 +36,6 @@ from kactus_common.notification.zalo_pa import (
     wait_for_confirm,
     wait_for_scan,
 )
-from kactus_common.router import KactusAPIRouter
-from kactus_common.schemas import Pagination
-from kactus_fin.dependencies import provide_session
-from kactus_fin.notification.api import _to_schema
 from sqlalchemy.ext.asyncio import AsyncSession
 
 zalo_pa_router = KactusAPIRouter(

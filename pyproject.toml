@@ -18,6 +18,7 @@ exclude = ["libs/core"]
 [tool.uv.sources]
 kactus-common = { workspace = true }
 kactus-data = { workspace = true }
+kactus-notification = { workspace = true }
 kactus-fin = { workspace = true }
 kactus-fin-gateway = { workspace = true }
 
@@ -45,6 +46,7 @@ dev = [
 root_packages = [
     "kactus_common",
     "kactus_data",
+    "kactus_notification",
     "kactus_fin",
     "kactus_fin_gateway",
 ]
@@ -54,7 +56,9 @@ name = "Kactus layers: services -> libs -> core"
 type = "layers"
 layers = [
     "kactus_fin | kactus_fin_gateway",
-    "kactus_data",
+    # Sibling libs: neither may import the other. kactus-data must not learn to
+    # send notifications, and kactus-notification must not learn to crawl.
+    "kactus_data | kactus_notification",
     "kactus_common",
 ]
 
@@ -70,6 +74,7 @@ branch = false
 source = [
     "libs/core/kactus-common/src/kactus_common",
     "libs/kactus-data/src/kactus_data",
+    "libs/kactus-notification/src/kactus_notification",
     "services/kactus-fin/src/kactus_fin",
     "services/kactus-fin-gateway/src/kactus_fin_gateway",
 ]

@@ -233,7 +233,7 @@ class EncryptedJSON(TypeDecorator):
 
     Encrypt on write / decrypt on read using ``settings.encryption_key`` — same
     reversible scheme as :class:`PasswordHash` uses one-way hashing. Use for
-    columns that hold credentials (e.g. notification channel configs).
+    columns that hold credentials (e.g. ``kactus_notification`` channel configs).
 
     The column is opaque ciphertext in the DB, so it is **not** queryable /
     filterable — only round-tripped. Requires ``settings.encryption_key`` to be

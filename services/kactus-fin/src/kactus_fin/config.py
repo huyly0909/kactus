@@ -1,9 +1,14 @@
 """
 kactus-fin application settings.
 
-Inherits the full chain::
+Merges two branches of the settings tree::
 
-    BaseKactusSettings → CommonSettings → DataSettings → Settings
+    BaseKactusSettings ─┬─ CommonSettings ── DataSettings ─┬─ Settings
+                        └─ NotificationSettings ───────────┘
+
+kactus-fin is the only entry point that sends notifications, so it is the only
+one that mixes ``NotificationSettings`` in — the gateway's settings do not carry
+``zalo_pa_*`` at all.
 
 ``Settings`` loads ``.env`` from the kactus-fin package root.
 All inherited env variables (database_url, db_path, data_source, …) are
@@ -15,14 +20,18 @@ from typing import ClassVar
 
 from kactus_common.config import register_settings
 from kactus_data.config import DataSettings
+from kactus_notification.config import NotificationSettings
 from pydantic_settings import SettingsConfigDict
 
 
-class Settings(DataSettings):
+class Settings(DataSettings, NotificationSettings):
     """kactus-fin settings — entry-point package that loads .env."""
 
+    # Extend, never overwrite: a replaced list drops the upstream MODELS and
+    # Alembic autogenerate emits DROP TABLE for every table it can no longer see.
     INSTALLED_PACKAGES: ClassVar[list[str]] = DataSettings.INSTALLED_PACKAGES + [
-        "kactus_fin"
+        "kactus_notification",
+        "kactus_fin",
     ]
 
     app_name: str = "Kactus Fin"

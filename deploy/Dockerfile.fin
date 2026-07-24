@@ -9,11 +9,12 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Copy workspace manifests first (cache-friendly layer). `uv sync --frozen`
-# resolves against uv.lock, which names every workspace member, so all four
+# resolves against uv.lock, which names every workspace member, so all five
 # manifests must be present even though this image only runs kactus-fin.
 COPY pyproject.toml uv.lock ./
 COPY libs/core/kactus-common/pyproject.toml libs/core/kactus-common/pyproject.toml
 COPY libs/kactus-data/pyproject.toml libs/kactus-data/pyproject.toml
+COPY libs/kactus-notification/pyproject.toml libs/kactus-notification/pyproject.toml
 COPY services/kactus-fin/pyproject.toml services/kactus-fin/pyproject.toml
 COPY services/kactus-fin-gateway/pyproject.toml services/kactus-fin-gateway/pyproject.toml
 
@@ -22,6 +23,8 @@ RUN mkdir -p libs/core/kactus-common/src/kactus_common && \
     touch libs/core/kactus-common/src/kactus_common/__init__.py && \
     mkdir -p libs/kactus-data/src/kactus_data && \
     touch libs/kactus-data/src/kactus_data/__init__.py && \
+    mkdir -p libs/kactus-notification/src/kactus_notification && \
+    touch libs/kactus-notification/src/kactus_notification/__init__.py && \
     mkdir -p services/kactus-fin/src/kactus_fin && \
     touch services/kactus-fin/src/kactus_fin/__init__.py && \
     mkdir -p services/kactus-fin-gateway/src/kactus_fin_gateway && \
@@ -31,9 +34,11 @@ RUN mkdir -p libs/core/kactus-common/src/kactus_common && \
 RUN uv sync --package kactus-fin --frozen --no-install-project
 
 # Copy full source. kactus-fin imports kactus-data (scheduler, asset providers,
-# DuckDB storage), so that lib ships too — not just its manifest.
+# DuckDB storage) and kactus-notification (channels, dispatcher), so both libs
+# ship too — not just their manifests.
 COPY libs/core/kactus-common/ libs/core/kactus-common/
 COPY libs/kactus-data/ libs/kactus-data/
+COPY libs/kactus-notification/ libs/kactus-notification/
 COPY services/kactus-fin/ services/kactus-fin/
 COPY manage.py pytest.ini ./
 

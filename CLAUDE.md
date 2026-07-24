@@ -11,6 +11,7 @@ Deeper = lower layer, and a lower layer never imports upward.
 |------|---------|-----------|---------|------|
 | `libs/core/kactus-common` | `kactus-common` | `kactus_common` | Shared infrastructure (DB, schemas, auth, events) | - |
 | `libs/kactus-data` | `kactus-data` | `kactus_data` | Data ETL (gold, stock, finance scraping) | - |
+| `libs/kactus-notification` | `kactus-notification` | `kactus_notification` | Notification domain (channels, templates, delivery) | - |
 | `services/kactus-fin` | `kactus-fin` | `kactus_fin` | Main API server (FastAPI) | 17600 |
 | `services/kactus-fin-gateway` | `kactus-fin-gateway` | `kactus_fin_gateway` | Public API gateway (FastAPI) | 17601 |
 | `deploy/` | - | - | Dockerfiles + per-env compose (not a Python package) | - |
@@ -22,10 +23,15 @@ Deeper = lower layer, and a lower layer never imports upward.
 ```
 services/kactus-fin ────────┐
 services/kactus-fin-gateway ─┤──▶ libs/core/kactus-common
-libs/kactus-data ───────────┘
+libs/kactus-data ───────────┤
+libs/kactus-notification ───┘
 
-services/kactus-fin ──▶ libs/kactus-data ──▶ libs/core/kactus-common
+services/kactus-fin ──▶ libs/kactus-data         ──▶ libs/core/kactus-common
+services/kactus-fin ──▶ libs/kactus-notification ──▶ libs/core/kactus-common
 ```
+
+`kactus-data` and `kactus-notification` are **siblings** — neither imports the
+other. Only `kactus-fin` sees both.
 
 Never import from app packages into `kactus-common`.
 
@@ -51,7 +57,7 @@ python manage.py data schema recreate [table]   # DROP + rebuild (destroys rows;
 
 ### Notification feature (✅ implemented)
 
-Multi-channel push (Telegram/Slack/**Zalo PA**) as shared infra in `kactus-common` (`kactus_common/notification/`). Docs: [docs/06-notification-feature.md](docs/06-notification-feature.md). **One shared `NotificationChannel` "connection" for every platform** — `channel_type` + a `config: dict` on an **`EncryptedJSON`** (Fernet) column, each platform coerced by a per-type Pydantic schema (`TelegramChannelConfig`/`SlackChannelConfig`/`ZaloPAChannelConfig`) via `CHANNEL_CONFIG_SCHEMAS`; secrets masked by `SECRET_FIELDS`+`mask_config`. **No separate Zalo table.** Channels are **user-owned** (ownership in service). Adding a channel type = +1 config schema, +1 `*Channel`, +1 `*EventTemplate`, +1 entry in each registry. `Notifier.send_event(session, channel, event, *, trigger=MANUAL)` renders (per-type template) + delivers via `asyncio.to_thread`, with **synchronous bounded retry** (`notification_max_send_attempts=3`, exp backoff) on `impl.retryable_exceptions` — deterministic `ExternalServiceError` is **not** retried — and writes a `NotificationLog` (append-only audit, mirror `CrawlRun`) on every outcome. **Push-only** (no inbound/webhook). HTTP in `kactus_fin/notification/` (`api.py` generic CRUD/test/send/`GET /{id}/logs`; `zalo_pa_api.py` QR + zalo channel create/reauth). **Zalo PA** = unofficial personal account via PyPI `zlapi` (sync→`to_thread`), 5-step QR login (`zalo_pa.py`, `curl_cffi impersonate=chrome`) held in an **in-process TTL session store** (single-worker → `uvicorn --workers 1`); session lives inside `ZaloPAChannelConfig` (encrypted); recipients from `fetchAllFriends`/`fetchAllGroups`; **residential proxy** (`KACTUS_ZALO_PA_PROXY_URL`) required non-dev; **account-suspension risk**; expired session → non-retryable. UI in `kactus-bloom` (`modules/notification/`). Event-driven auto-fire is **deferred** (`trigger=EVENT` already threaded through the log).
+Multi-channel push (Telegram/Slack/**Zalo PA**) as its own library, `libs/kactus-notification` (`kactus_notification/`) — a **sibling of `kactus-data`, not part of `kactus-common`**: channel registry, template rendering, retry policy and QR login are domain logic, and keeping the unofficial `zlapi` down in the core layer forced it onto every consumer (the gateway included, which never sends anything). Settings come from `NotificationSettings`, a mixin merged in by `kactus_fin.config.Settings` — a service that does not send notifications simply does not mix it in. Docs: [docs/06-notification-feature.md](docs/06-notification-feature.md). **One shared `NotificationChannel` "connection" for every platform** — `channel_type` + a `config: dict` on an **`EncryptedJSON`** (Fernet) column, each platform coerced by a per-type Pydantic schema (`TelegramChannelConfig`/`SlackChannelConfig`/`ZaloPAChannelConfig`) via `CHANNEL_CONFIG_SCHEMAS`; secrets masked by `SECRET_FIELDS`+`mask_config`. **No separate Zalo table.** Channels are **user-owned** (ownership in service). Adding a channel type = +1 config schema, +1 `*Channel`, +1 `*EventTemplate`, +1 entry in each registry. `Notifier.send_event(session, channel, event, *, trigger=MANUAL)` renders (per-type template) + delivers via `asyncio.to_thread`, with **synchronous bounded retry** (`notification_max_send_attempts=3`, exp backoff) on `impl.retryable_exceptions` — deterministic `ExternalServiceError` is **not** retried — and writes a `NotificationLog` (append-only audit, mirror `CrawlRun`) on every outcome. **Push-only** (no inbound/webhook). HTTP in `kactus_fin/notification/` (`api.py` generic CRUD/test/send/`GET /{id}/logs`; `zalo_pa_api.py` QR + zalo channel create/reauth). **Zalo PA** = unofficial personal account via PyPI `zlapi` (sync→`to_thread`), 5-step QR login (`zalo_pa.py`, `curl_cffi impersonate=chrome`) held in an **in-process TTL session store** (single-worker → `uvicorn --workers 1`); session lives inside `ZaloPAChannelConfig` (encrypted); recipients from `fetchAllFriends`/`fetchAllGroups`; **residential proxy** (`KACTUS_ZALO_PA_PROXY_URL`) required non-dev; **account-suspension risk**; expired session → non-retryable. UI in `kactus-bloom` (`modules/notification/`). Event-driven auto-fire is **deferred** (`trigger=EVENT` already threaded through the log).
 
 ### Market feature (✅ implemented)
 

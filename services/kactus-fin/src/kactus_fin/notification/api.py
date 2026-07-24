@@ -9,10 +9,13 @@ from __future__ import annotations
 
 from fastapi import Request
 from kactus_common.exceptions import ExternalServiceError
-from kactus_common.notification.const import NotificationChannelType
-from kactus_common.notification.dispatcher import Notifier
-from kactus_common.notification.model import NotificationChannel, NotificationLog
-from kactus_common.notification.schema import (
+from kactus_common.router import KactusAPIRouter
+from kactus_common.schemas import MessageResponse, Pagination
+from kactus_fin.dependencies import provide_session
+from kactus_notification.const import NotificationChannelType
+from kactus_notification.dispatcher import Notifier
+from kactus_notification.model import NotificationChannel, NotificationLog
+from kactus_notification.schema import (
     NotificationChannelCreateRequest,
     NotificationChannelSchema,
     NotificationChannelUpdateRequest,
@@ -20,13 +23,10 @@ from kactus_common.notification.schema import (
     NotificationLogSchema,
     mask_config,
 )
-from kactus_common.notification.service import (
+from kactus_notification.service import (
     NotificationChannelService,
     NotificationLogService,
 )
-from kactus_common.router import KactusAPIRouter
-from kactus_common.schemas import MessageResponse, Pagination
-from kactus_fin.dependencies import provide_session
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = KactusAPIRouter(prefix="/api/notifications", tags=["notifications"])

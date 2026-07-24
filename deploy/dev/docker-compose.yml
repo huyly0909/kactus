@@ -39,6 +39,7 @@ services:
     volumes:
       - ../../libs/core/kactus-common/src:/app/libs/core/kactus-common/src
       - ../../libs/kactus-data/src:/app/libs/kactus-data/src
+      - ../../libs/kactus-notification/src:/app/libs/kactus-notification/src
       - ../../services/kactus-fin/src:/app/services/kactus-fin/src
     command: >
       uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --reload --log-level debug

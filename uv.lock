@@ -17,6 +17,7 @@ members = [
     "kactus-data",
     "kactus-fin",
     "kactus-fin-gateway",
+    "kactus-notification",
 ]
 
 [[package]]
@@ -1239,7 +1240,6 @@ dependencies = [
     { name = "blinker" },
     { name = "casbin" },
     { name = "cryptography" },
-    { name = "curl-cffi" },
     { name = "duckdb" },
     { name = "fastapi" },
     { name = "fastapi-events" },
@@ -1247,16 +1247,12 @@ dependencies = [
     { name = "loguru" },
     { name = "orjson" },
     { name = "pandas" },
-    { name = "pycryptodome" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
-    { name = "requests" },
     { name = "snowflake-id" },
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "sqlalchemy-utils" },
     { name = "typer" },
-    { name = "websocket-client" },
-    { name = "zlapi" },
 ]
 
 [package.metadata]
@@ -1266,7 +1262,6 @@ requires-dist = [
     { name = "blinker", specifier = ">=1.7.0" },
     { name = "casbin", specifier = ">=1.36,<2" },
     { name = "cryptography", specifier = ">=44.0.0" },
-    { name = "curl-cffi", specifier = ">=0.15.0" },
     { name = "duckdb", specifier = ">=1.4.4" },
     { name = "fastapi", specifier = ">=0.100.0" },
     { name = "fastapi-events", specifier = ">=0.11.0" },
@@ -1274,16 +1269,12 @@ requires-dist = [
     { name = "loguru", specifier = ">=0.7.0" },
     { name = "orjson", specifier = ">=3.9.0" },
     { name = "pandas", specifier = ">=2.2,<3" },
-    { name = "pycryptodome", specifier = ">=3.23.0" },
     { name = "pydantic", specifier = ">=2.12.5" },
     { name = "pydantic-settings", specifier = ">=2.13.1" },
-    { name = "requests", specifier = ">=2.32.5" },
     { name = "snowflake-id", specifier = ">=1.0.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.0" },
     { name = "sqlalchemy-utils", specifier = ">=0.41.0" },
     { name = "typer", specifier = ">=0.24.1" },
-    { name = "websocket-client", specifier = ">=1.9.0" },
-    { name = "zlapi", specifier = ">=1.0.3" },
 ]
 
 [[package]]
@@ -1322,6 +1313,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "kactus-common" },
     { name = "kactus-data" },
+    { name = "kactus-notification" },
     { name = "psycopg2-binary" },
     { name = "pydantic-settings" },
     { name = "sse-starlette" },
@@ -1341,6 +1333,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "kactus-common", editable = "libs/core/kactus-common" },
     { name = "kactus-data", editable = "libs/kactus-data" },
+    { name = "kactus-notification", editable = "libs/kactus-notification" },
     { name = "psycopg2-binary", specifier = ">=2.9.11" },
     { name = "pydantic-settings", specifier = ">=2.7.0" },
     { name = "sse-starlette", specifier = ">=3.4.4" },
@@ -1381,6 +1374,35 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.20.0" },
 ]
 provides-extras = ["dev"]
+
+[[package]]
+name = "kactus-notification"
+version = "0.1.0"
+source = { editable = "libs/kactus-notification" }
+dependencies = [
+    { name = "curl-cffi" },
+    { name = "kactus-common" },
+    { name = "loguru" },
+    { name = "pycryptodome" },
+    { name = "pydantic" },
+    { name = "requests" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+    { name = "websocket-client" },
+    { name = "zlapi" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "curl-cffi", specifier = ">=0.15.0" },
+    { name = "kactus-common", editable = "libs/core/kactus-common" },
+    { name = "loguru", specifier = ">=0.7.0" },
+    { name = "pycryptodome", specifier = ">=3.23.0" },
+    { name = "pydantic", specifier = ">=2.12.5" },
+    { name = "requests", specifier = ">=2.32.5" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.0" },
+    { name = "websocket-client", specifier = ">=1.9.0" },
+    { name = "zlapi", specifier = ">=1.0.3" },
+]
 
 [[package]]
 name = "kiwisolver"

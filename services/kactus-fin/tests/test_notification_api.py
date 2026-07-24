@@ -14,11 +14,11 @@ from httpx import ASGITransport, AsyncClient
 from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
-from kactus_common.notification import dispatcher
-from kactus_common.notification.const import NotificationChannelType
-from kactus_common.notification.service import NotificationChannelService
 from kactus_common.user import auth as auth_mod
 from kactus_common.user.model import User
+from kactus_notification import dispatcher
+from kactus_notification.const import NotificationChannelType
+from kactus_notification.service import NotificationChannelService
 
 TEST_DB_URL = "sqlite+aiosqlite://"
 TEST_KEY = Fernet.generate_key().decode()
@@ -217,12 +217,9 @@ async def test_send_endpoint(client, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_logs_endpoint(client, db, seed_user):
-    from kactus_common.notification.const import (
-        NotificationLogStatus,
-        NotificationTrigger,
-    )
-    from kactus_common.notification.schema import NotificationEvent
-    from kactus_common.notification.service import NotificationLogService
+    from kactus_notification.const import NotificationLogStatus, NotificationTrigger
+    from kactus_notification.schema import NotificationEvent
+    from kactus_notification.service import NotificationLogService
 
     cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
         "id"

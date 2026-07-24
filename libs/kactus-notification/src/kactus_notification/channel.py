@@ -3,7 +3,7 @@
 A channel knows how to (a) open/close its transport ("connection"), (b) send a
 :class:`RenderedMessage`, and (c) test its credentials. Methods are
 **synchronous/blocking** (``requests``), mirroring ``AssetProvider``; the async
-:class:`~kactus_common.notification.dispatcher.Notifier` wraps a send in
+:class:`~kactus_notification.dispatcher.Notifier` wraps a send in
 ``asyncio.to_thread`` so any async caller (kactus-data, kactus-fin) can deliver
 without blocking the event loop.
 

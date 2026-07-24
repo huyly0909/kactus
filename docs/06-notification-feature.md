@@ -31,8 +31,8 @@ Feature **`notification`**: user tạo các **kênh gửi** (notification channe
 ## 3. Kiến trúc
 
 ```
-kactus-common (shared infra)                 kactus-fin (HTTP)          kactus-bloom (UI)
-  notification/
+libs/kactus-notification (domain lib)        kactus-fin (HTTP)          kactus-bloom (UI)
+  kactus_notification/
     const.py       enums                      notification/              modules/notification/
     schema.py      config schemas + event      api.py     CRUD/test/send    pages/  List, Detail
     model.py       NotificationChannel,        zalo_pa_api.py  QR + zalo    components/  Form, QR,
@@ -43,9 +43,32 @@ kactus-common (shared infra)                 kactus-fin (HTTP)          kactus-b
     registry.py    dispatch tables                            types/notification.ts
     dispatcher.py  Notifier (retry + log)
     zalo_pa.py     QR login + zlapi wrapper
+    config.py      NotificationSettings mixin
 ```
 
-Dependency một chiều: `kactus-fin → kactus-common`. `Notifier` join channel đã lưu với registry channel/template — **bất kỳ package nào** cũng gửi được.
+Dependency một chiều: `kactus-fin → kactus-notification → kactus-common`.
+`Notifier` join channel đã lưu với registry channel/template — **bất kỳ package nào
+depend `kactus-notification`** cũng gửi được.
+
+**Tại sao là package riêng, không nằm trong `kactus-common`.** Hai lý do, cả hai
+đều cụ thể:
+
+1. `zlapi` là thư viện Zalo cá nhân **không chính thức, reverse-engineered** (tới
+   mức phải có guard `_NoKillOSProxy` chặn `os.kill(SIGTERM)` của nó). Khai ở tầng
+   đáy thì **mọi** package depend `kactus-common` đều kéo theo — kể cả
+   `kactus-fin-gateway` vốn không bao giờ gửi notification. Giờ chỉ `kactus-fin` có.
+2. `CLAUDE.md` quy định `kactus-common` là *infrastructure only, no business logic*.
+   Channel registry, template rendering, retry policy, QR login 5 bước đều là
+   domain logic.
+
+`kactus-notification` và `kactus-data` là **anh em**, không package nào import
+package kia — contract import-linter trong `pyproject.toml` chặn thật.
+
+**Settings.** Chuỗi settings vốn tuyến tính (`CommonSettings → DataSettings →
+Settings`) nên lib thứ hai không chen vào được. `NotificationSettings` là nhánh
+song song mọc từ `BaseKactusSettings`, entry-point ghép bằng đa kế thừa:
+`class Settings(DataSettings, NotificationSettings)`. Gateway không mix vào ⇒
+settings của nó không hề có `zalo_pa_*`.
 
 ---
 

@@ -1,4 +1,4 @@
-"""Tests for the kactus-common notification channel service.
+"""Tests for the notification channel service.
 
 In-memory SQLite (OLTP). Settings are registered with a real Fernet key so the
 ``EncryptedJSON`` config column round-trips (encrypt on write / decrypt on read).
@@ -15,14 +15,15 @@ from kactus_common.crypto import CryptoService
 from kactus_common.database.oltp.models import Base, utcnow
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.exceptions import NotFoundError, ValidationError
-from kactus_common.notification.const import (
+from kactus_notification.config import NotificationSettings
+from kactus_notification.const import (
     NotificationChannelType,
     NotificationLogStatus,
     NotificationTrigger,
 )
-from kactus_common.notification.model import NotificationChannel
-from kactus_common.notification.schema import NotificationEvent
-from kactus_common.notification.service import (
+from kactus_notification.model import NotificationChannel
+from kactus_notification.schema import NotificationEvent
+from kactus_notification.service import (
     NotificationChannelService,
     NotificationLogService,
 )
@@ -34,9 +35,19 @@ TEST_KEY = Fernet.generate_key().decode()
 TELEGRAM_CFG = {"bot_token": "secret-token", "chat_id": "123456", "parse_mode": "HTML"}
 
 
+class _Settings(CommonSettings, NotificationSettings):
+    """Composite settings, mirroring how kactus-fin merges the two branches.
+
+    The notification code reads from both: ``encryption_key`` lives on the
+    kactus-common branch, the retry/zalo knobs on the kactus-notification one.
+    Registering a bare ``CommonSettings`` would silently drop the latter
+    (``extra="ignore"``) and only blow up at attribute-access time.
+    """
+
+
 @pytest_asyncio.fixture
 async def db():
-    register_settings(CommonSettings(encryption_key=TEST_KEY))
+    register_settings(_Settings(encryption_key=TEST_KEY))
     manager = DatabaseSessionManager(database_url=TEST_DB_URL)
     async with manager.engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

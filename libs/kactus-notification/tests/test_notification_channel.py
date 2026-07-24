@@ -9,14 +9,10 @@ from __future__ import annotations
 
 import pytest
 import requests
-from kactus_common.notification.channel import (
-    RenderedMessage,
-    SlackChannel,
-    TelegramChannel,
-)
-from kactus_common.notification.const import NotificationChannelType, NotificationLevel
-from kactus_common.notification.registry import build_channel, get_template
-from kactus_common.notification.schema import (
+from kactus_notification.channel import RenderedMessage, SlackChannel, TelegramChannel
+from kactus_notification.const import NotificationChannelType, NotificationLevel
+from kactus_notification.registry import build_channel, get_template
+from kactus_notification.schema import (
     NotificationEvent,
     SlackChannelConfig,
     TelegramChannelConfig,

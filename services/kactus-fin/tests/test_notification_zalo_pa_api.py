@@ -13,9 +13,9 @@ from httpx import ASGITransport, AsyncClient
 from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
-from kactus_common.notification.schema import ZaloPAChannelConfig
 from kactus_common.user import auth as auth_mod
 from kactus_common.user.model import User
+from kactus_notification.schema import ZaloPAChannelConfig
 
 TEST_DB_URL = "sqlite+aiosqlite://"
 TEST_KEY = Fernet.generate_key().decode()
@@ -151,8 +151,8 @@ async def test_create_channel_assembles_config_server_side(client, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_recipients_endpoint(client, monkeypatch):
-    from kactus_common.notification.schema import Recipient
     from kactus_fin.notification import zalo_pa_api
+    from kactus_notification.schema import Recipient
 
     async def _recipients(session_id, query):
         return [

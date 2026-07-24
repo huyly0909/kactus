@@ -2,7 +2,7 @@
 
 Shared infrastructure: it joins the persisted channel (this package's ORM model)
 with the channel/template registries, so **any** package may send a
-notification — ``from kactus_common.notification.dispatcher import Notifier``.
+notification — ``from kactus_notification.dispatcher import Notifier``.
 Channels are blocking, so the send is wrapped in ``asyncio.to_thread`` (gương
 ``await asyncio.to_thread(provider.read, …)`` in the portfolio API). Transport
 errors surface as ``ExternalServiceError``.

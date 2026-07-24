@@ -12,11 +12,13 @@ dependencies = [
     "psycopg2-binary>=2.9.11",
     "sse-starlette>=3.4.4",
     "kactus-data",
+    "kactus-notification",
 ]
 
 [tool.uv.sources]
 kactus-common = { workspace = true }
 kactus-data = { workspace = true }
+kactus-notification = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

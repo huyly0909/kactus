@@ -1,4 +1,4 @@
-"""Tests for the Zalo PA channel (kactus-common).
+"""Tests for the Zalo PA channel.
 
 No network / no real Zalo: the ``curl_cffi`` client and the ``zlapi`` bot are
 faked. Covers config masking, the plain-text template, the blocking send +
@@ -13,11 +13,12 @@ import types
 import pytest
 from kactus_common.config import CommonSettings, clear_settings, register_settings
 from kactus_common.exceptions import ExternalServiceError, ValidationError
-from kactus_common.notification import zalo_pa
-from kactus_common.notification.channel import RenderedMessage, ZaloPAChannel
-from kactus_common.notification.const import NotificationChannelType
-from kactus_common.notification.registry import build_channel, get_template
-from kactus_common.notification.schema import (
+from kactus_notification import zalo_pa
+from kactus_notification.channel import RenderedMessage, ZaloPAChannel
+from kactus_notification.config import NotificationSettings
+from kactus_notification.const import NotificationChannelType
+from kactus_notification.registry import build_channel, get_template
+from kactus_notification.schema import (
     NotificationEvent,
     ZaloPAChannelConfig,
     mask_config,
@@ -39,12 +40,19 @@ CONFIG = {
 }
 
 
+class _Settings(CommonSettings, NotificationSettings):
+    """Composite settings, mirroring how kactus-fin merges the two branches.
+
+    ``app_env`` comes from the kactus-common branch, the ``zalo_pa_*`` knobs from
+    the kactus-notification one. A bare ``CommonSettings`` would silently drop
+    the latter (``extra="ignore"``) instead of rejecting them.
+    """
+
+
 @pytest.fixture(autouse=True)
 def _settings():
     register_settings(
-        CommonSettings(
-            app_env="dev", zalo_pa_session_ttl_secs=300, zalo_pa_max_sessions=50
-        )
+        _Settings(app_env="dev", zalo_pa_session_ttl_secs=300, zalo_pa_max_sessions=50)
     )
     yield
     zalo_pa.session_store._sessions.clear()

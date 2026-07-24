@@ -1,4 +1,4 @@
-"""Tests for the Notifier orchestrator (kactus-common).
+"""Tests for the Notifier orchestrator.
 
 Exercises the real send/test path — build_channel + template render + the
 ``asyncio.to_thread`` blocking helpers + connection lifecycle — with a fake
@@ -19,20 +19,30 @@ from kactus_common.config import CommonSettings, clear_settings, register_settin
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.exceptions import ExternalServiceError
-from kactus_common.notification import dispatcher
-from kactus_common.notification.channel import TelegramChannel
-from kactus_common.notification.const import NotificationLogStatus
-from kactus_common.notification.schema import NotificationEvent, TelegramChannelConfig
-from kactus_common.notification.service import NotificationLogService
+from kactus_notification import dispatcher
+from kactus_notification.channel import TelegramChannel
+from kactus_notification.config import NotificationSettings
+from kactus_notification.const import NotificationLogStatus
+from kactus_notification.schema import NotificationEvent, TelegramChannelConfig
+from kactus_notification.service import NotificationLogService
 
 TEST_DB_URL = "sqlite+aiosqlite://"
 TEST_KEY = Fernet.generate_key().decode()
 
 
+class _Settings(CommonSettings, NotificationSettings):
+    """Composite settings, mirroring how kactus-fin merges the two branches.
+
+    ``encryption_key`` comes from the kactus-common branch, the retry knobs from
+    the kactus-notification one. A bare ``CommonSettings`` would silently drop
+    the retry kwargs below (``extra="ignore"``) instead of rejecting them.
+    """
+
+
 @pytest_asyncio.fixture
 async def db():
     register_settings(
-        CommonSettings(
+        _Settings(
             encryption_key=TEST_KEY,
             notification_max_send_attempts=3,
             notification_retry_base_delay=0.0,  # no real sleeping in tests
