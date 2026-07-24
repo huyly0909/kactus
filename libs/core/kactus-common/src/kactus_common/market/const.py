@@ -1,23 +1,18 @@
-"""Market feature constants.
+"""Market API constants — the half of the contract both planes need.
 
 Values mirror what the ETL writes into DuckDB (see
 ``kactus_data.sources.finance.vnstock.REPORT_TYPES`` and
 ``VnstockOHLCVSource.interval``), so the API rejects anything that could never
 match a stored row instead of silently returning an empty list.
+
+The DuckDB *table names* deliberately do NOT live here — they are a detail of
+how the data plane stores rows, not of the wire contract, and belong with the
+SQL in ``kactus_data.market.const``.
 """
 
 from __future__ import annotations
 
 from enum import StrEnum
-
-# DuckDB tables owned by the ETL and read (never written) by this feature.
-GOLD_BOARD_TABLE = "gold_price_board"
-STOCK_LISTING_TABLE = "stock_listing"
-STOCK_COMPANY_TABLE = "stock_company"
-STOCK_PRICE_BOARD_TABLE = "stock_price_board"
-STOCK_OHLCV_TABLE = "stock_ohlcv"
-STOCK_NEWS_TABLE = "stock_news"
-STOCK_FINANCE_TABLE = "stock_finance"
 
 # Read caps — the OLAP tables are unbounded, the API is not.
 MAX_LIMIT = 2000

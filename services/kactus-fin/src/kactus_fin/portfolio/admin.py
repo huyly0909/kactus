@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from fastapi import BackgroundTasks, Request
 from kactus_common.portfolio.const import CrawlKind, CrawlTrigger
-from kactus_common.portfolio.schema import CrawlRunSchema, PortfolioSchema
+from kactus_common.portfolio.schema import (
+    CrawlJobSchema,
+    CrawlRunSchema,
+    CrawlStatusSchema,
+    CrawlTriggerResponse,
+    PortfolioSchema,
+)
 from kactus_common.portfolio.service import CrawlRunService, PortfolioService
 from kactus_common.router import KactusAPIRouter
 from kactus_common.schemas import Pagination
@@ -12,11 +18,6 @@ from kactus_data.jobs.crawl import run_crawl, sync_catalog
 from kactus_data.sources.stock.auth import _safe_tier_name
 from kactus_fin.dependencies import provide_session
 from kactus_fin.portfolio.runtime import get_runtime
-from kactus_fin.portfolio.schema import (
-    CrawlJobSchema,
-    CrawlStatusSchema,
-    CrawlTriggerResponse,
-)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = KactusAPIRouter(prefix="/api/admin/portfolios", tags=["admin-portfolios"])

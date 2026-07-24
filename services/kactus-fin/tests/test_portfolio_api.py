@@ -81,10 +81,10 @@ async def db():
 @pytest_asyncio.fixture
 async def app(db, tmp_path):
     from kactus_common.config import clear_settings, register_settings
+    from kactus_common.sse.market import register_sse_handler
     from kactus_fin.app import create_app
     from kactus_fin.config import Settings
     from kactus_fin.portfolio.runtime import PortfolioRuntime, set_runtime
-    from kactus_fin.portfolio.sse import register_sse_handler
     from kactus_fin.portfolio.symbol_provider import FinSymbolProvider
 
     register_settings(

@@ -2,12 +2,18 @@
 
 Every row also carries its ``source`` + crawl/sync timestamp so the UI can show
 how stale a figure is; the ETL is scheduled, not live.
+
+Shared: the data plane builds these from DuckDB and serves them over
+``/internal/market/*``; the control plane parses the same classes back out of
+that response and re-serves them on ``/api/market/*``. One definition, so a
+field added on one side cannot be silently dropped by the other.
 """
 
 from __future__ import annotations
 
 import datetime
 
+from kactus_common.market.const import ReportPeriod, ReportType
 from kactus_common.schemas import (
     BaseSchema,
     FancyDecimal,
@@ -15,7 +21,6 @@ from kactus_common.schemas import (
     FancyInt,
     OpaqueDict,
 )
-from kactus_fin.market.const import ReportPeriod, ReportType
 
 
 class GoldPriceSchema(BaseSchema):

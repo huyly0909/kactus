@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import datetime
 
-from kactus_common.schemas import BaseSchema, FancyInt
+from kactus_common.schemas import BaseSchema, FancyInt, OpaqueDict
 
-from .const import AssetType
+from .const import AssetType, CrawlKind, CrawlTrigger
 
 
 class PortfolioSchema(BaseSchema):
@@ -79,3 +79,58 @@ class CrawlRunSchema(BaseSchema):
     error: str | None = None
     started_at: datetime.datetime | None = None
     finished_at: datetime.datetime | None = None
+
+
+# --------------------------------------------------------------------------- #
+# Crawl control + generic market rows — shared by both planes.
+#
+# The data plane returns these from ``/internal/*``; the control plane re-serves
+# them on ``/api/*``. Defined once so the wire shape has a single owner.
+# --------------------------------------------------------------------------- #
+class MarketRowSchema(BaseSchema):
+    """Generic decision-support row (foreign trade / ratios / events).
+
+    Curated identity in ``symbol``; the full source row in ``data`` (opaque,
+    shape varies by dataset and vnstock source)."""
+
+    symbol: str | None = None
+    data: OpaqueDict = {}
+
+
+class CrawlJobSchema(BaseSchema):
+    """A scheduled crawl job and its next fire time."""
+
+    id: str
+    next_run_time: str | None = None
+
+
+class CrawlStatusSchema(BaseSchema):
+    """Crawl/scheduler status snapshot (admin view, served by the data plane)."""
+
+    scheduler_running: bool
+    vnstock_tier: str | None = None
+    jobs: list[CrawlJobSchema] = []
+
+
+class CrawlTriggerResponse(BaseSchema):
+    """Result of a manual crawl trigger."""
+
+    crawl_run_ids: list[FancyInt] = []
+    skipped: bool = False
+    message: str = "ok"
+
+
+class CrawlRequest(BaseSchema):
+    """Body of ``POST /internal/crawl``.
+
+    ``codes_by_type=None`` means "crawl the live watchlist union" — the data
+    plane computes it from Postgres itself, so the control plane never has to
+    ship the whole universe of symbols across the wire just to ask for a refresh.
+    """
+
+    kind: CrawlKind = CrawlKind.QUOTES
+    codes_by_type: dict[str, list[str]] | None = None
+    trigger: CrawlTrigger = CrawlTrigger.MANUAL
+    portfolio_id: FancyInt | None = None
+    #: Skip if a crawl of the same (asset_type, kind) is already in flight.
+    dedup: bool = True

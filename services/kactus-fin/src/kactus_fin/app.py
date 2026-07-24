@@ -9,6 +9,7 @@ from kactus_common.database.oltp.session import get_db
 from kactus_common.exceptions import PermissionDeniedError, install_exception_handlers
 from kactus_common.redis.client import close_redis
 from kactus_common.sse.broker import get_sse_broker, reset_sse_broker
+from kactus_common.sse.market import register_sse_handler
 from kactus_data.jobs.scheduler import build_scheduler
 from kactus_data.portfolio.provider import build_providers
 from kactus_data.sources.stock.auth import init_vnstock_auth
@@ -24,7 +25,6 @@ from kactus_fin.olap import set_olap_storage
 from kactus_fin.permission.app import permission_app
 from kactus_fin.portfolio.app import portfolio_app
 from kactus_fin.portfolio.runtime import PortfolioRuntime, set_runtime
-from kactus_fin.portfolio.sse import register_sse_handler
 from kactus_fin.portfolio.symbol_provider import FinSymbolProvider
 from kactus_fin.project.app import project_app
 from loguru import logger

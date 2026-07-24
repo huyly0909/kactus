@@ -11,8 +11,7 @@ import datetime
 
 from fastapi import Query
 from kactus_common.exceptions import NotFoundError
-from kactus_common.router import KactusAPIRouter
-from kactus_fin.market.const import (
+from kactus_common.market.const import (
     DEFAULT_FINANCE_LIMIT,
     DEFAULT_LIST_LIMIT,
     DEFAULT_NEWS_LIMIT,
@@ -21,7 +20,7 @@ from kactus_fin.market.const import (
     ReportPeriod,
     ReportType,
 )
-from kactus_fin.market.schema import (
+from kactus_common.market.schema import (
     FinanceReportSchema,
     GoldPriceSchema,
     OHLCVSchema,
@@ -30,7 +29,8 @@ from kactus_fin.market.schema import (
     StockNewsSchema,
     StockQuoteSchema,
 )
-from kactus_fin.market.service import MarketService
+from kactus_common.router import KactusAPIRouter
+from kactus_data.market.service import MarketService
 from kactus_fin.olap import get_olap_storage
 
 router = KactusAPIRouter(prefix="/api/market", tags=["market"])

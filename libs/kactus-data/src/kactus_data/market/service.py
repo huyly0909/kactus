@@ -5,6 +5,11 @@ DuckDB access is blocking, so every public method hops to a worker thread via
 has never been crawled simply does not exist yet, which is treated as "no data"
 rather than an error.  All caller-supplied values are bound as query parameters
 — never interpolated.
+
+Only the data plane calls this: DuckDB allows one read-write process OR several
+read-only ones, never both across processes, so the service that owns the write
+handle is the only one that may read. Everyone else goes through
+``/internal/market/*``.
 """
 
 from __future__ import annotations
@@ -14,20 +19,8 @@ import datetime
 import json
 
 import pandas as pd
-from kactus_data.storage.duckdb import DuckDBStorage
-from kactus_fin.market.const import (
-    GOLD_BOARD_TABLE,
-    MAX_LIMIT,
-    STOCK_COMPANY_TABLE,
-    STOCK_FINANCE_TABLE,
-    STOCK_LISTING_TABLE,
-    STOCK_NEWS_TABLE,
-    STOCK_OHLCV_TABLE,
-    STOCK_PRICE_BOARD_TABLE,
-    ReportPeriod,
-    ReportType,
-)
-from kactus_fin.market.schema import (
+from kactus_common.market.const import MAX_LIMIT, ReportPeriod, ReportType
+from kactus_common.market.schema import (
     CompanySchema,
     FinanceReportSchema,
     GoldPriceSchema,
@@ -37,6 +30,16 @@ from kactus_fin.market.schema import (
     StockNewsSchema,
     StockQuoteSchema,
 )
+from kactus_data.market.const import (
+    GOLD_BOARD_TABLE,
+    STOCK_COMPANY_TABLE,
+    STOCK_FINANCE_TABLE,
+    STOCK_LISTING_TABLE,
+    STOCK_NEWS_TABLE,
+    STOCK_OHLCV_TABLE,
+    STOCK_PRICE_BOARD_TABLE,
+)
+from kactus_data.storage.duckdb import DuckDBStorage
 from loguru import logger
 
 
