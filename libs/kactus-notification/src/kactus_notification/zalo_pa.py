@@ -10,22 +10,32 @@ Push-only: we never run zlapi's WebSocket listener/sync — Kactus only *sends*
 reports, so this ports reorc's ``auth.py`` (5-step QR login) + the direct
 friend/group fetch, and drops the inbound/history machinery entirely.
 
-The completed login lives in an **in-process TTL store** keyed by ``session_id``
-(single-worker; ``uvicorn --workers 1``). A channel row is created only once a
-recipient is picked — its ``ZaloPAChannelConfig`` then holds the credentials,
-encrypted at rest by the ``EncryptedJSON`` config column.
+The in-progress login lives in a **TTL store** keyed by ``session_id`` — in
+memory (single-worker) or in Redis (any worker serves any step), per
+``settings.coordination_backend``. A channel row is created only once a recipient
+is picked; its ``ZaloPAChannelConfig`` then holds the credentials, encrypted at
+rest by the ``EncryptedJSON`` config column.
 """
 
 from __future__ import annotations
 
 import asyncio
 import time
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from urllib.parse import urlparse, urlunparse
 
+import orjson
+from cryptography.fernet import InvalidToken
 from curl_cffi.requests import AsyncSession as CurlAsyncSession
 from kactus_common.config import settings
-from kactus_common.exceptions import ExternalServiceError, ValidationError
+from kactus_common.crypto import CryptoService
+from kactus_common.exceptions import (
+    ConfigurationError,
+    ExternalServiceError,
+    ValidationError,
+)
+from kactus_common.redis.client import get_redis, namespaced
 from loguru import logger
 from zlapi import ZaloAPI
 from zlapi import _client as _zlapi_client
@@ -87,7 +97,15 @@ if not isinstance(_zlapi_client.os, _NoKillOSProxy):
 
 
 # --------------------------------------------------------------------------- #
-# In-process TTL session store (single-worker; Redis for scale-out).
+# TTL session store for the 5-step QR login.
+#
+# There is no DB row until the user picks a recipient and creates a channel, so
+# the half-finished login lives here. In memory that means all five steps must
+# land on the same worker; on Redis any worker can serve any step.
+#
+# The interface is async because the Redis backend is — the in-memory one gains
+# nothing from it, but a sync interface would force the Redis one to block the
+# event loop, and every caller is already inside an async endpoint.
 # --------------------------------------------------------------------------- #
 @dataclass
 class _Session:
@@ -95,8 +113,33 @@ class _Session:
     expires_at: float = 0.0
 
 
-class ZaloPASessionStore:
-    """QR-login sessions kept in memory with a TTL (no DB row until create)."""
+class ZaloPASessionStore(ABC):
+    """QR-login sessions with a TTL (no DB row until the channel is created)."""
+
+    @abstractmethod
+    async def count(self) -> int:
+        """Number of live sessions — enforces ``zalo_pa_max_sessions``."""
+
+    @abstractmethod
+    async def save(self, session_id: str, state: dict, ttl_secs: int) -> None: ...
+
+    @abstractmethod
+    async def load(self, session_id: str) -> dict | None: ...
+
+    @abstractmethod
+    async def delete(self, session_id: str) -> None: ...
+
+    async def touch(self, session_id: str, state: dict, ttl_secs: int) -> None:
+        """Re-save, restoring a full ``ttl_secs`` of life.
+
+        Each QR step calls this, so a user working through the flow keeps their
+        session alive; one who walks away loses it on schedule.
+        """
+        await self.save(session_id, state, ttl_secs)
+
+
+class InProcessZaloPASessionStore(ZaloPASessionStore):
+    """Sessions in a process-local dict. Correct only at ``--workers 1``."""
 
     def __init__(self) -> None:
         self._sessions: dict[str, _Session] = {}
@@ -107,30 +150,104 @@ class ZaloPASessionStore:
         for sid in expired:
             self._sessions.pop(sid, None)
 
-    def count(self) -> int:
+    async def count(self) -> int:
         self._purge()
         return len(self._sessions)
 
-    def save(self, session_id: str, state: dict, ttl_secs: int) -> None:
+    async def save(self, session_id: str, state: dict, ttl_secs: int) -> None:
         self._sessions[session_id] = _Session(
             state=state, expires_at=time.monotonic() + ttl_secs
         )
 
-    def load(self, session_id: str) -> dict | None:
+    async def load(self, session_id: str) -> dict | None:
         self._purge()
         sess = self._sessions.get(session_id)
         return sess.state if sess else None
 
-    def touch(self, session_id: str, state: dict, ttl_secs: int) -> None:
-        """Re-save keeping (at least) ``ttl_secs`` of life left."""
-        self.save(session_id, state, ttl_secs)
-
-    def delete(self, session_id: str) -> None:
+    async def delete(self, session_id: str) -> None:
         self._sessions.pop(session_id, None)
 
 
-# Module-level singleton — the app runs single-worker, so this is shared safely.
-session_store = ZaloPASessionStore()
+class RedisZaloPASessionStore(ZaloPASessionStore):
+    """Sessions in Redis, so any worker can serve any step of the QR flow.
+
+    The payload is **Fernet-encrypted before it is written**. A half-finished
+    login already carries the Zalo cookies, ``zpw_sek`` and ``zpsid`` — the same
+    material that lands in the ``EncryptedJSON`` channel config once the channel
+    exists. It would be inconsistent to protect it at rest in Postgres and then
+    leave it in the clear in Redis, which is typically unauthenticated on the
+    internal network and dumpable with a single ``KEYS`` + ``GET``.
+
+    Redis' own key TTL does the expiry; there is no purge sweep to run.
+    """
+
+    def __init__(self) -> None:
+        self._crypto: CryptoService | None = None
+
+    def _cipher(self) -> CryptoService:
+        if self._crypto is None:
+            if not settings.encryption_key:
+                raise ConfigurationError(
+                    "coordination_backend='redis' needs encryption_key set — "
+                    "Zalo QR sessions carry credentials and are encrypted at rest."
+                )
+            self._crypto = CryptoService(settings.encryption_key)
+        return self._crypto
+
+    @staticmethod
+    def _key(session_id: str) -> str:
+        return namespaced("zalo_pa", "session", session_id)
+
+    async def count(self) -> int:
+        redis = get_redis()
+        total = 0
+        async for _ in redis.scan_iter(match=namespaced("zalo_pa", "session", "*")):
+            total += 1
+        return total
+
+    async def save(self, session_id: str, state: dict, ttl_secs: int) -> None:
+        blob = self._cipher().encrypt(orjson.dumps(state).decode())
+        await get_redis().set(self._key(session_id), blob, ex=ttl_secs)
+
+    async def load(self, session_id: str) -> dict | None:
+        raw = await get_redis().get(self._key(session_id))
+        if raw is None:
+            return None
+        try:
+            return orjson.loads(self._cipher().decrypt(raw.decode()))
+        except (InvalidToken, orjson.JSONDecodeError) as exc:
+            # Rotated key or a corrupt write: treat as "no session" so the user
+            # is sent back to step 1 rather than seeing a 500 mid-login.
+            logger.warning(f"[zalo_pa] Unreadable session {session_id}: {exc}")
+            await self.delete(session_id)
+            return None
+
+    async def delete(self, session_id: str) -> None:
+        await get_redis().delete(self._key(session_id))
+
+
+# Module-level singleton, resolved on first use from settings.
+_session_store: ZaloPASessionStore | None = None
+
+
+def get_session_store() -> ZaloPASessionStore:
+    """Return the process-wide store, per ``settings.coordination_backend``."""
+    global _session_store
+    if _session_store is None:
+        backend = getattr(settings, "coordination_backend", "memory")
+        _session_store = (
+            RedisZaloPASessionStore()
+            if backend == "redis"
+            else InProcessZaloPASessionStore()
+        )
+        logger.info(f"[zalo_pa] session store backend: {backend}")
+    return _session_store
+
+
+def reset_session_store() -> None:
+    """Drop the cached store (tests, and lifespan shutdown)."""
+    global _session_store
+    _session_store = None
 
 
 # --------------------------------------------------------------------------- #
@@ -200,7 +317,7 @@ def _merge_cookies(acc: dict[str, str], resp) -> dict[str, str]:
 # --------------------------------------------------------------------------- #
 async def generate_qr(session_id: str) -> dict:
     """Step 1 — visit login page, generate a QR. Returns ``{code, image_url}``."""
-    if session_store.count() >= settings.zalo_pa_max_sessions:
+    if await get_session_store().count() >= settings.zalo_pa_max_sessions:
         raise ValidationError(
             f"Too many concurrent Zalo QR logins ({settings.zalo_pa_max_sessions}); "
             "wait and retry."
@@ -224,7 +341,7 @@ async def generate_qr(session_id: str) -> dict:
     if not code or not image_url:
         raise ExternalServiceError(f"Zalo QR generate failed: {resp.json()}")
 
-    session_store.save(
+    await get_session_store().save(
         session_id,
         {"code": code, "cookies": cookies, "display_name": None, "avatar": None},
         settings.zalo_pa_session_ttl_secs,
@@ -233,8 +350,8 @@ async def generate_qr(session_id: str) -> dict:
     return {"code": code, "image_url": image_url}
 
 
-def _require_session(session_id: str) -> dict:
-    state = session_store.load(session_id)
+async def _require_session(session_id: str) -> dict:
+    state = await get_session_store().load(session_id)
     if not state:
         raise ValidationError("No active Zalo QR session — generate a QR first")
     return state
@@ -242,7 +359,7 @@ def _require_session(session_id: str) -> dict:
 
 async def wait_for_scan(session_id: str) -> dict:
     """Step 2 — long-poll until the QR is scanned (or ``refreshed``/``expired``)."""
-    state = _require_session(session_id)
+    state = await _require_session(session_id)
     cookies = state["cookies"]
     async with _make_client(
         cookies, sticky_session=session_id, use_proxy=True
@@ -271,7 +388,9 @@ async def wait_for_scan(session_id: str) -> dict:
     if scan.get("status") == 4 and scan.get("code"):
         state["code"] = scan["code"]
         state["cookies"] = cookies
-        session_store.touch(session_id, state, settings.zalo_pa_session_ttl_secs)
+        await get_session_store().touch(
+            session_id, state, settings.zalo_pa_session_ttl_secs
+        )
         return {
             "status": "refreshed",
             "code": scan["code"],
@@ -280,7 +399,9 @@ async def wait_for_scan(session_id: str) -> dict:
     state["display_name"] = scan.get("display_name")
     state["avatar"] = scan.get("avatar")
     state["cookies"] = cookies
-    session_store.touch(session_id, state, settings.zalo_pa_session_ttl_secs)
+    await get_session_store().touch(
+        session_id, state, settings.zalo_pa_session_ttl_secs
+    )
     return {
         "status": "scanned",
         "display_name": state["display_name"],
@@ -290,7 +411,7 @@ async def wait_for_scan(session_id: str) -> dict:
 
 async def wait_for_confirm(session_id: str) -> dict:
     """Step 3 — long-poll until the user confirms on their phone."""
-    state = _require_session(session_id)
+    state = await _require_session(session_id)
     cookies = state["cookies"]
     async with _make_client(
         cookies, sticky_session=session_id, use_proxy=True
@@ -317,13 +438,15 @@ async def wait_for_confirm(session_id: str) -> dict:
     if data.get("error_code") != 0:
         return {"status": "rejected"}
     state["cookies"] = cookies
-    session_store.touch(session_id, state, settings.zalo_pa_session_ttl_secs)
+    await get_session_store().touch(
+        session_id, state, settings.zalo_pa_session_ttl_secs
+    )
     return {"status": "confirmed"}
 
 
 async def _init_chat_session(session_id: str) -> dict:
     """Step 4a — follow the redirect chain to capture the ``zpw_sek`` cookie."""
-    state = _require_session(session_id)
+    state = await _require_session(session_id)
     cookies = state["cookies"]
     async with _make_client(cookies) as client:
         resp = await client.get(
@@ -356,7 +479,9 @@ async def _init_chat_session(session_id: str) -> dict:
             redirect_url = resp.headers.get("location", "")
 
     state["cookies"] = all_cookies
-    session_store.touch(session_id, state, settings.zalo_pa_session_ttl_secs)
+    await get_session_store().touch(
+        session_id, state, settings.zalo_pa_session_ttl_secs
+    )
     return all_cookies
 
 
@@ -370,7 +495,7 @@ async def complete_login(session_id: str) -> dict:
     all_cookies = await _init_chat_session(session_id)
     imei = all_cookies.get("zpdid", "")
     if not imei:
-        session_store.delete(session_id)
+        await get_session_store().delete(session_id)
         raise ExternalServiceError(
             "Zalo login failed: missing device id (zpdid) — re-scan the QR"
         )
@@ -387,30 +512,32 @@ async def complete_login(session_id: str) -> dict:
         credentials["secret_key"] = await client.get_secret_key()
         profile = (await client.fetch_account_info()).get("profile", {})
     except Exception as exc:  # noqa: BLE001
-        session_store.delete(session_id)
+        await get_session_store().delete(session_id)
         raise ExternalServiceError(
             f"Zalo login failed: could not verify account ({exc}) — re-scan the QR"
         ) from exc
 
     zalo_user_id = str(profile.get("userId", ""))
     if not zalo_user_id:
-        session_store.delete(session_id)
+        await get_session_store().delete(session_id)
         raise ExternalServiceError("Zalo login failed: no user id in account info")
     account_name = (
         profile.get("displayName")
         or profile.get("zaloName")
-        or _require_session(session_id).get("display_name")
+        or (await _require_session(session_id)).get("display_name")
         or "Zalo PA"
     )
 
-    state = _require_session(session_id)
+    state = await _require_session(session_id)
     state.update(
         credentials=credentials,
         zalo_user_id=zalo_user_id,
         account_name=account_name,
         complete=True,
     )
-    session_store.touch(session_id, state, settings.zalo_pa_session_ttl_secs)
+    await get_session_store().touch(
+        session_id, state, settings.zalo_pa_session_ttl_secs
+    )
     logger.info(
         "[zalo_pa] login complete session={sid} user={uid}",
         sid=session_id,
@@ -419,8 +546,8 @@ async def complete_login(session_id: str) -> dict:
     return {"zalo_user_id": zalo_user_id, "account_name": account_name}
 
 
-def _completed_session(session_id: str) -> dict:
-    state = _require_session(session_id)
+async def _completed_session(session_id: str) -> dict:
+    state = await _require_session(session_id)
     if not state.get("complete"):
         raise ValidationError("Zalo login not complete — finish the QR flow first")
     return state
@@ -428,12 +555,12 @@ def _completed_session(session_id: str) -> dict:
 
 async def list_session_recipients(session_id: str, query: str = "") -> list[Recipient]:
     """Friends + groups of a *completed* login session (the report-target picker)."""
-    state = _completed_session(session_id)
+    state = await _completed_session(session_id)
     client = await ZlapiAsync.create(state["credentials"])
     return await client.list_recipients(query)
 
 
-def build_channel_config(
+async def build_channel_config(
     session_id: str,
     *,
     thread_id: str,
@@ -441,7 +568,7 @@ def build_channel_config(
     recipient_name: str | None,
 ) -> ZaloPAChannelConfig:
     """Assemble a :class:`ZaloPAChannelConfig` from a completed login session."""
-    state = _completed_session(session_id)
+    state = await _completed_session(session_id)
     creds = state["credentials"]
     return ZaloPAChannelConfig(
         cookies=creds["cookies"],
@@ -458,9 +585,9 @@ def build_channel_config(
     )
 
 
-def session_credentials(session_id: str) -> dict:
+async def session_credentials(session_id: str) -> dict:
     """Raw credential fields of a completed session (for channel re-auth)."""
-    return dict(_completed_session(session_id)["credentials"])
+    return dict((await _completed_session(session_id))["credentials"])
 
 
 # --------------------------------------------------------------------------- #

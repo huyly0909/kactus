@@ -29,6 +29,7 @@ dev = [
     "httpx>=0.28.0",
     "pytest-cov>=7.0.0",
     "import-linter>=2.13",
+    "fakeredis[lua]>=2.37.0",
 ]
 
 # pytest config is in pytest.ini (single source of truth)

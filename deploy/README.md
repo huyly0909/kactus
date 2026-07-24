@@ -21,10 +21,26 @@ Manual deployment guide for Kactus services using Docker Compose.
 
 | | `dev` | `stag` | `prod` |
 |---|---|---|---|
-| Workers | 1 (reload) | 2 | 4 |
+| `kactus-fin` workers | 1 (reload) | 1 | 1 |
+| `kactus-fin-gw` workers | 1 (reload) | 2 | 4 |
 | Log level | debug | info | warning |
 | Restart | no | unless-stopped | always |
 | Source volumes | ✅ (hot-reload) | ❌ | ❌ |
+
+### Why `kactus-fin` is pinned to one worker
+
+It runs the portfolio APScheduler in-process. N workers would be N schedulers:
+N duplicate crawls per tick, N× the vnstock rate limit burned, and DuckDB
+`IOException: Could not set lock on file` when they collide on a write. The
+scheduler has to move into its own single-replica service before this can be
+raised.
+
+The other two reasons are already gone. With `KACTUS_COORDINATION_BACKEND=redis`
+(set in every compose file) the SSE broker publishes through Redis so a client
+hears events from any worker, and the Zalo QR session store lives in Redis so
+the 5 login steps may land on different workers.
+
+`kactus-fin-gw` is stateless and keeps its worker count.
 
 ## Deploy Steps
 
@@ -72,6 +88,11 @@ POSTGRES_DB=kactus
 KACTUS_DATABASE_URL=postgresql+asyncpg://kactus:<password>@postgres:5432/kactus
 KACTUS_DEBUG=false
 
+# Required once KACTUS_COORDINATION_BACKEND=redis: Zalo QR sessions carry
+# credentials and are Fernet-encrypted before they are written to Redis.
+# Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+KACTUS_ENCRYPTION_KEY=<fernet-key>
+
 # kactus-fin-gateway
 KACTUS_GW_DATABASE_URL=postgresql+asyncpg://kactus:<password>@postgres:5432/kactus
 KACTUS_GW_DEBUG=false
@@ -108,6 +129,16 @@ docker compose exec kactus-fin-gw python manage.py fin-gw db upgrade
 curl http://localhost:17600/health    # kactus-fin
 curl http://localhost:17601/health    # kactus-fin-gateway
 ```
+
+`kactus-fin` reports Redis whenever it depends on it:
+
+```json
+{"status": "ok", "redis": "ok"}
+{"status": "degraded", "redis": "unreachable"}   // SSE + Zalo QR are down
+```
+
+`redis` is absent from the response on the `memory` backend — there, an
+unreachable Redis is genuinely not a fault.
 
 ## Common Operations
 

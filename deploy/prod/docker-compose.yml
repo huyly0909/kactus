@@ -32,6 +32,13 @@ services:
       dockerfile: deploy/Dockerfile.fin
     restart: always
     env_file: .env
+    environment:
+      # Service names resolve inside the compose network only; the Pydantic
+      # default stays localhost per .claude/rules/docker-conventions.md.
+      KACTUS_REDIS_URL: redis://redis:6379/0
+      # Shared SSE broker + shared Zalo QR session store. Set here rather than in
+      # .env so it cannot drift out of sync with the redis service above.
+      KACTUS_COORDINATION_BACKEND: redis
     ports:
       - "17600:17600"
     depends_on:
@@ -39,12 +46,13 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # SINGLE WORKER — load-bearing, do not raise. kactus-fin holds three pieces of
-    # in-process state: the portfolio APScheduler (N workers ⇒ N duplicate crawls +
-    # DuckDB write-lock contention), the SSE broker (a client only hears from the
-    # worker it landed on), and the Zalo PA QR-login session store (the 5-step flow
-    # breaks when steps round-robin across workers). Scale-out needs Redis pub/sub
-    # + a shared session store first. kactus-fin-gw below is stateless — it keeps 4.
+    # SINGLE WORKER — load-bearing, do not raise. Two of the three reasons are now
+    # gone: with KACTUS_COORDINATION_BACKEND=redis the SSE broker and the Zalo PA
+    # QR session store are both shared across processes. What remains is the
+    # portfolio APScheduler, which is still in-process — N workers would mean N
+    # schedulers, so N duplicate crawls and DuckDB write-lock contention. Raising
+    # this needs the scheduler to move into its own single-replica data-plane
+    # service. kactus-fin-gw below is stateless — it keeps 4.
     command: >
       uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --workers 1 --log-level warning
 

@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from kactus_common.app_registry import AppManager
 from kactus_common.database.oltp.session import get_db
 from kactus_common.exceptions import PermissionDeniedError, install_exception_handlers
+from kactus_common.redis.client import close_redis
+from kactus_common.sse.broker import get_sse_broker, reset_sse_broker
 from kactus_data.jobs.scheduler import build_scheduler
 from kactus_data.portfolio.provider import build_providers
 from kactus_data.sources.stock.auth import init_vnstock_auth
@@ -88,23 +90,41 @@ def _detected_worker_count() -> int | None:
     return None
 
 
-def _warn_if_multi_worker() -> None:
+def _warn_if_multi_worker(settings) -> None:
     """Log loudly when several workers would each run their own scheduler.
 
-    Deliberately only a warning: with no leader election, self-disabling here
+    Two independent hazards, reported separately because they are fixed
+    separately:
+
+    * ``coordination_backend="memory"`` — the SSE broker and the Zalo QR session
+      store are per-process. Fixed by switching to ``redis``.
+    * the portfolio scheduler — still in-process whatever the backend is, so N
+      workers means N schedulers. Only the data-plane split fixes that; until
+      then a multi-worker deployment must disable the scheduler on all but one.
+
+    Deliberately only warnings: with no leader election, self-disabling here
     would disable the scheduler in *every* worker and silently stop all crawling —
-    strictly worse than duplicate crawls. The operator has to fix the worker count.
+    strictly worse than duplicate crawls. The operator has to make the call.
     """
     workers = _detected_worker_count()
-    if workers is not None and workers > 1:
+    if workers is None or workers <= 1:
+        return
+
+    if getattr(settings, "coordination_backend", "memory") != "redis":
         logger.warning(
-            f"kactus-fin looks like it is running with {workers} workers, but the "
-            "portfolio scheduler, the SSE broker and the Zalo PA session store are "
-            "all in-process. Expect duplicate crawls, DuckDB write-lock errors, SSE "
-            "reaching only some clients, and broken Zalo QR logins. Run with "
-            "--workers 1 (or set KACTUS_ENABLE_PORTFOLIO_SCHEDULER=false on all but "
-            "one process)."
+            f"kactus-fin looks like it is running with {workers} workers while "
+            "KACTUS_COORDINATION_BACKEND=memory. The SSE broker and the Zalo PA "
+            "QR session store are per-process: expect SSE to reach only some "
+            "clients and QR logins to fail when the 5 steps land on different "
+            "workers. Set KACTUS_COORDINATION_BACKEND=redis."
         )
+
+    logger.warning(
+        f"kactus-fin looks like it is running with {workers} workers and the "
+        "portfolio scheduler is enabled in each of them. Expect duplicate crawls "
+        "and DuckDB write-lock errors. Run --workers 1, or set "
+        "KACTUS_ENABLE_PORTFOLIO_SCHEDULER=false on all but one process."
+    )
 
 
 def _build_portfolio_runtime(settings) -> PortfolioRuntime:
@@ -128,7 +148,7 @@ def _build_portfolio_runtime(settings) -> PortfolioRuntime:
 
     scheduler = None
     if getattr(settings, "enable_portfolio_scheduler", True):
-        _warn_if_multi_worker()
+        _warn_if_multi_worker(settings)
         scheduler = build_scheduler(
             db=db,
             providers=providers,
@@ -184,6 +204,15 @@ async def lifespan(app: FastAPI):
     runtime = _build_portfolio_runtime(settings)
     yield
     _shutdown_portfolio_runtime(runtime)
+
+    # Stop the SSE broker before the pool it publishes through: on the Redis
+    # backend close() cancels the pub/sub listener task, which would otherwise be
+    # reading from a connection that has just been torn out from under it.
+    await get_sse_broker().close()
+    reset_sse_broker()
+    if getattr(settings, "coordination_backend", "memory") == "redis":
+        await close_redis()
+
     logger.info(f"Shutting down {settings.app_name}")
 
 

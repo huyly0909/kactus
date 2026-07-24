@@ -124,7 +124,10 @@ async def test_qr_generate(client, monkeypatch):
 async def test_create_channel_assembles_config_server_side(client, monkeypatch):
     from kactus_fin.notification import zalo_pa_api
 
-    monkeypatch.setattr(zalo_pa_api, "build_channel_config", lambda *a, **k: _CONFIG)
+    async def _build(*a, **k):
+        return _CONFIG
+
+    monkeypatch.setattr(zalo_pa_api, "build_channel_config", _build)
     resp = await client.post(
         "/api/notifications/zalo-pa/channels",
         json={

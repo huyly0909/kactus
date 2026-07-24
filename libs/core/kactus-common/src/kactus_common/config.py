@@ -68,6 +68,25 @@ class CommonSettings(BaseKactusSettings):
     # OLAP database (DuckDB)
     db_path: str = "kactus.duckdb"
 
+    # Redis — coordination between processes (locks, cache, SSE fan-out, TTL
+    # session stores).  NOT a job queue and NOT a source of truth: audit rows
+    # stay in Postgres, commands between services go over HTTP.
+    redis_url: str = "redis://localhost:6379/0"
+    redis_key_prefix: str = "kactus"  # namespace, so one Redis can host several envs
+
+    # Where cross-process state lives.  ONE switch on purpose, covering both the
+    # SSE broker and the Zalo QR session store: a deployment that enables one but
+    # not the other is broken in a way nothing reports — SSE would fan out
+    # correctly while QR logins silently fail whenever the 5 steps land on
+    # different workers.
+    #
+    #   memory — per-process. Correct ONLY at --workers 1.
+    #   redis  — shared. Required before raising the worker count.
+    #
+    # Explicit rather than "redis if reachable": a silent fallback to memory
+    # would look healthy while quietly delivering to a quarter of the clients.
+    coordination_backend: str = "memory"  # "memory" | "redis"
+
     # Crypto
     encryption_key: str = ""  # Fernet key — generate with CryptoService.generate_key()
 

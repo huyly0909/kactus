@@ -104,7 +104,7 @@ async def zalo_create_channel(
 ) -> NotificationChannelSchema:
     """Create a Zalo PA channel from a completed session + chosen recipient."""
     user = request.state.user
-    config = build_channel_config(
+    config = await build_channel_config(
         body.session_id,
         thread_id=body.thread_id,
         thread_type=body.thread_type,
@@ -133,7 +133,7 @@ async def zalo_reauth_channel(
     channel = await NotificationChannelService.get_owned_or_404(
         session, channel_id=channel_id, owner_id=user.id
     )
-    creds = session_credentials(body.session_id)
+    creds = await session_credentials(body.session_id)
     # Keep the existing recipient + display; swap only the session-credential fields.
     new_config = {
         **(channel.config or {}),

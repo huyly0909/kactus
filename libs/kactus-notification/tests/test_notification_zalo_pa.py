@@ -55,7 +55,7 @@ def _settings():
         _Settings(app_env="dev", zalo_pa_session_ttl_secs=300, zalo_pa_max_sessions=50)
     )
     yield
-    zalo_pa.session_store._sessions.clear()
+    zalo_pa.reset_session_store()
     clear_settings()
 
 
@@ -159,27 +159,40 @@ async def test_list_recipients_maps_friends_and_groups():
 
 
 # --------------------------------------------------------------------------- #
-# In-process session store + build_channel_config
+# Session store + build_channel_config
 # --------------------------------------------------------------------------- #
-def test_session_store_save_load_delete():
-    store = zalo_pa.session_store
-    store.save("s1", {"code": "C"}, 300)
-    assert store.load("s1") == {"code": "C"}
-    assert store.count() == 1
-    store.delete("s1")
-    assert store.load("s1") is None
-    assert store.count() == 0
+@pytest.mark.asyncio
+async def test_session_store_save_load_delete():
+    store = zalo_pa.get_session_store()
+    assert isinstance(store, zalo_pa.InProcessZaloPASessionStore)  # default backend
+    await store.save("s1", {"code": "C"}, 300)
+    assert await store.load("s1") == {"code": "C"}
+    assert await store.count() == 1
+    await store.delete("s1")
+    assert await store.load("s1") is None
+    assert await store.count() == 0
 
 
-def test_build_channel_config_requires_completed_session():
+@pytest.mark.asyncio
+async def test_session_store_expires_after_ttl():
+    """A session past its TTL reads as absent — the flow restarts at step 1."""
+    store = zalo_pa.get_session_store()
+    await store.save("s0", {"code": "C"}, 0)  # already expired
+    assert await store.load("s0") is None
+    assert await store.count() == 0
+
+
+@pytest.mark.asyncio
+async def test_build_channel_config_requires_completed_session():
     with pytest.raises(ValidationError):
-        zalo_pa.build_channel_config(
+        await zalo_pa.build_channel_config(
             "missing", thread_id="1", thread_type=0, recipient_name=None
         )
 
 
-def test_build_channel_config_from_completed_session():
-    zalo_pa.session_store.save(
+@pytest.mark.asyncio
+async def test_build_channel_config_from_completed_session():
+    await zalo_pa.get_session_store().save(
         "s2",
         {
             "complete": True,
@@ -196,7 +209,7 @@ def test_build_channel_config_from_completed_session():
         },
         300,
     )
-    cfg = zalo_pa.build_channel_config(
+    cfg = await zalo_pa.build_channel_config(
         "s2", thread_id="42", thread_type=1, recipient_name="Team"
     )
     assert cfg.thread_id == "42"
@@ -263,12 +276,12 @@ async def test_generate_qr_stores_session(monkeypatch):
     monkeypatch.setattr(zalo_pa, "_make_client", lambda *a, **k: client)
     result = await zalo_pa.generate_qr("sid1")
     assert result == {"code": "CODE", "image_url": "IMG"}
-    assert zalo_pa.session_store.load("sid1")["code"] == "CODE"
+    assert (await zalo_pa.get_session_store().load("sid1"))["code"] == "CODE"
 
 
 @pytest.mark.asyncio
 async def test_wait_for_scan_scanned_and_refreshed(monkeypatch):
-    zalo_pa.session_store.save("sid2", {"code": "C", "cookies": {}}, 300)
+    await zalo_pa.get_session_store().save("sid2", {"code": "C", "cookies": {}}, 300)
 
     scanned = _FakeClient(
         [_Resp(200, {"error_code": 0, "data": {"display_name": "Me", "avatar": "a"}})]
@@ -290,12 +303,12 @@ async def test_wait_for_scan_scanned_and_refreshed(monkeypatch):
     result = await zalo_pa.wait_for_scan("sid2")
     assert result["status"] == "refreshed"
     assert result["code"] == "NEW"
-    assert zalo_pa.session_store.load("sid2")["code"] == "NEW"
+    assert (await zalo_pa.get_session_store().load("sid2"))["code"] == "NEW"
 
 
 @pytest.mark.asyncio
 async def test_complete_login_verifies_account(monkeypatch):
-    zalo_pa.session_store.save("sid3", {"code": "C", "cookies": {}}, 300)
+    await zalo_pa.get_session_store().save("sid3", {"code": "C", "cookies": {}}, 300)
 
     async def _fake_init(session_id):
         return {"zpdid": "dev1", "zpw_sek": "sek", "zpsid": "sid"}
@@ -316,6 +329,6 @@ async def test_complete_login_verifies_account(monkeypatch):
 
     result = await zalo_pa.complete_login("sid3")
     assert result == {"zalo_user_id": "u1", "account_name": "Trader"}
-    state = zalo_pa.session_store.load("sid3")
+    state = await zalo_pa.get_session_store().load("sid3")
     assert state["complete"] is True
     assert state["credentials"]["secret_key"] == "SK"
