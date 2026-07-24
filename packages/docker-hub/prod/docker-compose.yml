@@ -39,8 +39,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # SINGLE WORKER — load-bearing, do not raise. kactus-fin holds three pieces of
+    # in-process state: the portfolio APScheduler (N workers ⇒ N duplicate crawls +
+    # DuckDB write-lock contention), the SSE broker (a client only hears from the
+    # worker it landed on), and the Zalo PA QR-login session store (the 5-step flow
+    # breaks when steps round-robin across workers). Scale-out needs Redis pub/sub
+    # + a shared session store first. kactus-fin-gw below is stateless — it keeps 4.
     command: >
-      uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --workers 4 --log-level warning
+      uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --workers 1 --log-level warning
 
   kactus-fin-gw:
     build:

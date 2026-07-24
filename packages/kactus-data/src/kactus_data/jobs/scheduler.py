@@ -42,8 +42,15 @@ def build_scheduler(
     scheduler = AsyncIOScheduler(timezone=timezone)
 
     async def _crawl(kind: CrawlKind) -> None:
+        # ``dedup=True``: if the previous fire is still in flight (slow vnstock, retry)
+        # the next one skips instead of stacking a second concurrent crawl of the same
+        # (asset_type, kind). Mirrors the manual admin/refresh paths.
         await run_crawl(
-            db=db, providers=providers, kind=kind, symbol_provider=symbol_provider
+            db=db,
+            providers=providers,
+            kind=kind,
+            symbol_provider=symbol_provider,
+            dedup=True,
         )
 
     def _biz(minute: int, hour: str = "9-15") -> CronTrigger:

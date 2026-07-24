@@ -23,6 +23,7 @@ from kactus_common.portfolio.const import (
 from kactus_common.portfolio.events import MarketEventName
 from kactus_common.portfolio.service import CrawlRunService
 from kactus_data.jobs.crawl import run_crawl
+from kactus_data.jobs.scheduler import build_scheduler
 from kactus_data.portfolio.provider import StockAssetProvider
 from kactus_data.sources.stock.market import StockMarketSource
 from kactus_data.storage.duckdb import DuckDBStorage
@@ -156,3 +157,46 @@ async def test_run_crawl_dedup_skips_inflight(db, storage):
         dedup=True,
     )
     assert run_ids == []  # deduped — no new run started
+
+
+class FakeSymbolProvider:
+    """Stand-in for kactus-fin's watchlist union."""
+
+    async def get_codes_by_type(self) -> dict[str, list[str]]:
+        return {"STOCK": ["FPT"]}
+
+
+def _job_callable(scheduler, job_id: str):
+    """Return ``(func, args)`` of a job on a built-but-not-started scheduler."""
+    job = next(j for j in scheduler.get_jobs() if j.id == job_id)
+    return job.func, job.args
+
+
+@pytest.mark.asyncio
+async def test_scheduled_crawl_skips_when_a_run_is_inflight(db, storage):
+    """The scheduler's own jobs must dedup, not just the manual/admin paths.
+
+    Guards the regression where ``_crawl`` called ``run_crawl`` without ``dedup``
+    (default ``False``), so a still-running crawl was crawled again on the next
+    fire — and, with several workers, N times at the same cron minute.
+    """
+    providers = {AssetType.STOCK: StockAssetProvider(storage, FakeMarket())}
+    scheduler = build_scheduler(
+        db=db,
+        providers=providers,
+        symbol_provider=FakeSymbolProvider(),
+        storage=storage,
+    )
+
+    async with db.get_session() as session:
+        await CrawlRunService.start(
+            session, asset_type=AssetType.STOCK, kind=CrawlKind.QUOTES
+        )
+        before = len(await CrawlRunService.list_recent(session))
+
+    func, args = _job_callable(scheduler, "crawl_quotes")
+    await func(*args)
+
+    async with db.get_session() as session:
+        after = len(await CrawlRunService.list_recent(session))
+    assert after == before, "scheduled crawl started a run despite one in flight"

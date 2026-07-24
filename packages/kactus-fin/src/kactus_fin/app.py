@@ -1,3 +1,5 @@
+import os
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -67,6 +69,44 @@ app_manager.set_auth_dependencies(
 # ---------------------------------------------------------------------------
 
 
+def _detected_worker_count() -> int | None:
+    """Best-effort read of how many web workers this process was launched with.
+
+    Returns ``None`` when it cannot tell — uvicorn/gunicorn expose no reliable
+    marker inside a spawned child, so this only catches the common launch forms
+    (``--workers N`` on the command line, or the ``WEB_CONCURRENCY`` env var both
+    servers honour). A miss means no warning, never a false alarm.
+    """
+    concurrency = os.environ.get("WEB_CONCURRENCY")
+    if concurrency and concurrency.isdigit():
+        return int(concurrency)
+    for flag in ("--workers", "-w"):
+        if flag in sys.argv:
+            value = sys.argv[sys.argv.index(flag) + 1 :][:1]
+            if value and value[0].isdigit():
+                return int(value[0])
+    return None
+
+
+def _warn_if_multi_worker() -> None:
+    """Log loudly when several workers would each run their own scheduler.
+
+    Deliberately only a warning: with no leader election, self-disabling here
+    would disable the scheduler in *every* worker and silently stop all crawling —
+    strictly worse than duplicate crawls. The operator has to fix the worker count.
+    """
+    workers = _detected_worker_count()
+    if workers is not None and workers > 1:
+        logger.warning(
+            f"kactus-fin looks like it is running with {workers} workers, but the "
+            "portfolio scheduler, the SSE broker and the Zalo PA session store are "
+            "all in-process. Expect duplicate crawls, DuckDB write-lock errors, SSE "
+            "reaching only some clients, and broken Zalo QR logins. Run with "
+            "--workers 1 (or set KACTUS_ENABLE_PORTFOLIO_SCHEDULER=false on all but "
+            "one process)."
+        )
+
+
 def _build_portfolio_runtime(settings) -> PortfolioRuntime:
     """Authenticate vnstock, build providers, register SSE, start scheduler."""
     init_vnstock_auth()
@@ -88,6 +128,7 @@ def _build_portfolio_runtime(settings) -> PortfolioRuntime:
 
     scheduler = None
     if getattr(settings, "enable_portfolio_scheduler", True):
+        _warn_if_multi_worker()
         scheduler = build_scheduler(
             db=db,
             providers=providers,
