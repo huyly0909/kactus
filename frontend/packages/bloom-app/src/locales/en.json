@@ -50,7 +50,18 @@
     "gold": "Gold Prices",
     "stock": "Stock Market",
     "finance": "Finance",
-    "portfolios": "Portfolios"
+    "portfolios": "Portfolios",
+    "notifications": "Notifications"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Overview of your watchlists and notification channels",
+    "stat_portfolios": "Portfolios",
+    "stat_channels": "Channels",
+    "stat_active_channels": "Active channels",
+    "recent_portfolios": "Recent portfolios",
+    "quick_actions": "Quick actions",
+    "view_all": "View all"
   },
   "portfolio": {
     "title": "Watchlists",
@@ -95,5 +106,67 @@
     "invalid_value": "Invalid value",
     "server_generic": "Server error",
     "network_error": "Network error"
+  },
+  "notification": {
+    "title": "Notifications",
+    "subtitle": "Delivery channels for reports and alerts",
+    "create_title": "Add channel",
+    "empty_list": "No channels yet — add one to receive reports.",
+    "name": "Name",
+    "name_placeholder": "e.g. Gold price alerts",
+    "channel_type": "Channel type",
+    "status": "Status",
+    "settings": "Settings",
+    "history": "Send history",
+    "no_logs": "No sends yet.",
+    "type_telegram": "Telegram",
+    "type_slack": "Slack",
+    "type_zalo_pa": "Zalo",
+    "test": "Test",
+    "test_ok": "Channel test succeeded",
+    "test_failed": "Channel test failed — check the credentials",
+    "send": "Send",
+    "send_title": "Send a notification",
+    "send_ok": "Notification sent",
+    "send_failed": "Send failed",
+    "event_title": "Title",
+    "event_body": "Message",
+    "level": "Level",
+    "level_info": "Info",
+    "level_warning": "Warning",
+    "level_critical": "Critical",
+    "status_success": "Success",
+    "status_failed": "Failed",
+    "reauth_ok": "Zalo session refreshed",
+    "telegram": {
+      "bot_token": "Bot token",
+      "chat_id": "Chat ID"
+    },
+    "slack": {
+      "webhook_url": "Webhook URL"
+    },
+    "log": {
+      "event": "Event",
+      "status": "Status",
+      "attempts": "Attempts",
+      "time": "Time"
+    },
+    "zalo": {
+      "create_hint": "Connecting Zalo opens a QR code — scan it with the Zalo app to log in your personal account, then pick who receives the report.",
+      "connect": "Connect Zalo",
+      "login_title": "Log in to Zalo",
+      "unofficial_warning": "Unofficial Zalo login. Use a dedicated account — there is a risk of suspension.",
+      "scan_hint": "Open Zalo on your phone and scan this QR code.",
+      "confirm_hint": "Confirm the login on your phone…",
+      "logged_in_as": "Logged in as {{name}}",
+      "pick_hint": "Choose a friend or group to receive reports.",
+      "search_recipient": "Search friends and groups…",
+      "group": "Group",
+      "reconnect": "Reconnect",
+      "retry": "Try again",
+      "qr_expired": "The QR code expired. Please try again.",
+      "qr_rejected": "Login was rejected on the phone.",
+      "qr_failed": "Zalo login failed. Please try again."
+    }
   }
 }

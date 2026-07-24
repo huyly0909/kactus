@@ -1,17 +1,16 @@
 import { type FC, type ReactNode } from 'react';
-import { AppShell, Burger, Group, Title, NavLink, ScrollArea, Divider, Text } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
 import { LogOut } from 'lucide-react';
-
-interface NavSection {
-  label?: string;
-  items: NavItem[];
-}
+import { cn } from '../../lib/utils';
 
 interface NavItem {
   label: string;
   icon: ReactNode;
   href: string;
+}
+
+interface NavSection {
+  label?: string;
+  items: NavItem[];
 }
 
 interface AppLayoutProps {
@@ -30,7 +29,8 @@ interface AppLayoutProps {
 
 /**
  * Generic application shell — sidebar + header + content area.
- * Each layout (Admin, User) composes this with its own nav sections.
+ * shadcn/Tailwind port (previously Mantine `AppShell`). Prop-driven so each
+ * layout (Admin, User) composes it with its own nav sections.
  */
 export const AppLayout: FC<AppLayoutProps> = ({
   children,
@@ -41,59 +41,58 @@ export const AppLayout: FC<AppLayoutProps> = ({
   onNavigate,
   onLogout,
 }) => {
-  const [opened, { toggle }] = useDisclosure();
-
   return (
-    <AppShell
-      header={{ height: 60 }}
-      navbar={{ width: 250, breakpoint: 'sm', collapsed: { mobile: !opened } }}
-      padding="md"
-    >
-      <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between">
-          <Group>
-            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
-            <Title order={3}>{title}</Title>
-          </Group>
-          {headerRight}
-        </Group>
-      </AppShell.Header>
+    <div className="flex h-screen overflow-hidden bg-background">
+      <aside className="flex w-64 flex-col border-r border-border bg-sidebar">
+        <div className="flex h-14 items-center border-b border-border px-4">
+          <span className="text-lg font-bold tracking-tight text-foreground">{title}</span>
+        </div>
 
-      <AppShell.Navbar p="md">
-        <AppShell.Section grow component={ScrollArea}>
+        <nav className="flex-1 space-y-4 overflow-y-auto p-3">
           {navSections.map((section, idx) => (
-            <div key={section.label ?? idx}>
-              {idx > 0 && <Divider my="sm" />}
+            <div key={section.label ?? idx} className="space-y-1">
               {section.label && (
-                <Text size="xs" c="dimmed" fw={600} tt="uppercase" mb={4} px="sm">
+                <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   {section.label}
-                </Text>
+                </p>
               )}
               {section.items.map((item) => (
-                <NavLink
+                <button
                   key={item.href}
-                  label={item.label}
-                  leftSection={item.icon}
-                  active={currentPath === item.href}
                   onClick={() => onNavigate?.(item.href)}
-                  mb={4}
-                />
+                  className={cn(
+                    'flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
+                    currentPath === item.href
+                      ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                      : 'text-sidebar-foreground hover:bg-sidebar-accent/50',
+                  )}
+                >
+                  <span className="shrink-0">{item.icon}</span>
+                  <span className="truncate">{item.label}</span>
+                </button>
               ))}
             </div>
           ))}
-        </AppShell.Section>
+        </nav>
 
-        <AppShell.Section>
-          <NavLink
-            label="Logout"
-            leftSection={<LogOut size={18} />}
+        <div className="border-t border-border p-3">
+          <button
             onClick={onLogout}
-            color="red"
-          />
-        </AppShell.Section>
-      </AppShell.Navbar>
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm text-sidebar-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            <span>Logout</span>
+          </button>
+        </div>
+      </aside>
 
-      <AppShell.Main>{children}</AppShell.Main>
-    </AppShell>
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <header className="flex h-14 items-center justify-between border-b border-border px-6">
+          <div />
+          {headerRight}
+        </header>
+        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+      </div>
+    </div>
   );
 };

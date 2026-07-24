@@ -1,6 +1,6 @@
 # Kactus Bloom
 
-Fintech frontend monorepo built with React + TypeScript + Mantine.
+Fintech frontend monorepo built with React + TypeScript + shadcn/ui + Tailwind CSS v4.
 
 ## Quick Start
 
@@ -42,6 +42,6 @@ docker compose up -d
 
 ## Tech Stack
 
-React 18 · TypeScript · Vite · Mantine 7 · Recharts · TanStack Query · Zustand · React Hook Form + Zod · Axios · React Router v7
+React 18 · TypeScript · Vite 6 · Tailwind CSS v4 · shadcn/ui (Radix primitives + CVA) · sonner (toasts) · Recharts · TanStack Query · Zustand · React Hook Form + Zod · Axios · React Router v7
 
 See [.cursorrules](.cursorrules) for full conventions.

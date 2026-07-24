@@ -1,6 +1,6 @@
 ---
 name: component-development
-description: Use when creating or modifying React components, forms, or UI elements. Covers component patterns, Mantine usage, React Hook Form + Zod, and notifications.
+description: Use when creating or modifying React components, forms, or UI elements. Covers component patterns, shadcn/ui usage, React Hook Form + Zod, and notifications.
 ---
 
 # Component Development Skill
@@ -32,7 +32,8 @@ Always use named exports, `FC`, and typed props:
 
 ```tsx
 import { type FC } from 'react';
-import { Card, Text, Group, Loader, Center } from '@mantine/core';
+import { Loader2 } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 interface UserCardProps {
   name: string;
@@ -43,16 +44,20 @@ interface UserCardProps {
 export const UserCard: FC<UserCardProps> = ({ name, balance, loading = false }) => {
   if (loading) {
     return (
-      <Center py="xl">
-        <Loader size="lg" />
-      </Center>
+      <div className="flex justify-center py-8">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
     );
   }
 
   return (
-    <Card shadow="sm" padding="lg" radius="md" withBorder>
-      <Text fw={500}>{name}</Text>
-      <Text size="xl">${balance.toLocaleString()}</Text>
+    <Card>
+      <CardHeader>
+        <CardTitle className="font-medium">{name}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-xl">${balance.toLocaleString()}</p>
+      </CardContent>
     </Card>
   );
 };
@@ -63,9 +68,9 @@ export const UserCard: FC<UserCardProps> = ({ name, balance, loading = false }) 
 - **Named exports** only — no `export default`
 - **Typed props** via `interface` — never skip prop types
 - **Functional components** only — no class components
-- **Mantine** for all UI primitives — never Ant Design, MUI, or Chakra
+- **shadcn/ui** (Radix primitives + CVA) + **Tailwind CSS v4** for all UI primitives — never Ant Design, MUI, or Chakra
 - **Lucide React** for icons
-- **Loading states** — use `<Loader />` from Mantine with `<Center>`
+- **Loading states** — use `<Loader2 className="animate-spin" />` from lucide-react (or the shadcn `Skeleton` from `@/components/ui/skeleton`) centered with a flex wrapper
 
 ## Where Components Go
 
@@ -89,7 +94,16 @@ export const UserCard: FC<UserCardProps> = ({ name, balance, loading = false }) 
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { TextInput, Button } from '@mantine/core';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
 
 const schema = z.object({
   email: z.string().email(),
@@ -99,7 +113,7 @@ const schema = z.object({
 type FormData = z.infer<typeof schema>;
 
 export const TransferForm: FC = () => {
-  const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
+  const form = useForm<FormData>({
     resolver: zodResolver(schema),
   });
 
@@ -108,10 +122,24 @@ export const TransferForm: FC = () => {
   };
 
   return (
-    <form onSubmit={handleSubmit(onSubmit)}>
-      <TextInput label="Email" error={errors.email?.message} {...register('email')} />
-      <Button type="submit">Submit</Button>
-    </form>
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)}>
+        <FormField
+          control={form.control}
+          name="email"
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>Email</FormLabel>
+              <FormControl>
+                <Input {...field} />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <Button type="submit">Submit</Button>
+      </form>
+    </Form>
   );
 };
 ```
@@ -119,16 +147,13 @@ export const TransferForm: FC = () => {
 ## Notifications
 
 ```tsx
-// In-app toast (Mantine)
-import { notifications } from '@mantine/notifications';
+// In-app toast (sonner)
+import { toast } from 'sonner';
 
-notifications.show({
-  title: 'Saved',
-  message: 'Record updated successfully',
-  color: 'green',
-});
+toast.success('Record updated successfully');
+toast.error('Something went wrong');
 
-// Browser push notification (custom hook)
+// Browser push notification (custom hook — wraps sonner + native Notification API)
 import { useNotification } from '@kactus-bloom/ui/hooks';
 
 const { sendBrowserNotification } = useNotification();
@@ -141,8 +166,8 @@ sendBrowserNotification('New Alert', 'Your report is ready.');
 2. [ ] Uses named export (no `export default`)
 3. [ ] Props defined via `interface`
 4. [ ] Uses `FC<Props>` typing
-5. [ ] Uses Mantine components for UI primitives
-6. [ ] Loading states handled with `<Loader />`
+5. [ ] Uses shadcn/ui primitives from `@/components/ui/*`
+6. [ ] Loading states handled with `<Loader2 className="animate-spin" />` (or `Skeleton`)
 7. [ ] Added to `components/index.ts` barrel
 8. [ ] Forms use React Hook Form + Zod
 9. [ ] Tests written (see `testing.md`)

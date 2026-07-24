@@ -69,7 +69,7 @@ export const AuthGuard: FC = () => {
 
   useEffect(() => { checkSession(); }, []);
 
-  if (isLoading) return <Center h="100vh"><Loader size="lg" /></Center>;
+  if (isLoading) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
   if (!isAuthenticated) return <Navigate to="/login" state={{ from: location }} replace />;
   return <Outlet />;
 };
@@ -87,7 +87,7 @@ export const ProjectGuard: FC = () => {
     // If cookie references unknown project → clearProject()
   }, []);
 
-  if (isLoading) return <Center h="100vh"><Loader size="lg" /></Center>;
+  if (isLoading) return <div className="flex h-screen items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>;
   if (!projectId && !currentProject) return <Navigate to="/select-project" ... />;
   return <Outlet />;
 };
@@ -100,13 +100,12 @@ export const ProjectGuard: FC = () => {
 ```tsx
 // bloom-app/src/pages/Analytics/index.tsx
 import { type FC } from 'react';
-import { Title, Text } from '@mantine/core';
 
 export const AnalyticsPage: FC = () => {
   return (
     <>
-      <Title order={2}>Analytics</Title>
-      <Text>Analytics dashboard content</Text>
+      <h1 className="text-2xl font-bold tracking-tight">Analytics</h1>
+      <p className="text-muted-foreground">Analytics dashboard content</p>
     </>
   );
 };

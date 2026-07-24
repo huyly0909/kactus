@@ -65,13 +65,12 @@ describe('UserCard', () => {
 
 ## Testing with Providers
 
-For components that depend on context (React Router, TanStack Query, Mantine):
+For components that depend on context (React Router, TanStack Query):
 
 ```tsx
 import { render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MantineProvider } from '@mantine/core';
 
 const renderWithProviders = (ui: React.ReactElement) => {
   const queryClient = new QueryClient({
@@ -80,11 +79,9 @@ const renderWithProviders = (ui: React.ReactElement) => {
 
   return render(
     <QueryClientProvider client={queryClient}>
-      <MantineProvider>
-        <MemoryRouter>
-          {ui}
-        </MemoryRouter>
-      </MantineProvider>
+      <MemoryRouter>
+        {ui}
+      </MemoryRouter>
     </QueryClientProvider>
   );
 };
@@ -98,7 +95,6 @@ Guards use the `Outlet` pattern, so test with `Routes`:
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, Outlet } from 'react-router-dom';
-import { MantineProvider } from '@mantine/core';
 
 // Mock the hook used by the guard
 vi.mock('@kactus-bloom/ui/hooks', () => ({
@@ -116,16 +112,14 @@ describe('AuthGuard', () => {
     });
 
     render(
-      <MantineProvider>
-        <MemoryRouter initialEntries={['/dashboard']}>
-          <Routes>
-            <Route element={<AuthGuard />}>
-              <Route path="/dashboard" element={<div>Dashboard</div>} />
-            </Route>
-            <Route path="/login" element={<div>Login Page</div>} />
-          </Routes>
-        </MemoryRouter>
-      </MantineProvider>
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Routes>
+          <Route element={<AuthGuard />}>
+            <Route path="/dashboard" element={<div>Dashboard</div>} />
+          </Route>
+          <Route path="/login" element={<div>Login Page</div>} />
+        </Routes>
+      </MemoryRouter>
     );
 
     await waitFor(() => {
@@ -141,15 +135,13 @@ describe('AuthGuard', () => {
     });
 
     render(
-      <MantineProvider>
-        <MemoryRouter initialEntries={['/dashboard']}>
-          <Routes>
-            <Route element={<AuthGuard />}>
-              <Route path="/dashboard" element={<div>Dashboard</div>} />
-            </Route>
-          </Routes>
-        </MemoryRouter>
-      </MantineProvider>
+      <MemoryRouter initialEntries={['/dashboard']}>
+        <Routes>
+          <Route element={<AuthGuard />}>
+            <Route path="/dashboard" element={<div>Dashboard</div>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
     );
 
     await waitFor(() => {
@@ -185,5 +177,5 @@ vi.mock('@kactus-bloom/ui/stores', () => ({
 4. **Colocate** test files with source (`*.test.tsx`)
 5. **Use** `userEvent` for interactions (not `fireEvent`)
 6. **Use** `screen` queries for assertions
-7. **Wrap** with `MantineProvider` + `MemoryRouter` + `QueryClientProvider` when needed
+7. **Wrap** with `MemoryRouter` + `QueryClientProvider` (+ i18next `I18nextProvider` if the component uses `useTranslation`) when needed
 8. **Mock** store/hook imports with `vi.mock('@kactus-bloom/ui/hooks')` or `/stores`

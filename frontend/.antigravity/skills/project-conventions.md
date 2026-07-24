@@ -41,7 +41,7 @@ kactus-bloom/
 │   │   ├── services/           # apiClient, authService, projectService, adminService
 │   │   ├── types/              # api.ts, auth.ts, project.ts
 │   │   ├── utils/
-│   │   ├── theme/              # Mantine theme customization
+│   │   ├── theme/              # Design tokens (plain framework-agnostic token object)
 │   │   └── index.ts            # Barrel: components + theme only
 │   ├── bloom-app/src/
 │   │   ├── pages/              # Folder per page (Login/, Dashboard/, Admin/, etc.)
@@ -61,7 +61,7 @@ kactus-bloom/
 
 - **React 18** + **TypeScript 5** — UI framework
 - **Vite 6** — Build + dev server (HMR)
-- **Mantine 7** — UI component library
+- **shadcn/ui (Radix primitives + CVA) + Tailwind CSS v4** — UI component library
 - **Recharts** — Charts | **Lucide React** — Icons
 - **React Router v7** — Routing (with `Outlet` layout pattern)
 - **TanStack Query v5** — Server state (via `useApiQuery` / `useApiMutation` wrappers)
@@ -123,9 +123,11 @@ import { authService, projectService, apiClient } from '@kactus-bloom/ui/service
 // ✅ Types — sub-path
 import type { ApiResponse, User, Project } from '@kactus-bloom/ui/types';
 
-// ✅ Mantine
-import { Button, Modal, TextInput } from '@mantine/core';
-import { notifications } from '@mantine/notifications';
+// ✅ shadcn/ui — from the app's @/components/ui/*
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { toast } from 'sonner';
 
 // ✅ Other libraries
 import { LineChart, Line, XAxis, YAxis } from 'recharts';
@@ -146,7 +148,7 @@ import { DataTable } from '../../bloom-ui/src/components/DataTable';
 | Add shared types | `bloom-ui/src/types/` → export from `types/index.ts` |
 | Add utilities | `bloom-ui/src/utils/` |
 | Add a page/route | `bloom-app/src/pages/<PageName>/` + register in `router/index.tsx` |
-| Customize Mantine theme | `bloom-ui/src/theme/` |
+| Customize design tokens | app tokens in `bloom-app/src/index.css` (Tailwind `@theme` / CSS variables); shared token object in `bloom-ui/src/theme/` |
 | Add/modify Docker config | `docker-hub/` |
 
 ## Environment Variables
@@ -185,7 +187,7 @@ docker compose up -d --build     # rebuild after code changes
 - ❌ Import bloom-app → bloom-ui (one-way dependency only)
 - ❌ Store tokens in localStorage — session is in httpOnly cookie
 - ❌ Make API calls directly in components — use services + `useApiQuery`/`useApiMutation`
-- ❌ Install Ant Design, MUI, or Chakra — use Mantine only
+- ❌ Install Ant Design, MUI, or Chakra — use shadcn/ui (Radix + Tailwind) only
 - ❌ Use `var` — use `const` / `let`
 - ❌ Skip TypeScript interfaces for props
 - ❌ Use `useEffect` for data fetching — use `useApiQuery` or TanStack Query

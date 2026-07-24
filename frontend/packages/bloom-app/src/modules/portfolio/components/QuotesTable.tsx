@@ -3,6 +3,14 @@ import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import type { AssetType, MarketQuote, PortfolioItem } from '@/types/portfolio';
 
 interface Props {
@@ -31,19 +39,19 @@ export function QuotesTable({ items, quotes, onRemove }: Props) {
   }
 
   return (
-    <div className="overflow-x-auto rounded-md border border-border">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
-          <tr>
-            <th className="px-4 py-2 font-medium">{t('portfolio.col.code')}</th>
-            <th className="px-4 py-2 font-medium">{t('portfolio.col.type')}</th>
-            <th className="px-4 py-2 text-right font-medium">{t('portfolio.col.price')}</th>
-            <th className="px-4 py-2 text-right font-medium">{t('portfolio.col.change')}</th>
-            <th className="px-4 py-2 text-right font-medium">{t('portfolio.col.volume')}</th>
-            <th className="px-4 py-2" />
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-border">
+    <div className="rounded-md border border-border">
+      <Table>
+        <TableHeader>
+          <TableRow className="border-t-0">
+            <TableHead>{t('portfolio.col.code')}</TableHead>
+            <TableHead>{t('portfolio.col.type')}</TableHead>
+            <TableHead className="text-right">{t('portfolio.col.price')}</TableHead>
+            <TableHead className="text-right">{t('portfolio.col.change')}</TableHead>
+            <TableHead className="text-right">{t('portfolio.col.volume')}</TableHead>
+            <TableHead />
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {items.map((item) => {
             const q = byKey.get(`${item.asset_type}:${item.code}`);
             const price = num(q?.match_price) ?? num(q?.sell_price);
@@ -54,28 +62,28 @@ export function QuotesTable({ items, quotes, onRemove }: Props) {
               change == null
                 ? ''
                 : change > 0
-                  ? 'text-green-600'
+                  ? 'text-[var(--gain)]'
                   : change < 0
-                    ? 'text-red-600'
+                    ? 'text-[var(--loss)]'
                     : '';
             return (
-              <tr key={item.id} className="hover:bg-muted/30">
-                <td className="px-4 py-2 font-semibold">{item.code}</td>
-                <td className="px-4 py-2">
+              <TableRow key={item.id}>
+                <TableCell className="font-semibold">{item.code}</TableCell>
+                <TableCell>
                   <Badge variant="secondary" className="text-[10px]">
                     {t(`portfolio.asset_type.${item.asset_type as AssetType}`)}
                   </Badge>
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums">{fmt(price)}</td>
-                <td className={cn('px-4 py-2 text-right tabular-nums', tone)}>
+                </TableCell>
+                <TableCell className="text-right tabular-nums">{fmt(price)}</TableCell>
+                <TableCell className={cn('text-right tabular-nums', tone)}>
                   {change == null
                     ? '—'
                     : `${change > 0 ? '+' : ''}${change.toFixed(2)} (${pct?.toFixed(2)}%)`}
-                </td>
-                <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">
+                </TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground">
                   {fmt(num(q?.volume))}
-                </td>
-                <td className="px-4 py-2 text-right">
+                </TableCell>
+                <TableCell className="text-right">
                   <Button
                     variant="ghost"
                     size="icon"
@@ -84,12 +92,12 @@ export function QuotesTable({ items, quotes, onRemove }: Props) {
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

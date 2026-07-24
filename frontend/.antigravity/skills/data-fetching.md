@@ -75,17 +75,17 @@ Use the `useApiMutation` wrapper hook (not raw `useMutation`):
 
 ```tsx
 import { useApiMutation } from '@kactus-bloom/ui/hooks';
-import { notifications } from '@mantine/notifications';
+import { toast } from 'sonner';
 
 const mutation = useApiMutation<Transaction, TransactionCreatePayload>(
   '/api/transactions',    // url
   'post',                 // method: 'post' | 'put' | 'patch' | 'delete'
   {
     onSuccess: () => {
-      notifications.show({ title: 'Success', message: 'Transaction created', color: 'green' });
+      toast.success('Transaction created');
     },
     onError: (error) => {
-      notifications.show({ title: 'Error', message: error.message, color: 'red' });
+      toast.error(error.message);
     },
   },
 );
@@ -153,7 +153,7 @@ Hooks in `bloom-ui/src/hooks/` wrap store + service for convenience:
 | `useAuth` | `useAuthStore` + `authService` | `login()`, `logout()`, `checkSession()` |
 | `useProject` | `useProjectStore` + `projectService` | project selection |
 | `usePermission` | `usePermissionStore` + `projectService` | `hasPermission()`, `loadPermissions()` |
-| `useNotification` | browser Notification API | `sendBrowserNotification()` |
+| `useNotification` | sonner + native Notification API | `showToast({ title, message, type })`, `sendBrowserNotification()` |
 | `useWebSocket` | native WebSocket | real-time messaging |
 
 **Rules:**

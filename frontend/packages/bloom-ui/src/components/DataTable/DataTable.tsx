@@ -1,125 +1,143 @@
-import { type FC } from 'react';
-import { Table, TextInput, Group, Pagination, Card, Text, Loader, Center } from '@mantine/core';
-import { Search } from 'lucide-react';
-import { useState } from 'react';
+import { type FC, useState } from 'react';
+import { Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { cn } from '../../lib/utils';
 
 interface Column<T> {
-    key: string;
-    title: string;
-    render?: (record: T, index: number) => React.ReactNode;
+  key: string;
+  title: string;
+  render?: (record: T, index: number) => React.ReactNode;
 }
 
 interface DataTableProps<T extends Record<string, unknown>> {
-    columns: Column<T>[];
-    data: T[];
-    loading?: boolean;
-    searchable?: boolean;
-    searchPlaceholder?: string;
-    pageSize?: number;
-    title?: string;
-    emptyMessage?: string;
+  columns: Column<T>[];
+  data: T[];
+  loading?: boolean;
+  searchable?: boolean;
+  searchPlaceholder?: string;
+  pageSize?: number;
+  title?: string;
+  emptyMessage?: string;
 }
 
 /**
- * DataTable — rich table with search, pagination, and custom column rendering.
- * Built on Mantine Table.
+ * DataTable — table with search, pagination, and custom column rendering.
+ * shadcn/Tailwind port (previously Mantine `Table`). Self-contained so the
+ * package stays dependency-light; the app's `data-table` primitive mirrors this API.
  */
 export const DataTable: FC<DataTableProps<Record<string, unknown>>> = ({
-    columns,
-    data,
-    loading = false,
-    searchable = true,
-    searchPlaceholder = 'Search...',
-    pageSize = 10,
-    title,
-    emptyMessage = 'No data found',
+  columns,
+  data,
+  loading = false,
+  searchable = true,
+  searchPlaceholder = 'Search...',
+  pageSize = 10,
+  title,
+  emptyMessage = 'No data found',
 }) => {
-    const [search, setSearch] = useState('');
-    const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
 
-    // Filter data by search term
-    const filteredData = search
-        ? data.filter((row) =>
-            Object.values(row).some((value) =>
-                String(value).toLowerCase().includes(search.toLowerCase()),
-            ),
-        )
-        : data;
+  const filteredData = search
+    ? data.filter((row) =>
+        Object.values(row).some((value) =>
+          String(value).toLowerCase().includes(search.toLowerCase()),
+        ),
+      )
+    : data;
 
-    // Paginate
-    const totalPages = Math.ceil(filteredData.length / pageSize);
-    const paginatedData = filteredData.slice((page - 1) * pageSize, page * pageSize);
+  const totalPages = Math.ceil(filteredData.length / pageSize);
+  const paginatedData = filteredData.slice((page - 1) * pageSize, page * pageSize);
 
-    if (loading) {
-        return (
-            <Center py="xl">
-                <Loader size="lg" />
-            </Center>
-        );
-    }
-
+  if (loading) {
     return (
-        <Card shadow="sm" padding="lg" radius="md" withBorder>
-            {(title || searchable) && (
-                <Group justify="space-between" mb="md">
-                    {title && (
-                        <Text fw={600} size="lg">
-                            {title}
-                        </Text>
-                    )}
-                    {searchable && (
-                        <TextInput
-                            placeholder={searchPlaceholder}
-                            leftSection={<Search size={16} />}
-                            value={search}
-                            onChange={(e) => {
-                                setSearch(e.currentTarget.value);
-                                setPage(1);
-                            }}
-                            w={300}
-                        />
-                    )}
-                </Group>
-            )}
-
-            <Table striped highlightOnHover>
-                <Table.Thead>
-                    <Table.Tr>
-                        {columns.map((col) => (
-                            <Table.Th key={col.key}>{col.title}</Table.Th>
-                        ))}
-                    </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                    {paginatedData.length === 0 ? (
-                        <Table.Tr>
-                            <Table.Td colSpan={columns.length}>
-                                <Text ta="center" c="dimmed" py="md">
-                                    {emptyMessage}
-                                </Text>
-                            </Table.Td>
-                        </Table.Tr>
-                    ) : (
-                        paginatedData.map((row, index) => (
-                            <Table.Tr key={index}>
-                                {columns.map((col) => (
-                                    <Table.Td key={col.key}>
-                                        {col.render
-                                            ? col.render(row, index)
-                                            : String(row[col.key] ?? '')}
-                                    </Table.Td>
-                                ))}
-                            </Table.Tr>
-                        ))
-                    )}
-                </Table.Tbody>
-            </Table>
-
-            {totalPages > 1 && (
-                <Group justify="center" mt="md">
-                    <Pagination value={page} onChange={setPage} total={totalPages} />
-                </Group>
-            )}
-        </Card>
+      <div className="flex items-center justify-center py-12 text-sm text-muted-foreground">
+        Loading…
+      </div>
     );
+  }
+
+  return (
+    <div className="rounded-lg border border-border bg-card p-4 text-card-foreground shadow-sm">
+      {(title || searchable) && (
+        <div className="mb-4 flex items-center justify-between gap-4">
+          {title && <p className="text-lg font-semibold">{title}</p>}
+          {searchable && (
+            <div className="relative ml-auto w-full max-w-xs">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                className="flex h-9 w-full rounded-md border border-input bg-transparent pl-8 pr-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                placeholder={searchPlaceholder}
+                value={search}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="overflow-x-auto rounded-md border border-border">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/50 text-left text-xs text-muted-foreground">
+            <tr>
+              {columns.map((col) => (
+                <th key={col.key} className="px-3 py-2 font-medium">
+                  {col.title}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {paginatedData.length === 0 ? (
+              <tr>
+                <td colSpan={columns.length} className="py-8 text-center text-muted-foreground">
+                  {emptyMessage}
+                </td>
+              </tr>
+            ) : (
+              paginatedData.map((row, index) => (
+                <tr key={index} className="border-t border-border hover:bg-muted/40">
+                  {columns.map((col) => (
+                    <td key={col.key} className="px-3 py-2">
+                      {col.render ? col.render(row, index) : String(row[col.key] ?? '')}
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {totalPages > 1 && (
+        <div className="mt-3 flex items-center justify-between text-sm text-muted-foreground">
+          <span>
+            {page} / {totalPages}
+          </span>
+          <div className="flex gap-1">
+            <button
+              className={cn(
+                'inline-flex h-8 w-8 items-center justify-center rounded-md border border-input transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50',
+              )}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              className={cn(
+                'inline-flex h-8 w-8 items-center justify-center rounded-md border border-input transition-colors hover:bg-accent disabled:pointer-events-none disabled:opacity-50',
+              )}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };

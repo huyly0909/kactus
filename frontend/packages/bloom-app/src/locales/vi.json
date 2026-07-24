@@ -50,7 +50,18 @@
     "gold": "Giá vàng",
     "stock": "Chứng khoán",
     "finance": "Tài chính",
-    "portfolios": "Danh mục"
+    "portfolios": "Danh mục",
+    "notifications": "Thông báo"
+  },
+  "dashboard": {
+    "title": "Tổng quan",
+    "subtitle": "Tổng quan danh mục theo dõi và kênh thông báo của bạn",
+    "stat_portfolios": "Danh mục",
+    "stat_channels": "Kênh thông báo",
+    "stat_active_channels": "Kênh đang hoạt động",
+    "recent_portfolios": "Danh mục gần đây",
+    "quick_actions": "Thao tác nhanh",
+    "view_all": "Xem tất cả"
   },
   "portfolio": {
     "title": "Danh mục theo dõi",
@@ -95,5 +106,67 @@
     "invalid_value": "Giá trị không hợp lệ",
     "server_generic": "Lỗi máy chủ",
     "network_error": "Lỗi kết nối"
+  },
+  "notification": {
+    "title": "Thông báo",
+    "subtitle": "Kênh gửi báo cáo và cảnh báo",
+    "create_title": "Thêm kênh",
+    "empty_list": "Chưa có kênh nào — thêm một kênh để nhận báo cáo.",
+    "name": "Tên",
+    "name_placeholder": "vd: Cảnh báo giá vàng",
+    "channel_type": "Loại kênh",
+    "status": "Trạng thái",
+    "settings": "Cài đặt",
+    "history": "Lịch sử gửi",
+    "no_logs": "Chưa có lần gửi nào.",
+    "type_telegram": "Telegram",
+    "type_slack": "Slack",
+    "type_zalo_pa": "Zalo",
+    "test": "Kiểm tra",
+    "test_ok": "Kiểm tra kênh thành công",
+    "test_failed": "Kiểm tra kênh thất bại — kiểm tra lại thông tin",
+    "send": "Gửi",
+    "send_title": "Gửi thông báo",
+    "send_ok": "Đã gửi thông báo",
+    "send_failed": "Gửi thất bại",
+    "event_title": "Tiêu đề",
+    "event_body": "Nội dung",
+    "level": "Mức độ",
+    "level_info": "Thông tin",
+    "level_warning": "Cảnh báo",
+    "level_critical": "Nghiêm trọng",
+    "status_success": "Thành công",
+    "status_failed": "Thất bại",
+    "reauth_ok": "Đã làm mới phiên Zalo",
+    "telegram": {
+      "bot_token": "Bot token",
+      "chat_id": "Chat ID"
+    },
+    "slack": {
+      "webhook_url": "Webhook URL"
+    },
+    "log": {
+      "event": "Sự kiện",
+      "status": "Trạng thái",
+      "attempts": "Số lần thử",
+      "time": "Thời gian"
+    },
+    "zalo": {
+      "create_hint": "Kết nối Zalo sẽ mở mã QR — quét bằng ứng dụng Zalo để đăng nhập tài khoản cá nhân, sau đó chọn người nhận báo cáo.",
+      "connect": "Kết nối Zalo",
+      "login_title": "Đăng nhập Zalo",
+      "unofficial_warning": "Đăng nhập Zalo không chính thức. Nên dùng tài khoản riêng — có rủi ro bị khoá.",
+      "scan_hint": "Mở Zalo trên điện thoại và quét mã QR này.",
+      "confirm_hint": "Xác nhận đăng nhập trên điện thoại…",
+      "logged_in_as": "Đã đăng nhập với tên {{name}}",
+      "pick_hint": "Chọn một người bạn hoặc nhóm để nhận báo cáo.",
+      "search_recipient": "Tìm bạn bè và nhóm…",
+      "group": "Nhóm",
+      "reconnect": "Kết nối lại",
+      "retry": "Thử lại",
+      "qr_expired": "Mã QR đã hết hạn. Vui lòng thử lại.",
+      "qr_rejected": "Đăng nhập đã bị từ chối trên điện thoại.",
+      "qr_failed": "Đăng nhập Zalo thất bại. Vui lòng thử lại."
+    }
   }
 }
