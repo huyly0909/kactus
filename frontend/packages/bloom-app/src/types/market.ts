@@ -7,11 +7,17 @@ export type ReportType = 'income_statement' | 'balance_sheet' | 'cash_flow' | 'r
 export type ReportPeriod = 'year' | 'quarter';
 export type OHLCVInterval = '1m' | '5m' | '15m' | '30m' | '1H' | '1D' | '1W' | '1M';
 
+/** Price unit markers emitted by the gold board (`kactus_data` portfolio_tables). */
+export const UNIT_VND_PER_LUONG = 'VND/luong';
+export const UNIT_USD_PER_OZ = 'USD/oz';
+
 export interface GoldPrice {
   code: string;
   buy_price?: string | null;
   sell_price?: string | null;
   spread?: string | null;
+  /** `VND/luong` (domestic) or `USD/oz` (world) — the board mixes both. */
+  unit?: string | null;
   source?: string | null;
   crawled_at?: string | null;
 }

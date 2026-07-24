@@ -60,24 +60,42 @@ export function AssetPicker({ portfolioId }: { portfolioId: string }) {
                 {t('common.no_results')}
               </div>
             )}
-            {results.map((asset) => (
-              <button
-                key={asset.id}
-                onClick={() => handleAdd(asset.code)}
-                className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-accent"
-              >
-                <span className="flex items-center gap-2">
-                  <span className="font-semibold">{asset.code}</span>
-                  <span className="truncate text-muted-foreground">{asset.name}</span>
-                  {asset.tags?.map((tag) => (
-                    <Badge key={tag} variant="secondary" className="text-[10px]">
-                      {tag}
-                    </Badge>
-                  ))}
-                </span>
-                <Plus className="h-4 w-4 shrink-0 text-muted-foreground" />
-              </button>
-            ))}
+            {results.map((asset) => {
+              // Codes with no working price feed (e.g. DOJI, PNJ) stay listed so
+              // users can see they are known — but adding one would only ever
+              // show an empty row, so the entry is inert.
+              const unavailable = !asset.is_crawlable;
+              return (
+                <button
+                  key={asset.id}
+                  disabled={unavailable}
+                  title={unavailable ? t('portfolio.unavailable_hint') : undefined}
+                  onClick={() => handleAdd(asset.code)}
+                  className={cn(
+                    'flex w-full items-center justify-between px-3 py-2 text-left text-sm',
+                    unavailable ? 'cursor-not-allowed opacity-50' : 'hover:bg-accent',
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="font-semibold">{asset.code}</span>
+                    <span className="truncate text-muted-foreground">{asset.name}</span>
+                    {unavailable && (
+                      <Badge variant="outline" className="shrink-0 text-[10px]">
+                        {t('portfolio.unavailable')}
+                      </Badge>
+                    )}
+                    {asset.tags
+                      ?.filter((tag) => tag !== 'disabled')
+                      .map((tag) => (
+                        <Badge key={tag} variant="secondary" className="text-[10px]">
+                          {tag}
+                        </Badge>
+                      ))}
+                  </span>
+                  {!unavailable && <Plus className="h-4 w-4 shrink-0 text-muted-foreground" />}
+                </button>
+              );
+            })}
           </div>
         )}
       </div>

@@ -3,10 +3,16 @@ import { Coins } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
 import { useGoldPrices } from '@/hooks/useMarketQuery';
-import { fmt, fmtDateTime } from '@/lib/format';
-import type { GoldPrice } from '@/types/market';
+import { fmtGold, fmtDateTime } from '@/lib/format';
+import { UNIT_USD_PER_OZ, type GoldPrice } from '@/types/market';
 
-/** Domestic gold board — latest buy/sell quote per gold code (VND per lượng). */
+/**
+ * Gold board — latest buy/sell quote per gold code.
+ *
+ * Rows are NOT all in the same unit: domestic codes (SJC, 999) are VND per
+ * lượng while XAU is USD per troy ounce, so every row shows its unit and is
+ * formatted accordingly.
+ */
 export function GoldPricesPage() {
   const { t } = useTranslation();
   const { data, isLoading } = useGoldPrices();
@@ -21,19 +27,32 @@ export function GoldPricesPage() {
       key: 'buy_price',
       title: t('market.gold.buy'),
       className: 'text-right',
-      render: (g) => <span className="tabular-nums">{fmt(g.buy_price)}</span>,
+      render: (g) => <span className="tabular-nums">{fmtGold(g.buy_price, g.unit)}</span>,
     },
     {
       key: 'sell_price',
       title: t('market.gold.sell'),
       className: 'text-right',
-      render: (g) => <span className="tabular-nums">{fmt(g.sell_price)}</span>,
+      render: (g) => <span className="tabular-nums">{fmtGold(g.sell_price, g.unit)}</span>,
     },
     {
       key: 'spread',
       title: t('market.gold.spread'),
       className: 'text-right',
-      render: (g) => <span className="tabular-nums text-muted-foreground">{fmt(g.spread)}</span>,
+      render: (g) => (
+        <span className="tabular-nums text-muted-foreground">{fmtGold(g.spread, g.unit)}</span>
+      ),
+    },
+    {
+      key: 'unit',
+      title: t('market.gold.unit'),
+      render: (g) => (
+        <span className="text-xs text-muted-foreground">
+          {g.unit === UNIT_USD_PER_OZ
+            ? t('market.gold.unit_usd_oz')
+            : t('market.gold.unit_vnd_luong')}
+        </span>
+      ),
     },
     {
       key: 'source',

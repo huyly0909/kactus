@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { fmtGold } from '@/lib/format';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -74,7 +75,14 @@ export function QuotesTable({ items, quotes, onRemove }: Props) {
                     {t(`portfolio.asset_type.${item.asset_type as AssetType}`)}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-right tabular-nums">{fmt(price)}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {q?.unit ? fmtGold(price, q.unit) : fmt(price)}
+                  {q?.unit && (
+                    <span className="ml-1 text-[10px] font-normal text-muted-foreground">
+                      {q.unit}
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell className={cn('text-right tabular-nums', tone)}>
                   {change == null
                     ? '—'

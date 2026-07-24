@@ -138,7 +138,9 @@
       "price": "Giá",
       "change": "Thay đổi",
       "volume": "KL"
-    }
+    },
+    "unavailable": "Chưa có nguồn dữ liệu",
+    "unavailable_hint": "Mã này được liệt kê để tham khảo, chưa lấy được giá tự động."
   },
   "market": {
     "source": "Nguồn",
@@ -146,11 +148,14 @@
     "empty": "Chưa có dữ liệu — trình thu thập chưa lưu dữ liệu cho tập này.",
     "gold": {
       "title": "Giá vàng",
-      "subtitle": "Bảng giá vàng trong nước mới nhất (VND/lượng)",
+      "subtitle": "Bảng giá vàng mới nhất — trong nước (VND/lượng) và thế giới (USD/oz)",
       "code": "Mã",
       "buy": "Mua vào",
       "sell": "Bán ra",
-      "spread": "Chênh lệch"
+      "spread": "Chênh lệch",
+      "unit": "Đơn vị",
+      "unit_vnd_luong": "VND/lượng",
+      "unit_usd_oz": "USD/oz"
     },
     "stock": {
       "title": "Chứng khoán",

@@ -43,6 +43,8 @@ export interface MarketQuote {
   floor?: string | null;
   buy_price?: string | null;
   sell_price?: string | null;
+  /** Price unit for gold rows (`VND/luong` vs `USD/oz`); absent for stocks. */
+  unit?: string | null;
   volume?: string | null;
   source?: string | null;
   crawled_at?: string | null;

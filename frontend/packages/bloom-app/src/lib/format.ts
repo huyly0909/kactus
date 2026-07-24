@@ -17,6 +17,17 @@ export function fmt(v?: string | number | null, digits?: number): string {
   });
 }
 
+/**
+ * Format a gold price for its unit.
+ *
+ * The board mixes domestic gold (VND per lượng, ~1.4e8, whole dong) with world
+ * gold (USD per troy ounce, ~4e3, cents matter). One shared formatter would
+ * either bury the cents on XAU or print meaningless `.00` on every VND row.
+ */
+export function fmtGold(v?: string | number | null, unit?: string | null): string {
+  return fmt(v, unit === 'USD/oz' ? 2 : 0);
+}
+
 /** Compact notation for large magnitudes (market cap, volume). */
 export function fmtCompact(v?: string | number | null): string {
   const n = num(v);
