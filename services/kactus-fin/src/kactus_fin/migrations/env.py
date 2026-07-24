@@ -18,9 +18,26 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+#: Async driver → the sync equivalent Alembic can actually use.
+#:
+#: The app runs on asyncpg, but ``run_migrations_online`` below builds a plain
+#: ``engine_from_config``. Handing that an async driver fails at connect() with
+#: ``MissingGreenlet: greenlet_spawn has not been called`` — a message that says
+#: nothing about the real cause. ``psycopg2-binary`` is a kactus-fin dependency
+#: for exactly this reason.
+_SYNC_DRIVERS = {"+asyncpg": "+psycopg2", "+aiosqlite": ""}
+
+
+def _sync_url(url: str) -> str:
+    for async_driver, sync_driver in _SYNC_DRIVERS.items():
+        if async_driver in url:
+            return url.replace(async_driver, sync_driver)
+    return url
+
+
 # Override sqlalchemy.url from app settings
 settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.database_url)
+config.set_main_option("sqlalchemy.url", _sync_url(settings.database_url))
 
 # Load all ORM models declared by installed packages
 load_models(settings)
