@@ -1,34 +1,41 @@
 ---
-description: Frontend coding conventions for usonia-app and usonia-ui
-globs: ["frontend/**/*.ts", "frontend/**/*.tsx"]
+description: Frontend coding conventions for kactus-bloom (bloom-app + bloom-ui)
+globs: ["packages/bloom-app/**/*.ts", "packages/bloom-app/**/*.tsx", "packages/bloom-ui/**/*.ts", "packages/bloom-ui/**/*.tsx"]
 ---
 
 # Frontend Conventions
 
+> The frontend lives in the **`kactus-bloom`** repo (separate from this backend repo).
+
 ## Tech Stack
 - React 18 + TypeScript 5 + Vite 6
-- Mantine 7 (UI) + Lucide React (icons) + Recharts (charts)
+- **Tailwind CSS v4** + **shadcn/ui** (Radix primitives + CVA) + Lucide React (icons)
+- **sonner** (toasts) + Recharts (charts)
 - Zustand 5 (client state) + TanStack Query v5 (server state)
-- React Router v7 + Axios (HTTP)
+- React Hook Form + Zod (forms/validation)
+- React Router v7 + Axios (HTTP) + i18next (vi + en)
 
-## Monorepo
-- `frontend/packages/usonia-app/` — Main web app
-- `frontend/packages/usonia-ui/` — Shared UI library (`@usonia/ui`)
-- usonia-app imports from usonia-ui, NEVER the reverse
+## Monorepo (Turborepo)
+- `packages/bloom-app/` — the shipped web app (all active development)
+- `packages/bloom-ui/` — shared component library (`@kactus-bloom/ui`)
+- `bloom-app` MAY import from `bloom-ui`, NEVER the reverse. (Today `bloom-app`
+  owns its own copy of the shadcn primitives and does not yet consume `bloom-ui`.)
 
 ## Import Rules
 ```typescript
-// Components from barrel
-import { DataTable, ChartCard, StatCard } from '@usonia/ui';
+// shadcn primitives — lowercase files under @/components/ui
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
+import { cn } from '@/lib/utils';
 
-// Sub-paths for hooks/stores/services
-import { useApiQuery } from '@usonia/ui/hooks';
-import { useConfigStore } from '@usonia/ui/stores';
-import { dashboardService } from '@usonia/ui/services';
-import type { WorkerList } from '@usonia/ui/types';
-import { formatDuration } from '@usonia/ui/utils';
+// Feature code by alias — @ = src, @modules = src/modules
+import { usePortfolios } from '@/hooks/usePortfolioQuery';
+import { portfolioService } from '@/services/portfolioService';
+import { useAuthStore } from '@/store/authStore';
+import type { NotificationChannel } from '@/types/notification';
+import { PortfolioListPage } from '@modules/portfolio/pages/PortfolioListPage';
 
-// NEVER import hooks/stores/services from barrel
 // NEVER use cross-package relative imports
 ```
 
@@ -41,43 +48,50 @@ import { formatDuration } from '@usonia/ui/utils';
 
 ## Component Pattern
 ```typescript
+import { type FC } from 'react';
+import { cn } from '@/lib/utils';
+
 interface MyComponentProps {
   title: string;
   onAction: () => void;
 }
 
 export const MyComponent: FC<MyComponentProps> = ({ title, onAction }) => {
-  return <div>{title}</div>;
+  return <div className={cn('flex items-center gap-2')}>{title}</div>;
 };
 ```
 - Named exports only (NO default exports)
 - Functional components with `FC<Props>`
-- Mantine for UI, Lucide for icons — no other UI/icon libraries
+- shadcn/ui (Radix + Tailwind) for UI, Lucide for icons — no other UI/icon libraries
+- Style with Tailwind classes via `cn()`; variants with `class-variance-authority`
+- User-facing strings go through i18next (`useTranslation()` → `t('key')`)
 
 ## Data Fetching
-- Use `useApiQuery<T>()` from `@usonia/ui/hooks` — NOT `useEffect` for API calls
-- Use `dashboardService` from `@usonia/ui/services` for API methods
-- Use `refetchInterval` for auto-refresh on monitoring data
+- Use TanStack Query hooks (`useQuery` / `useMutation`, e.g. `usePortfolios()`) — NOT `useEffect` for API calls
+- Use a `*Service` from `@/services` for the actual axios calls
+- Toasts via **sonner** (`import { toast } from 'sonner'`), not a UI-kit notification API
 
 ## State Management
-- Zustand stores for client state (UI, config, filters)
-- TanStack Query for server state (API data)
+- Zustand stores for client state (auth, UI, filters)
+- TanStack Query for server state (API data) — with a query-key factory per feature
 - Services for API calls (never call axios directly in components)
 
 ## File Naming
 | Type | Convention | Example |
 |------|-----------|---------|
-| Components | PascalCase folder + file | `StatCard/StatCard.tsx` + `index.ts` |
-| Hooks | camelCase with `use` prefix | `useApi.ts` |
-| Stores | camelCase with `Store` suffix | `configStore.ts` |
-| Services | camelCase with `Service` suffix | `dashboardService.ts` |
-| Pages | PascalCase folder + `index.tsx` | `Monitor/index.tsx` |
+| shadcn primitives | lowercase (kebab) | `button.tsx`, `data-table.tsx` |
+| Module components | PascalCase | `QuotesTable.tsx`, `ChannelFormDialog.tsx` |
+| Pages | PascalCase under `modules/<name>/pages/` | `PortfolioListPage.tsx` |
+| Hooks | camelCase with `use` prefix | `usePortfolioQuery.ts` |
+| Stores | camelCase with `Store` suffix | `authStore.ts` |
+| Services | camelCase with `Service` suffix | `portfolioService.ts` |
 
 ## Don't Do This
 - Import inside functions
 - Use `default export`
 - Use `any` type
-- Use CSS modules / Tailwind / styled-components (Mantine only)
+- Use Mantine / Ant Design / MUI / Chakra — use shadcn/ui (Radix + Tailwind) only
 - Call APIs directly in components (use services)
 - Use `useEffect` for data fetching (use TanStack Query)
 - Store API data in Zustand (use TanStack Query cache)
+- Hardcode user-facing strings (use i18next)

@@ -7,6 +7,7 @@ Config is validated against its per-type schema on create/update.
 
 from __future__ import annotations
 
+import datetime
 import time
 
 from kactus_common.database.oltp.models import utcnow
@@ -14,9 +15,13 @@ from kactus_common.exceptions import NotFoundError, ValidationError
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .const import NotificationChannelType
-from .model import NotificationChannel
-from .schema import parse_channel_config
+from .const import (
+    NotificationChannelType,
+    NotificationLogStatus,
+    NotificationTrigger,
+)
+from .model import NotificationChannel, NotificationLog
+from .schema import NotificationEvent, parse_channel_config
 
 
 def _validate_config(channel_type: NotificationChannelType, config: dict) -> None:
@@ -111,3 +116,56 @@ class NotificationChannelService:
         channel.last_used_at = utcnow()
         await channel.save(session)
         return channel
+
+
+class NotificationLogService:
+    """Append-only audit log for sends (gương ``CrawlRunService``).
+
+    One row per :meth:`Notifier.send_event` outcome — ``attempts`` counts the
+    transport retries, ``status`` is the final result. Never updated after write.
+    """
+
+    @staticmethod
+    async def record(
+        session: AsyncSession,
+        *,
+        channel: NotificationChannel,
+        event: NotificationEvent,
+        status: NotificationLogStatus,
+        attempts: int,
+        error: str | None,
+        trigger: NotificationTrigger = NotificationTrigger.MANUAL,
+        finished_at: datetime.datetime | None = None,
+    ) -> NotificationLog:
+        """Insert a single log row capturing the final send outcome."""
+        log = NotificationLog.init(
+            channel_id=channel.id,
+            owner_id=channel.owner_id,
+            channel_type=str(channel.channel_type),
+            event_title=event.title,
+            level=str(event.level),
+            status=str(status),
+            trigger=str(trigger),
+            attempts=attempts,
+            error=error,
+            finished_at=finished_at,
+        )
+        session.add(log)
+        await session.commit()
+        await session.refresh(log)
+        return log
+
+    @staticmethod
+    async def list_for_owner(
+        session: AsyncSession,
+        owner_id: int,
+        *,
+        channel_id: int | None = None,
+        limit: int = 50,
+    ) -> list[NotificationLog]:
+        """Most-recent-first logs for ``owner_id`` (optionally one channel)."""
+        stmt = NotificationLog.select().filter_by(owner_id=owner_id)
+        if channel_id is not None:
+            stmt = stmt.filter_by(channel_id=channel_id)
+        stmt = stmt.order_by(NotificationLog.create_time.desc()).limit(limit)
+        return list(await session.scalars(stmt))

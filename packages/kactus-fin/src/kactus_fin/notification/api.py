@@ -12,14 +12,19 @@ from kactus_common.exceptions import ExternalServiceError
 from kactus_common.notification.const import NotificationChannelType
 from kactus_common.notification.dispatcher import Notifier
 from kactus_common.notification.model import NotificationChannel
+from kactus_common.notification.model import NotificationLog
 from kactus_common.notification.schema import (
     NotificationChannelCreateRequest,
     NotificationChannelSchema,
     NotificationChannelUpdateRequest,
     NotificationEvent,
+    NotificationLogSchema,
     mask_config,
 )
-from kactus_common.notification.service import NotificationChannelService
+from kactus_common.notification.service import (
+    NotificationChannelService,
+    NotificationLogService,
+)
 from kactus_common.router import KactusAPIRouter
 from kactus_common.schemas import MessageResponse, Pagination
 from kactus_fin.dependencies import provide_session
@@ -39,6 +44,23 @@ def _to_schema(channel: NotificationChannel) -> NotificationChannelSchema:
         is_active=channel.is_active,
         config=mask_config(ctype, channel.config or {}),
         last_used_at=channel.last_used_at,
+    )
+
+
+def _log_to_schema(log: NotificationLog) -> NotificationLogSchema:
+    """Build the public schema for one audit log row."""
+    return NotificationLogSchema(
+        id=log.id,
+        channel_id=log.channel_id,
+        channel_type=NotificationChannelType(log.channel_type),
+        event_title=log.event_title,
+        level=log.level,
+        status=log.status,
+        trigger=log.trigger,
+        attempts=log.attempts,
+        error=log.error,
+        started_at=log.started_at,
+        finished_at=log.finished_at,
     )
 
 
@@ -154,6 +176,27 @@ async def send_to_channel(
     channel = await NotificationChannelService.get_owned_or_404(
         session, channel_id=channel_id, owner_id=user.id
     )
-    await Notifier.send_event(channel, body)
+    await Notifier.send_event(session, channel, body)
     await NotificationChannelService.mark_used(session, channel)
     return MessageResponse(message="sent")
+
+
+@router.get("/{channel_id}/logs")
+@provide_session
+async def list_channel_logs(
+    channel_id: int,
+    request: Request,
+    session: AsyncSession,
+    limit: int = 50,
+) -> Pagination[NotificationLogSchema]:
+    """List a channel's send history (most-recent-first, owner-scoped)."""
+    user = request.state.user
+    # Assert ownership before exposing logs (raises 404 otherwise).
+    await NotificationChannelService.get_owned_or_404(
+        session, channel_id=channel_id, owner_id=user.id
+    )
+    logs = await NotificationLogService.list_for_owner(
+        session, user.id, channel_id=channel_id, limit=limit
+    )
+    items = [_log_to_schema(log) for log in logs]
+    return Pagination(total=len(items), items=items)

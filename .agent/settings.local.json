@@ -1,0 +1,44 @@
+{
+  "env": {
+    "CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING": "1",
+    "MAX_THINKING_TOKENS": "300000"
+  },
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Edit",
+      "Write",
+      "Read",
+      "WebFetch",
+      "Grep",
+      "Glob",
+      "Agent",
+      "Bash(awk '{ line=$0; gsub\\(/^[ \\\\t]+/,\"\",line\\); if \\(line==\"\"\\) next; if \\(line ~ /^\\\\/\\\\//\\) next; if \\(line ~ /^\\\\/\\\\*/\\) next; if \\(line ~ /^\\\\*/\\) next; n++ } END{print n}' components/data-view/view-schema.tsx)",
+      "Bash(npx eslint *)"
+    ],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(rm -r*)",
+      "Bash(rm -R*)",
+      "Bash(rm -fr*)",
+      "Bash(rm -fR*)",
+      "Bash(rm --recursive*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * --force*)",
+      "Bash(git push * -f*)",
+      "Bash(git reset --hard*)",
+      "Bash(git clean *)",
+      "Bash(git branch -D *)",
+      "Bash(git checkout .)",
+      "Bash(git restore .)",
+      "Bash(chmod -R 777*)",
+      "Bash(dd if=*)",
+      "Bash(mkfs*)",
+      "Bash(diskutil erase*)",
+      "Bash(shutdown*)",
+      "Bash(reboot*)"
+    ]
+  },
+  "autoCompactWindow": 300000
+}

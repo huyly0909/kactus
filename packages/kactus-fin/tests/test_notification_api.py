@@ -200,7 +200,7 @@ async def test_send_endpoint(client, monkeypatch):
 
     captured = {}
 
-    async def _send(channel, event):
+    async def _send(session, channel, event, **kwargs):
         captured["title"] = event.title
         captured["channel_id"] = channel.id
 
@@ -213,3 +213,56 @@ async def test_send_endpoint(client, monkeypatch):
     assert resp.json()["data"]["message"] == "sent"
     assert captured["title"] == "Giá vàng"
     assert str(captured["channel_id"]) == str(cid)
+
+
+@pytest.mark.asyncio
+async def test_logs_endpoint(client, db, seed_user):
+    from kactus_common.notification.const import (
+        NotificationLogStatus,
+        NotificationTrigger,
+    )
+    from kactus_common.notification.schema import NotificationEvent
+    from kactus_common.notification.service import NotificationLogService
+
+    cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
+        "id"
+    ]
+
+    # Seed two audit rows directly (mirrors what Notifier.send_event writes).
+    async with db.get_session() as session:
+        channel = await NotificationChannelService.get_owned_or_404(
+            session, channel_id=int(cid), owner_id=seed_user.id
+        )
+        await NotificationLogService.record(
+            session, channel=channel, event=NotificationEvent(title="ok"),
+            status=NotificationLogStatus.SUCCESS, attempts=1, error=None,
+            trigger=NotificationTrigger.MANUAL,
+        )
+        await NotificationLogService.record(
+            session, channel=channel, event=NotificationEvent(title="boom"),
+            status=NotificationLogStatus.FAILED, attempts=3, error="down",
+            trigger=NotificationTrigger.MANUAL,
+        )
+
+    resp = await client.get(f"/api/notifications/{cid}/logs")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["total"] == 2
+    titles = {item["event_title"] for item in data["items"]}
+    assert titles == {"ok", "boom"}
+    failed = next(i for i in data["items"] if i["status"] == "failed")
+    assert failed["attempts"] == 3
+    assert failed["error"] == "down"
+
+
+@pytest.mark.asyncio
+async def test_logs_endpoint_ownership_404(client, db, seed_user):
+    async with db.get_session() as session:
+        other = await NotificationChannelService.create(
+            session, owner_id=seed_user.id + 999, name="theirs",
+            channel_type=NotificationChannelType.TELEGRAM,
+            config={"bot_token": "x", "chat_id": "1"},
+        )
+        other_id = other.id
+    resp = await client.get(f"/api/notifications/{other_id}/logs")
+    assert resp.status_code == 404

@@ -17,8 +17,11 @@ from datetime import date, datetime
 
 from kactus_common.database.duckdb.schema import Table
 from kactus_common.portfolio.const import AssetType, CrawlKind
+from kactus_data.sources.gold.mihong import CHI_TO_LUONG as MIHONG_CHI_TO_LUONG
+from kactus_data.sources.gold.mihong import SUPPORTED_CODES as MIHONG_CODES
 from kactus_data.sources.gold.mihong import MihongGoldSource
 from kactus_data.sources.gold.portfolio_tables import GOLD_PRICE_BOARD_TABLE
+from kactus_data.sources.gold.sjc import SjcGoldSource
 from kactus_data.sources.stock.market import StockMarketSource, _to_table_df
 from kactus_data.sources.stock.portfolio_tables import (
     STOCK_EVENTS_TABLE,

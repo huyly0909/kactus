@@ -15,9 +15,18 @@ from kactus_common.crypto import CryptoService
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.exceptions import NotFoundError, ValidationError
-from kactus_common.notification.const import NotificationChannelType
+from kactus_common.database.oltp.models import utcnow
+from kactus_common.notification.const import (
+    NotificationChannelType,
+    NotificationLogStatus,
+    NotificationTrigger,
+)
 from kactus_common.notification.model import NotificationChannel
-from kactus_common.notification.service import NotificationChannelService
+from kactus_common.notification.schema import NotificationEvent
+from kactus_common.notification.service import (
+    NotificationChannelService,
+    NotificationLogService,
+)
 from sqlalchemy import text
 
 TEST_DB_URL = "sqlite+aiosqlite://"
@@ -148,3 +157,74 @@ async def test_config_encrypted_at_rest(db):
         # And the ORM round-trip yields the dict again.
         reloaded = await NotificationChannel.get(session, cid)
         assert reloaded.config["chat_id"] == "123456"
+
+
+# --------------------------------------------------------------------------- #
+# NotificationLogService — append-only send audit
+# --------------------------------------------------------------------------- #
+async def _channel(session, owner_id: int = 1) -> NotificationChannel:
+    return await NotificationChannelService.create(
+        session, owner_id=owner_id, name="Bot",
+        channel_type=NotificationChannelType.TELEGRAM, config=TELEGRAM_CFG,
+    )
+
+
+@pytest.mark.asyncio
+async def test_log_record_success(db):
+    async with db.get_session() as session:
+        channel = await _channel(session)
+        log = await NotificationLogService.record(
+            session,
+            channel=channel,
+            event=NotificationEvent(title="Giá vàng", level="warning"),
+            status=NotificationLogStatus.SUCCESS,
+            attempts=2,
+            error=None,
+            trigger=NotificationTrigger.MANUAL,
+            finished_at=utcnow(),
+        )
+        assert log.id is not None
+        assert log.channel_id == channel.id
+        assert log.owner_id == channel.owner_id
+        assert log.channel_type == "telegram"
+        assert log.event_title == "Giá vàng"
+        assert log.level == "warning"
+        assert log.status == "success"
+        assert log.trigger == "manual"
+        assert log.attempts == 2
+        assert log.error is None
+        assert log.started_at is not None  # aliases create_time
+
+
+@pytest.mark.asyncio
+async def test_log_list_scoped_and_filtered(db):
+    async with db.get_session() as session:
+        ch1 = await _channel(session, owner_id=1)
+        ch2 = await _channel(session, owner_id=1)
+        other = await _channel(session, owner_id=2)
+        for ch, title in ((ch1, "a"), (ch1, "b"), (ch2, "c"), (other, "d")):
+            await NotificationLogService.record(
+                session, channel=ch, event=NotificationEvent(title=title),
+                status=NotificationLogStatus.SUCCESS, attempts=1, error=None,
+            )
+        # Owner-scoped: user 1 sees 3, not user 2's row.
+        mine = await NotificationLogService.list_for_owner(session, 1)
+        assert {log.event_title for log in mine} == {"a", "b", "c"}
+        # Channel filter narrows to ch1's two rows.
+        ch1_logs = await NotificationLogService.list_for_owner(
+            session, 1, channel_id=ch1.id
+        )
+        assert {log.event_title for log in ch1_logs} == {"a", "b"}
+
+
+@pytest.mark.asyncio
+async def test_log_list_limit(db):
+    async with db.get_session() as session:
+        channel = await _channel(session)
+        for i in range(5):
+            await NotificationLogService.record(
+                session, channel=channel, event=NotificationEvent(title=f"e{i}"),
+                status=NotificationLogStatus.SUCCESS, attempts=1, error=None,
+            )
+        limited = await NotificationLogService.list_for_owner(session, 1, limit=3)
+        assert len(limited) == 3

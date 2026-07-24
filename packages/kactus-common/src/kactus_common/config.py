@@ -77,6 +77,17 @@ class CommonSettings(BaseKactusSettings):
     session_expiry: int = 7 * 24 * 3600  # 7 days
     session_remember_expiry: int = 365 * 24 * 3600  # 1 year
 
+    # Notification — synchronous bounded retry on transport errors (all channels)
+    notification_max_send_attempts: int = 3  # total tries per send (1 = no retry)
+    notification_retry_base_delay: float = 1.0  # exp backoff: 1s, 2s, 4s, …
+
+    # Zalo PA (unofficial personal-account channel via zlapi + curl_cffi QR login)
+    # Residential proxy is required in non-dev — datacenter IP/TLS is blocked by
+    # Zalo's anti-fraud. Left empty ⇒ QR login only works from a dev/residential IP.
+    zalo_pa_proxy_url: str = ""  # e.g. http://user:pass@host:port (BrightData)
+    zalo_pa_session_ttl_secs: int = 300  # QR-login session lifetime in the store
+    zalo_pa_max_sessions: int = 50  # cap on concurrent in-flight QR logins
+
 
 # ---------------------------------------------------------------------------
 # Settings registry

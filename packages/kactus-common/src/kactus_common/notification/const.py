@@ -14,6 +14,7 @@ class NotificationChannelType(StrEnum):
 
     TELEGRAM = "telegram"
     SLACK = "slack"
+    ZALO_PA = "zalo_pa"  # Zalo Personal Account (unofficial; QR login via zlapi)
 
 
 class NotificationLevel(StrEnum):
@@ -22,3 +23,17 @@ class NotificationLevel(StrEnum):
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"
+
+
+class NotificationLogStatus(StrEnum):
+    """Outcome of a single send (recorded in the audit log)."""
+
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class NotificationTrigger(StrEnum):
+    """What initiated a send — manual API call vs (future) event-driven auto-fire."""
+
+    MANUAL = "manual"
+    EVENT = "event"

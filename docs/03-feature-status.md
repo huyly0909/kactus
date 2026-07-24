@@ -152,6 +152,18 @@
 - [ ] Fix decision-support kinds (news/events/ratios/foreign_trade) — vnstock 3.4.2 hỏng, cần đánh giá nâng 4.0.4
 - [ ] Fix `fin user create-admin` (CLI quên register settings)
 
+#### Notification feature (multi-channel push: Telegram/Slack/Zalo PA) ✅
+
+Đầy đủ blueprint [06-notification-feature.md](06-notification-feature.md). 337 backend tests pass; frontend `tsc -b` + `vite build` xanh. Chưa live-smoke (cần token Telegram + quét QR Zalo + proxy).
+
+- [x] **kactus-common** — 1 model dùng chung `NotificationChannel` (`config` `EncryptedJSON`, per-type Pydantic schema) + `NotificationLog` (append-only) + service (channel + log) + `Notifier` (retry/backoff + log) + channel/template/registry (Telegram/Slack/**ZaloPA**) + `zalo_pa.py` (QR login + `zlapi` wrapper + in-process session store)
+- [x] **kactus-fin** — `notification/api.py` (user-owned CRUD, test, send, `GET /{id}/logs`) + `zalo_pa_api.py` (QR onboarding, recipient picker, zalo channel create/reauth) + Alembic `c3d4e5f6a7b8` (`notification_logs`)
+- [x] **kactus-bloom** — `modules/notification/` (service + hooks + list/detail pages + ChannelForm/QR/RecipientPicker/SendTest/LogTable + i18n vi+en + route/sidebar)
+- [x] Synchronous bounded retry + send-history audit
+- [x] Zalo PA (unofficial, QR login, session-in-config, residential proxy, text-only) — ⚠️ suspension risk
+- [ ] Live smoke (Telegram + Zalo PA thật)
+- [ ] Event-driven auto-fire (deferred — `trigger=EVENT` đã luồn sẵn qua log)
+
 ## 🚧 Features đang làm (In Progress)
 
 | Area | Feature | Trạng thái | Ghi chú |

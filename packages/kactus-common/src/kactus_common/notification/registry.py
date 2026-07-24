@@ -8,19 +8,31 @@ Adding a type = +1 entry in each registry.
 
 from __future__ import annotations
 
-from .channel import BaseNotificationChannel, SlackChannel, TelegramChannel
+from .channel import (
+    BaseNotificationChannel,
+    SlackChannel,
+    TelegramChannel,
+    ZaloPAChannel,
+)
 from .const import NotificationChannelType
 from .schema import BaseChannelConfig
-from .template import BaseEventTemplate, SlackEventTemplate, TelegramEventTemplate
+from .template import (
+    BaseEventTemplate,
+    SlackEventTemplate,
+    TelegramEventTemplate,
+    ZaloPAEventTemplate,
+)
 
 CHANNEL_REGISTRY: dict[NotificationChannelType, type[BaseNotificationChannel]] = {
     NotificationChannelType.TELEGRAM: TelegramChannel,
     NotificationChannelType.SLACK: SlackChannel,
+    NotificationChannelType.ZALO_PA: ZaloPAChannel,
 }
 
 TEMPLATE_REGISTRY: dict[NotificationChannelType, BaseEventTemplate] = {
     NotificationChannelType.TELEGRAM: TelegramEventTemplate(),
     NotificationChannelType.SLACK: SlackEventTemplate(),
+    NotificationChannelType.ZALO_PA: ZaloPAEventTemplate(),
 }
 
 

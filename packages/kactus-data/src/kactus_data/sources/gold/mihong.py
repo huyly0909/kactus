@@ -1,4 +1,4 @@
-"""Mihong.vn gold price data source."""
+"""Mihong.vn gold price data source (api.mihong.vn)."""
 
 from datetime import date, datetime
 
@@ -7,13 +7,48 @@ import requests
 from kactus_data.schemas import SyncDataResponse
 from kactus_data.sources.http import HttpDataSource
 
+# Domestic gold codes the API accepts.  SJC and 999 are the liquid retail types;
+# the rest are jewelry/karat grades.  DOJI / PNJ / 24K are rejected with HTTP 400.
+SUPPORTED_CODES = frozenset(
+    {"SJC", "999", "950", "985", "980", "750", "680", "610", "580", "410"}
+)
+
+# mihong quotes domestic gold per *chỉ*; the price board stores VND per lượng.
+CHI_TO_LUONG = 10
+
 
 class MihongGoldSource(HttpDataSource):
-    """Fetches gold price data from mihong.vn API."""
+    """Fetch gold prices from the public mihong.vn API.
 
-    def __init__(self, xsrf_token: str) -> None:
-        super().__init__("https://www.mihong.vn/api/v1/gold/prices/codes", "mihong")
-        self.xsrf_token = xsrf_token
+    The legacy ``www.mihong.vn/api/v1/gold/prices/codes`` host is gone (it now
+    serves the static SPA), and the ``startDate``/``endDate`` range query on the
+    new host is dead — it validates the dates but always returns ``[]``.  The
+    live shape is a trailing window via ``last``:
+
+    ==========  ==========================================================
+    ``last``    returns
+    ==========  ==========================================================
+    ``1h``      intraday, 5-minute ticks
+    ``24h``     intraday, ~87 ticks
+    ``15d``     one point per day
+    ``1M``      one point per day (~29 points)
+    ``6M``      end-of-month snapshots only
+    ``1y``      end-of-month snapshots only (deepest: ~13 months)
+    ==========  ==========================================================
+
+    So this source is good for *daily* and *intraday* data but cannot backfill
+    arbitrary history — there is no ``5y``/``all`` window.  No auth, cookie or
+    XSRF token is required.
+
+    Prices are **VND per chỉ** (1/10 lượng); multiply by :data:`CHI_TO_LUONG`
+    for VND/lượng.
+    """
+
+    def __init__(self, xsrf_token: str | None = None) -> None:
+        # ``xsrf_token`` is accepted for backwards compatibility only — the
+        # api.mihong.vn endpoint is unauthenticated.
+        super().__init__("https://api.mihong.vn/v1/gold-prices", "mihong")
+        self.xsrf_token = xsrf_token or ""
 
     def sync(
         self,
@@ -21,11 +56,17 @@ class MihongGoldSource(HttpDataSource):
         end_date: date,
         code: str,
     ) -> SyncDataResponse:
-        """Sync gold price data from Mihong API."""
+        """Fetch the mihong price series for *code* covering the given range.
+
+        The API has no arbitrary from/to, so the range is mapped to the smallest
+        ``last`` window that spans it.  A same-day request (``start == end``)
+        uses ``last=24h`` so the newest intraday tick — the current price — is
+        the last element of the returned list.
+        """
         params = {
-            "code": code,
-            "startDate": self._format_request_date(start_date, is_end_date=False),
-            "endDate": self._format_request_date(end_date, is_end_date=True),
+            "market": "domestic",
+            "goldCode": code,
+            "last": self._window_for(start_date, end_date),
         }
 
         try:
@@ -54,21 +95,29 @@ class MihongGoldSource(HttpDataSource):
                 timestamp=datetime.now().isoformat(),
             )
 
+    @staticmethod
+    def _window_for(start_date: date, end_date: date) -> str:
+        """Smallest supported ``last`` window covering ``start_date..end_date``."""
+        span_days = (end_date - start_date).days
+        if span_days <= 1:
+            return "24h"
+        if span_days <= 15:
+            return "15d"
+        if span_days <= 31:
+            return "1M"
+        if span_days <= 186:
+            return "6M"
+        return "1y"
+
     def _format_request_date(self, date_obj: date, is_end_date: bool = False) -> str:
-        """Format date for Mihong API: ``M/d/yyyy HH:mm:ss``."""
-        if isinstance(date_obj, datetime):
-            return date_obj.strftime("%-m/%-d/%Y %H:%M:%S")
-        if is_end_date:
-            dt = datetime.combine(date_obj, datetime.max.time().replace(microsecond=0))
-        else:
-            dt = datetime.combine(date_obj, datetime.min.time())
-        return dt.strftime("%-m/%-d/%Y %H:%M:%S")
+        """Kept to satisfy the base class — the ``last`` API takes no dates."""
+        return date_obj.isoformat()
 
     def _get_headers(self) -> dict[str, str]:
         return {
-            "referer": "https://www.mihong.vn/vi/gia-vang-trong-nuoc",
-            "x-requested-with": "XMLHttpRequest",
+            "referer": "https://www.mihong.vn/",
+            "x-market": "mihong",
         }
 
     def _get_cookies(self) -> dict[str, str]:
-        return {"XSRF-TOKEN": self.xsrf_token}
+        return {}
