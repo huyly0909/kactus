@@ -21,9 +21,17 @@ TEST_DB_URL = "sqlite+aiosqlite://"
 TEST_KEY = Fernet.generate_key().decode()
 
 _CONFIG = ZaloPAChannelConfig(
-    cookies={"zpdid": "d"}, imei="d", zpw_sek="z", zpsid="p", secret_key="k",
-    user_agent="ua", thread_id="42", thread_type=0, recipient_name="Bob",
-    zalo_user_id="u1", account_name="Me",
+    cookies={"zpdid": "d"},
+    imei="d",
+    zpw_sek="z",
+    zpsid="p",
+    secret_key="k",
+    user_agent="ua",
+    thread_id="42",
+    thread_type=0,
+    recipient_name="Bob",
+    zalo_user_id="u1",
+    account_name="Me",
 )
 
 
@@ -64,8 +72,11 @@ async def app(db, tmp_path):
 async def seed_user(db) -> User:
     async with db.get_session() as session:
         user = User.init(
-            email="trader@kactus.io", username="trader", password_hash="Test123!",
-            name="Trader", status="active",
+            email="trader@kactus.io",
+            username="trader",
+            password_hash="Test123!",
+            name="Trader",
+            status="active",
         )
         session.add(user)
         await session.commit()
@@ -113,14 +124,15 @@ async def test_qr_generate(client, monkeypatch):
 async def test_create_channel_assembles_config_server_side(client, monkeypatch):
     from kactus_fin.notification import zalo_pa_api
 
-    monkeypatch.setattr(
-        zalo_pa_api, "build_channel_config", lambda *a, **k: _CONFIG
-    )
+    monkeypatch.setattr(zalo_pa_api, "build_channel_config", lambda *a, **k: _CONFIG)
     resp = await client.post(
         "/api/notifications/zalo-pa/channels",
         json={
-            "session_id": "s1", "name": "Gold alerts",
-            "thread_id": "42", "thread_type": 0, "recipient_name": "Bob",
+            "session_id": "s1",
+            "name": "Gold alerts",
+            "thread_id": "42",
+            "thread_type": 0,
+            "recipient_name": "Bob",
         },
     )
     assert resp.status_code == 200

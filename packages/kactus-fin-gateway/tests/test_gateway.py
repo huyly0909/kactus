@@ -7,20 +7,24 @@ from fastapi.testclient import TestClient
 class TestImports:
     def test_import_package(self):
         import kactus_fin_gateway
+
         assert kactus_fin_gateway is not None
 
     def test_import_app(self):
         from kactus_fin_gateway.app import app, create_app
+
         assert app is not None
         assert create_app is not None
 
     def test_import_config(self):
-        from kactus_fin_gateway.config import Settings, get_settings
+        from kactus_fin_gateway.config import Settings
+
         assert Settings is not None
 
     def test_cross_package_import(self):
-        from kactus_common.exceptions import KactusException
         from kactus_common.database.oltp import DatabaseSessionManager
+        from kactus_common.exceptions import KactusException
+
         assert KactusException is not None
         assert DatabaseSessionManager is not None
 
@@ -28,6 +32,7 @@ class TestImports:
 class TestConfig:
     def test_default_settings(self):
         from kactus_fin_gateway.config import Settings
+
         settings = Settings()
         assert settings.app_name == "Kactus Fin Gateway"
         assert settings.port == 17601
@@ -35,19 +40,22 @@ class TestConfig:
 
     def test_env_prefix(self):
         from kactus_fin_gateway.config import Settings
+
         assert Settings.model_config["env_prefix"] == "KACTUS_GW_"
 
 
 class TestAppFactory:
     def test_create_app(self):
-        from kactus_fin_gateway.app import create_app
         from fastapi import FastAPI
+        from kactus_fin_gateway.app import create_app
+
         app = create_app()
         assert isinstance(app, FastAPI)
         assert app.title == "Kactus Fin Gateway"
 
     def test_routes_registered(self):
         from kactus_fin_gateway.app import create_app
+
         app = create_app()
         routes = [r.path for r in app.routes]
         assert "/health" in routes
@@ -57,6 +65,7 @@ class TestHealthEndpoint:
     @pytest.fixture
     def client(self):
         from kactus_fin_gateway.app import create_app
+
         return TestClient(create_app())
 
     def test_health_200(self, client):
@@ -70,9 +79,8 @@ class TestExceptionHandler:
     """Test that KactusException handler is wired correctly."""
 
     def test_not_found_returns_404(self):
-        from kactus_fin_gateway.app import create_app
         from kactus_common.exceptions import NotFoundError
-        from fastapi import FastAPI
+        from kactus_fin_gateway.app import create_app
 
         app = create_app()
 

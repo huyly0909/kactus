@@ -1,15 +1,7 @@
 """Tests for kactus-data settings: DataSettings and get_settings."""
 
-import os
-
-import pytest
-
-from kactus_common.config import (
-    BaseKactusSettings,
-    CommonSettings,
-    clear_settings,
-    get_settings as get_global_settings,
-)
+from kactus_common.config import BaseKactusSettings, CommonSettings, clear_settings
+from kactus_common.config import get_settings as get_global_settings
 from kactus_data.config import DataSettings, get_settings
 
 

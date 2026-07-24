@@ -14,8 +14,7 @@ from httpx import ASGITransport, AsyncClient
 from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
-from kactus_common.events import dispatch_event
-from kactus_common.portfolio.const import AssetType, CrawlKind, CrawlTrigger
+from kactus_common.portfolio.const import AssetType, CrawlKind
 from kactus_common.portfolio.events import MarketDataRefreshedPayload
 from kactus_common.portfolio.service import CrawlRunService, SupportedAssetService
 from kactus_common.sse.broker import get_sse_broker
@@ -32,15 +31,28 @@ class FakeMarket(StockMarketSource):
     def _raw_price_board(self, codes):
         return pd.DataFrame(
             [
-                {"symbol": c, "match_price": 25.5, "ref_price": 25.0,
-                 "ceiling": 26.0, "floor": 24.0, "accumulated_volume": 500}
+                {
+                    "symbol": c,
+                    "match_price": 25.5,
+                    "ref_price": 25.0,
+                    "ceiling": 26.0,
+                    "floor": 24.0,
+                    "accumulated_volume": 500,
+                }
                 for c in codes
             ]
         )
 
     def _raw_news(self, code):
         return pd.DataFrame(
-            [{"id": f"{code}-1", "title": "Báo cáo quý", "public_date": "2026-06-17", "url": "u"}]
+            [
+                {
+                    "id": f"{code}-1",
+                    "title": "Báo cáo quý",
+                    "public_date": "2026-06-17",
+                    "url": "u",
+                }
+            ]
         )
 
     def _raw_events(self, code):
@@ -182,7 +194,9 @@ async def test_portfolio_crud_and_items(client, db):
 
     # Remove item
     resp = await client.request(
-        "DELETE", f"/api/portfolios/{pid}/items", params={"code": "FPT", "asset_type": "STOCK"}
+        "DELETE",
+        f"/api/portfolios/{pid}/items",
+        params={"code": "FPT", "asset_type": "STOCK"},
     )
     assert resp.status_code == 200
 
@@ -195,7 +209,9 @@ async def test_portfolio_crud_and_items(client, db):
 
 @pytest.mark.asyncio
 async def test_add_item_uncatalogued_is_404(client):
-    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"]["id"]
+    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"][
+        "id"
+    ]
     resp = await client.post(
         f"/api/portfolios/{pid}/items", json={"asset_type": "STOCK", "code": "NOPE"}
     )
@@ -207,7 +223,9 @@ async def test_quotes_read_after_crawl(client, db):
     from kactus_fin.portfolio.runtime import get_runtime
 
     await _seed_catalog(db, "FPT")
-    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"]["id"]
+    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"][
+        "id"
+    ]
     await client.post(
         f"/api/portfolios/{pid}/items", json={"asset_type": "STOCK", "code": "FPT"}
     )
@@ -236,7 +254,9 @@ async def test_catalog_search(client, db):
 @pytest.mark.asyncio
 async def test_manual_refresh_dedup(client, db):
     await _seed_catalog(db, "FPT")
-    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"]["id"]
+    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"][
+        "id"
+    ]
     await client.post(
         f"/api/portfolios/{pid}/items", json={"asset_type": "STOCK", "code": "FPT"}
     )
@@ -271,7 +291,9 @@ async def test_news_and_asset_detail_reads(client, db):
     from kactus_fin.portfolio.runtime import get_runtime
 
     await _seed_catalog(db, "FPT")
-    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"]["id"]
+    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"][
+        "id"
+    ]
     await client.post(
         f"/api/portfolios/{pid}/items", json={"asset_type": "STOCK", "code": "FPT"}
     )
@@ -289,8 +311,12 @@ async def test_news_and_asset_detail_reads(client, db):
 
 @pytest.mark.asyncio
 async def test_update_and_empty_refresh(client):
-    pid = (await client.post("/api/portfolios", json={"name": "Old"})).json()["data"]["id"]
-    resp = await client.put(f"/api/portfolios/{pid}", json={"name": "New", "description": "d"})
+    pid = (await client.post("/api/portfolios", json={"name": "Old"})).json()["data"][
+        "id"
+    ]
+    resp = await client.put(
+        f"/api/portfolios/{pid}", json={"name": "New", "description": "d"}
+    )
     assert resp.json()["data"]["name"] == "New"
 
     # Empty portfolio → refresh is a no-op, reported as skipped.
@@ -305,7 +331,8 @@ async def test_fin_symbol_provider_union_plus_baseline(db):
     async with db.get_session() as session:
         # FPT tagged VN30 (baseline), VCB plain — both crawlable.
         await SupportedAssetService.upsert_many(
-            session, asset_type=AssetType.STOCK,
+            session,
+            asset_type=AssetType.STOCK,
             entries=[{"code": "FPT", "tags": ["VN30"]}, {"code": "VCB", "tags": []}],
         )
         from kactus_common.portfolio.service import PortfolioService
@@ -324,15 +351,20 @@ async def test_fin_symbol_provider_union_plus_baseline(db):
 async def admin_client(app, db):
     async with db.get_session() as session:
         admin = User.init(
-            email="admin@kactus.io", username="admin", password_hash="Admin123!",
-            name="Admin", status="active", is_superuser=True,
+            email="admin@kactus.io",
+            username="admin",
+            password_hash="Admin123!",
+            name="Admin",
+            status="active",
+            is_superuser=True,
         )
         session.add(admin)
         await session.commit()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as c:
         login = await c.post(
-            "/api/auth/login", json={"email": "admin@kactus.io", "password": "Admin123!"}
+            "/api/auth/login",
+            json={"email": "admin@kactus.io", "password": "Admin123!"},
         )
         c.cookies.update(dict(login.cookies))
         yield c
@@ -343,14 +375,22 @@ async def test_admin_endpoints(admin_client, db):
     # list all portfolios
     assert (await admin_client.get("/api/admin/portfolios")).status_code == 200
     # crawl runs
-    assert (await admin_client.get("/api/admin/portfolios/crawl-runs")).status_code == 200
+    assert (
+        await admin_client.get("/api/admin/portfolios/crawl-runs")
+    ).status_code == 200
     # crawl status (scheduler off in tests)
-    status = (await admin_client.get("/api/admin/portfolios/crawl-status")).json()["data"]
+    status = (await admin_client.get("/api/admin/portfolios/crawl-status")).json()[
+        "data"
+    ]
     assert status["scheduler_running"] is False
     # trigger crawl (background task scheduled)
-    assert (await admin_client.post("/api/admin/portfolios/crawl/run-now")).json()["data"]["skipped"] is False
+    assert (await admin_client.post("/api/admin/portfolios/crawl/run-now")).json()[
+        "data"
+    ]["skipped"] is False
     # catalog sync
-    assert (await admin_client.post("/api/admin/portfolios/catalog/sync")).status_code == 200
+    assert (
+        await admin_client.post("/api/admin/portfolios/catalog/sync")
+    ).status_code == 200
 
 
 @pytest.mark.asyncio

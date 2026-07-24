@@ -75,12 +75,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index(
-        op.f("ix_notification_logs_status"), table_name="notification_logs"
-    )
-    op.drop_index(
-        op.f("ix_notification_logs_owner_id"), table_name="notification_logs"
-    )
+    op.drop_index(op.f("ix_notification_logs_status"), table_name="notification_logs")
+    op.drop_index(op.f("ix_notification_logs_owner_id"), table_name="notification_logs")
     op.drop_index(
         op.f("ix_notification_logs_channel_id"), table_name="notification_logs"
     )

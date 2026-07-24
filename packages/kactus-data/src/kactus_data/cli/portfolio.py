@@ -49,8 +49,12 @@ def sync_catalog_cmd(
 
 @cli.command()
 def crawl(
-    kind: str = typer.Option("quotes", "--kind", "-k", help="quotes|news|foreign_trade|ratios|events"),
-    codes: str = typer.Option(..., "--codes", "-c", help="Comma-separated codes, e.g. FPT,VCB"),
+    kind: str = typer.Option(
+        "quotes", "--kind", "-k", help="quotes|news|foreign_trade|ratios|events"
+    ),
+    codes: str = typer.Option(
+        ..., "--codes", "-c", help="Comma-separated codes, e.g. FPT,VCB"
+    ),
     asset_type: str = typer.Option("stock", "--asset-type", "-a", help="stock | gold"),
 ):
     """Crawl a dataset for an explicit set of codes (bypasses the watchlist union)."""

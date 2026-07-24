@@ -12,10 +12,7 @@ from fastapi import Request, Response
 from kactus_common.database.oltp.session import get_db
 from kactus_common.exceptions import AuthenticationError
 
-from .const import (
-    PROJECT_COOKIE_NAME,
-    SESSION_COOKIE_NAME,
-)
+from .const import PROJECT_COOKIE_NAME, SESSION_COOKIE_NAME
 from .model import User
 from .service import UserService
 

@@ -13,16 +13,17 @@ populated from that single ``.env`` file.
 from functools import lru_cache
 from typing import ClassVar
 
-from pydantic_settings import SettingsConfigDict
-
 from kactus_common.config import register_settings
 from kactus_data.config import DataSettings
+from pydantic_settings import SettingsConfigDict
 
 
 class Settings(DataSettings):
     """kactus-fin settings — entry-point package that loads .env."""
 
-    INSTALLED_PACKAGES: ClassVar[list[str]] = DataSettings.INSTALLED_PACKAGES + ["kactus_fin"]
+    INSTALLED_PACKAGES: ClassVar[list[str]] = DataSettings.INSTALLED_PACKAGES + [
+        "kactus_fin"
+    ]
 
     app_name: str = "Kactus Fin"
     app_version: str = "0.1.0"

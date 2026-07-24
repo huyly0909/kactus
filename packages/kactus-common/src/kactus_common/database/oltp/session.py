@@ -142,7 +142,6 @@ class DatabaseSessionManager:
         finally:
             await session.close()
 
-
     async def close(self) -> None:
         """Dispose the engine and release all connections."""
         if self._engine is not None:
@@ -233,9 +232,7 @@ def provide_session(fn: Callable[..., Any]) -> Callable[..., Any]:
 
     # Strip ``session`` from signature so FastAPI ignores it
     if has_session:
-        new_params = [
-            p for name, p in fn_sig.parameters.items() if name != "session"
-        ]
+        new_params = [p for name, p in fn_sig.parameters.items() if name != "session"]
         wrapper.__signature__ = fn_sig.replace(parameters=new_params)
 
     return wrapper

@@ -494,9 +494,7 @@ class ZlapiAsync:
         imei = credentials.get("imei") or cookies.get("zpdid", "")
         if not imei:
             raise ExternalServiceError("Missing Zalo device id (zpdid/imei)")
-        bot = await asyncio.to_thread(
-            ZaloAPI, "</>", "</>", imei=imei, cookies=cookies
-        )
+        bot = await asyncio.to_thread(ZaloAPI, "</>", "</>", imei=imei, cookies=cookies)
         return cls(bot)
 
     async def fetch_account_info(self) -> dict:

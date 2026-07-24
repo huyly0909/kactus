@@ -4,8 +4,6 @@
 import os
 
 import pandas as pd
-import pytest
-
 from kactus_common.database.duckdb.consts import DataType, UpdateStrategy
 from kactus_common.database.duckdb.schema import Column, Table
 from kactus_data.storage.duckdb import DuckDBStorage

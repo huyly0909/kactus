@@ -6,7 +6,6 @@ import json
 from datetime import date, datetime
 
 import pandas as pd
-
 from kactus_data.schemas import SyncDataResponse
 from kactus_data.sources.stock.base import VnstockSource
 from loguru import logger
@@ -47,8 +46,12 @@ class VnstockCompanySource(VnstockSource):
 
             record = {
                 "symbol": code,
-                "company_name": row_dict.get("company_name", row_dict.get("organ_name", "")),
-                "short_name": row_dict.get("short_name", row_dict.get("organ_short_name", "")),
+                "company_name": row_dict.get(
+                    "company_name", row_dict.get("organ_name", "")
+                ),
+                "short_name": row_dict.get(
+                    "short_name", row_dict.get("organ_short_name", "")
+                ),
                 "industry": row_dict.get("industry", row_dict.get("icb_name4", "")),
                 "exchange": row_dict.get("exchange", ""),
                 "market_cap": row_dict.get("market_cap", None),

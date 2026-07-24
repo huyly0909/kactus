@@ -69,8 +69,11 @@ def test_template_is_plaintext():
     tpl = get_template(NotificationChannelType.ZALO_PA)
     rendered = tpl.render(
         NotificationEvent(
-            title="Giá vàng", body="SJC tăng", level="warning",
-            fields=[("SJC", "1tr")], url="http://x",
+            title="Giá vàng",
+            body="SJC tăng",
+            level="warning",
+            fields=[("SJC", "1tr")],
+            url="http://x",
         )
     )
     assert rendered.payload is None  # plain text, no rich payload
@@ -98,7 +101,10 @@ def test_channel_send_uses_recipient(monkeypatch):
     with ch:
         ch.send(RenderedMessage(text="hello"))
     assert recorded == {
-        "bot": "BOT", "text": "hello", "thread_id": "42", "thread_type": 0
+        "bot": "BOT",
+        "text": "hello",
+        "thread_id": "42",
+        "thread_type": 0,
     }
 
 
@@ -170,8 +176,12 @@ def test_build_channel_config_from_completed_session():
         {
             "complete": True,
             "credentials": {
-                "cookies": {"zpdid": "d"}, "imei": "d", "zpw_sek": "z",
-                "zpsid": "p", "secret_key": "k", "user_agent": "ua",
+                "cookies": {"zpdid": "d"},
+                "imei": "d",
+                "zpw_sek": "z",
+                "zpsid": "p",
+                "secret_key": "k",
+                "user_agent": "ua",
             },
             "zalo_user_id": "u1",
             "account_name": "Me",
@@ -261,7 +271,12 @@ async def test_wait_for_scan_scanned_and_refreshed(monkeypatch):
     assert result["display_name"] == "Me"
 
     refreshed = _FakeClient(
-        [_Resp(200, {"error_code": 0, "data": {"status": 4, "code": "NEW", "image": "I2"}})]
+        [
+            _Resp(
+                200,
+                {"error_code": 0, "data": {"status": 4, "code": "NEW", "image": "I2"}},
+            )
+        ]
     )
     monkeypatch.setattr(zalo_pa, "_make_client", lambda *a, **k: refreshed)
     result = await zalo_pa.wait_for_scan("sid2")

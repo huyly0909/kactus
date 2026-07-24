@@ -1,7 +1,6 @@
 """Tests for kactus-common settings: BaseKactusSettings, CommonSettings, and registry."""
 
 import pytest
-
 from kactus_common.config import (
     BaseKactusSettings,
     CommonSettings,
@@ -51,7 +50,9 @@ class TestCommonSettings:
         assert s.encryption_key == ""
 
     def test_override_values(self):
-        s = CommonSettings(db_path="/tmp/custom.duckdb", database_url="sqlite:///test.db")
+        s = CommonSettings(
+            db_path="/tmp/custom.duckdb", database_url="sqlite:///test.db"
+        )
         assert s.db_path == "/tmp/custom.duckdb"
         assert s.database_url == "sqlite:///test.db"
 

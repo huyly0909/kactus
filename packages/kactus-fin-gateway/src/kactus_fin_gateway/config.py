@@ -11,15 +11,16 @@ Loads ``.env`` from the gateway package with ``KACTUS_GW_`` prefix.
 from functools import lru_cache
 from typing import ClassVar
 
-from pydantic_settings import SettingsConfigDict
-
 from kactus_common.config import CommonSettings, register_settings
+from pydantic_settings import SettingsConfigDict
 
 
 class Settings(CommonSettings):
     """kactus-fin-gateway settings — entry-point package that loads .env."""
 
-    INSTALLED_PACKAGES: ClassVar[list[str]] = CommonSettings.INSTALLED_PACKAGES + ["kactus_fin_gateway"]
+    INSTALLED_PACKAGES: ClassVar[list[str]] = CommonSettings.INSTALLED_PACKAGES + [
+        "kactus_fin_gateway"
+    ]
 
     app_name: str = "Kactus Fin Gateway"
     app_version: str = "0.1.0"

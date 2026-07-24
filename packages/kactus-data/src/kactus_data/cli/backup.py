@@ -1,10 +1,8 @@
 """Backup / export commands for DuckDB tables."""
 
 import typer
-
-from typer import Context, Option, Typer
-
 from kactus_data.config import DataSettings
+from typer import Context, Option, Typer
 
 cli = Typer()
 
@@ -27,7 +25,9 @@ def table(
     ctx: Context,
     table_name: str = typer.Argument(help="Table to export"),
     output: str = Option("./backups", "-o", "--output", help="Output directory"),
-    format: str = Option("parquet", "-f", "--format", help="Export format: parquet or csv"),
+    format: str = Option(
+        "parquet", "-f", "--format", help="Export format: parquet or csv"
+    ),
 ):
     """Export a single table to a file."""
     storage = ctx.obj["storage"]
@@ -44,7 +44,9 @@ def table(
 def all_tables(
     ctx: Context,
     output: str = Option("./backups", "-o", "--output", help="Output directory"),
-    format: str = Option("parquet", "-f", "--format", help="Export format: parquet or csv"),
+    format: str = Option(
+        "parquet", "-f", "--format", help="Export format: parquet or csv"
+    ),
 ):
     """Export all tables to individual files."""
     storage = ctx.obj["storage"]

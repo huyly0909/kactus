@@ -2,7 +2,6 @@
 
 import typer
 import uvicorn
-
 from kactus_fin.cli import cli
 from kactus_fin.config import get_settings
 

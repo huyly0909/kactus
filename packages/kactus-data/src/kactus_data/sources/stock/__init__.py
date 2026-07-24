@@ -5,8 +5,8 @@ Providers:
 """
 
 from kactus_data.sources.stock.base import VnstockSource
-from kactus_data.sources.stock.vnstock import VnstockOHLCVSource, VnstockListingSource
-from kactus_data.sources.stock.tables import STOCK_OHLCV_TABLE, STOCK_LISTING_TABLE
+from kactus_data.sources.stock.tables import STOCK_LISTING_TABLE, STOCK_OHLCV_TABLE
+from kactus_data.sources.stock.vnstock import VnstockListingSource, VnstockOHLCVSource
 
 __all__ = [
     "VnstockSource",

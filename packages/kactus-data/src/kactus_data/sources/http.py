@@ -1,10 +1,9 @@
 """Abstract base for HTTP polling data sources."""
 
 from abc import ABC, abstractmethod
-from datetime import date, datetime
+from datetime import date
 
 import requests
-
 from kactus_data.schemas import SyncDataResponse
 
 

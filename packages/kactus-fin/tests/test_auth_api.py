@@ -8,9 +8,9 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
-from kactus_common.database.oltp import session as session_mod
 from kactus_common.user import auth as auth_mod
 from kactus_common.user.model import User, UserSession
 
@@ -36,7 +36,7 @@ async def db():
 @pytest_asyncio.fixture(scope="module")
 async def app(db):
     """Create a test app with overridden dependencies."""
-    from kactus_common.config import CommonSettings, register_settings, clear_settings
+    from kactus_common.config import CommonSettings, clear_settings, register_settings
     from kactus_fin.app import create_app
 
     # Register settings so get_db/get_auth singletons work

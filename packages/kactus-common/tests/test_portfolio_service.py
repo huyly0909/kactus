@@ -11,7 +11,12 @@ import pytest_asyncio
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.exceptions import ConflictError, NotFoundError
-from kactus_common.portfolio.const import AssetType, CrawlKind, CrawlStatus, CrawlTrigger
+from kactus_common.portfolio.const import (
+    AssetType,
+    CrawlKind,
+    CrawlStatus,
+    CrawlTrigger,
+)
 from kactus_common.portfolio.model import SupportedAsset
 from kactus_common.portfolio.service import (
     CrawlRunService,

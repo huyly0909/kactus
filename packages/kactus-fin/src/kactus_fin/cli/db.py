@@ -2,10 +2,9 @@
 
 import os
 
-from typer import Context, Option, Typer
-
 from alembic import command
 from alembic.config import Config
+from typer import Context, Option, Typer
 
 cli = Typer()
 

@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Tests for SyncDataResponse and SyncResult schemas."""
 
-import pytest
-
 from kactus_data.schemas import SyncDataResponse, SyncResult
 
 
@@ -68,6 +66,7 @@ class TestSyncDataResponse:
 
     def test_inherits_base_schema(self):
         from kactus_common.schemas import BaseSchema
+
         assert issubclass(SyncDataResponse, BaseSchema)
 
 

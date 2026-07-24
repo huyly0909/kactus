@@ -3,7 +3,6 @@
 from datetime import date, datetime
 
 import requests
-
 from kactus_data.schemas import SyncDataResponse
 from kactus_data.sources.http import HttpDataSource
 

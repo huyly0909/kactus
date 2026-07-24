@@ -4,8 +4,8 @@ Providers:
 - vnstock: VnstockCompanySource
 """
 
-from kactus_data.sources.company.vnstock import VnstockCompanySource
 from kactus_data.sources.company.tables import COMPANY_TABLE
+from kactus_data.sources.company.vnstock import VnstockCompanySource
 
 __all__ = [
     "VnstockCompanySource",

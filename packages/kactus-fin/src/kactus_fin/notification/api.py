@@ -11,8 +11,7 @@ from fastapi import Request
 from kactus_common.exceptions import ExternalServiceError
 from kactus_common.notification.const import NotificationChannelType
 from kactus_common.notification.dispatcher import Notifier
-from kactus_common.notification.model import NotificationChannel
-from kactus_common.notification.model import NotificationLog
+from kactus_common.notification.model import NotificationChannel, NotificationLog
 from kactus_common.notification.schema import (
     NotificationChannelCreateRequest,
     NotificationChannelSchema,

@@ -8,9 +8,8 @@ Usage::
 from datetime import date
 
 import typer
-from typer import Context, Option, Typer
-
 from kactus_data.config import DataSettings
+from typer import Context, Option, Typer
 
 cli = Typer()
 
@@ -29,19 +28,23 @@ def main(
     ),
     period: str = Option("quarter", "--period", "-p", help="Period: quarter or year"),
     db_path: str = Option(_defaults.db_path, help="Path to DuckDB database file"),
-    data_source: str = Option(_defaults.data_source, "--data-source", "-d", help="Data source: KBS or VCI"),
+    data_source: str = Option(
+        _defaults.data_source, "--data-source", "-d", help="Data source: KBS or VCI"
+    ),
 ):
     """Sync financial reports for a stock symbol."""
     from kactus_data.pipeline import SyncPipeline
-    from kactus_data.storage.duckdb import DuckDBStorage
-    from kactus_data.sources.finance.vnstock import VnstockFinanceSource
     from kactus_data.sources.finance.tables import FINANCE_TABLE
+    from kactus_data.sources.finance.vnstock import VnstockFinanceSource
+    from kactus_data.storage.duckdb import DuckDBStorage
 
     today = date.today()
 
     typer.echo(f"Syncing {report_type}: {symbol} period={period} source={data_source}")
 
-    source = VnstockFinanceSource(source=data_source, report_type=report_type, period=period)
+    source = VnstockFinanceSource(
+        source=data_source, report_type=report_type, period=period
+    )
     storage = DuckDBStorage(db_path)
     pipeline = SyncPipeline(source, storage)
 

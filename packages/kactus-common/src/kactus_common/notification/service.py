@@ -15,11 +15,7 @@ from kactus_common.exceptions import NotFoundError, ValidationError
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .const import (
-    NotificationChannelType,
-    NotificationLogStatus,
-    NotificationTrigger,
-)
+from .const import NotificationChannelType, NotificationLogStatus, NotificationTrigger
 from .model import NotificationChannel, NotificationLog
 from .schema import NotificationEvent, parse_channel_config
 

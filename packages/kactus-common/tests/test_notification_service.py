@@ -12,10 +12,9 @@ import pytest_asyncio
 from cryptography.fernet import Fernet
 from kactus_common.config import CommonSettings, clear_settings, register_settings
 from kactus_common.crypto import CryptoService
-from kactus_common.database.oltp.models import Base
+from kactus_common.database.oltp.models import Base, utcnow
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.exceptions import NotFoundError, ValidationError
-from kactus_common.database.oltp.models import utcnow
 from kactus_common.notification.const import (
     NotificationChannelType,
     NotificationLogStatus,
@@ -74,7 +73,10 @@ async def test_create_and_get_owned(db):
 async def test_ownership_isolation(db):
     async with db.get_session() as session:
         channel = await NotificationChannelService.create(
-            session, owner_id=1, name="B", channel_type=NotificationChannelType.TELEGRAM,
+            session,
+            owner_id=1,
+            name="B",
+            channel_type=NotificationChannelType.TELEGRAM,
             config=TELEGRAM_CFG,
         )
         # Another user cannot see it — 404, not a leak.
@@ -88,11 +90,17 @@ async def test_ownership_isolation(db):
 async def test_list_for_owner_scoped(db):
     async with db.get_session() as session:
         await NotificationChannelService.create(
-            session, owner_id=1, name="A", channel_type=NotificationChannelType.TELEGRAM,
+            session,
+            owner_id=1,
+            name="A",
+            channel_type=NotificationChannelType.TELEGRAM,
             config=TELEGRAM_CFG,
         )
         await NotificationChannelService.create(
-            session, owner_id=2, name="B", channel_type=NotificationChannelType.SLACK,
+            session,
+            owner_id=2,
+            name="B",
+            channel_type=NotificationChannelType.SLACK,
             config={"webhook_url": "https://hooks.slack.com/services/x/y/z"},
         )
         mine = await NotificationChannelService.list_for_owner(session, 1)
@@ -103,11 +111,17 @@ async def test_list_for_owner_scoped(db):
 async def test_update_and_soft_delete(db):
     async with db.get_session() as session:
         channel = await NotificationChannelService.create(
-            session, owner_id=1, name="Old", channel_type=NotificationChannelType.TELEGRAM,
+            session,
+            owner_id=1,
+            name="Old",
+            channel_type=NotificationChannelType.TELEGRAM,
             config=TELEGRAM_CFG,
         )
         updated = await NotificationChannelService.update(
-            session, channel, name="New", is_active=False,
+            session,
+            channel,
+            name="New",
+            is_active=False,
             config={"bot_token": "t2", "chat_id": "999"},
         )
         assert updated.name == "New"
@@ -124,8 +138,11 @@ async def test_bad_config_raises_validation_error(db):
         # Missing bot_token / chat_id for a telegram channel.
         with pytest.raises(ValidationError):
             await NotificationChannelService.create(
-                session, owner_id=1, name="bad",
-                channel_type=NotificationChannelType.TELEGRAM, config={},
+                session,
+                owner_id=1,
+                name="bad",
+                channel_type=NotificationChannelType.TELEGRAM,
+                config={},
             )
 
 
@@ -134,8 +151,11 @@ async def test_config_encrypted_at_rest(db):
     """The raw DB column must be ciphertext, not plaintext JSON."""
     async with db.get_session() as session:
         channel = await NotificationChannelService.create(
-            session, owner_id=1, name="Bot",
-            channel_type=NotificationChannelType.TELEGRAM, config=TELEGRAM_CFG,
+            session,
+            owner_id=1,
+            name="Bot",
+            channel_type=NotificationChannelType.TELEGRAM,
+            config=TELEGRAM_CFG,
         )
         cid = channel.id
 
@@ -164,8 +184,11 @@ async def test_config_encrypted_at_rest(db):
 # --------------------------------------------------------------------------- #
 async def _channel(session, owner_id: int = 1) -> NotificationChannel:
     return await NotificationChannelService.create(
-        session, owner_id=owner_id, name="Bot",
-        channel_type=NotificationChannelType.TELEGRAM, config=TELEGRAM_CFG,
+        session,
+        owner_id=owner_id,
+        name="Bot",
+        channel_type=NotificationChannelType.TELEGRAM,
+        config=TELEGRAM_CFG,
     )
 
 
@@ -204,8 +227,12 @@ async def test_log_list_scoped_and_filtered(db):
         other = await _channel(session, owner_id=2)
         for ch, title in ((ch1, "a"), (ch1, "b"), (ch2, "c"), (other, "d")):
             await NotificationLogService.record(
-                session, channel=ch, event=NotificationEvent(title=title),
-                status=NotificationLogStatus.SUCCESS, attempts=1, error=None,
+                session,
+                channel=ch,
+                event=NotificationEvent(title=title),
+                status=NotificationLogStatus.SUCCESS,
+                attempts=1,
+                error=None,
             )
         # Owner-scoped: user 1 sees 3, not user 2's row.
         mine = await NotificationLogService.list_for_owner(session, 1)
@@ -223,8 +250,12 @@ async def test_log_list_limit(db):
         channel = await _channel(session)
         for i in range(5):
             await NotificationLogService.record(
-                session, channel=channel, event=NotificationEvent(title=f"e{i}"),
-                status=NotificationLogStatus.SUCCESS, attempts=1, error=None,
+                session,
+                channel=channel,
+                event=NotificationEvent(title=f"e{i}"),
+                status=NotificationLogStatus.SUCCESS,
+                attempts=1,
+                error=None,
             )
         limited = await NotificationLogService.list_for_owner(session, 1, limit=3)
         assert len(limited) == 3

@@ -90,7 +90,9 @@ class FakeSession:
 def _model():
     """Minimal stand-in for the ORM channel — Notifier reads only these attrs."""
     return types.SimpleNamespace(
-        id=1, owner_id=7, channel_type="telegram",
+        id=1,
+        owner_id=7,
+        channel_type="telegram",
         config={"bot_token": "T", "chat_id": "1"},
     )
 
@@ -186,7 +188,8 @@ async def test_test_success(db, monkeypatch):
 async def test_test_returns_false_on_transport_error(db, monkeypatch):
     ch = _patch_channel(monkeypatch, FakeSession())
     monkeypatch.setattr(
-        ch, "test_connection",
+        ch,
+        "test_connection",
         lambda: (_ for _ in ()).throw(requests.ConnectionError("boom")),
     )
     assert await dispatcher.Notifier.test(_model()) is False

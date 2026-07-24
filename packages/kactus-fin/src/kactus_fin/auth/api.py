@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from fastapi import Request, Response
 from kactus_common.crypto import verify_password
-from kactus_common.exceptions import AuthenticationError
 from kactus_common.database.oltp.session import get_db
+from kactus_common.exceptions import AuthenticationError
 from kactus_common.router import KactusAPIRouter
 from kactus_common.user.schema import LoginRequest, LoginResponse, UserInfo
 from kactus_common.user.service import UserService

@@ -253,7 +253,9 @@ class EncryptedJSON(TypeDecorator):
             orjson.dumps(value).decode()
         )
 
-    def process_result_value(self, value: str | None, dialect: "Dialect") -> dict | None:
+    def process_result_value(
+        self, value: str | None, dialect: "Dialect"
+    ) -> dict | None:
         if value is None:
             return None
         from kactus_common.config import settings

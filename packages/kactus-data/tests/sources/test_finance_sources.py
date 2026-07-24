@@ -3,11 +3,11 @@
 
 import json
 import sys
-import pytest
 from datetime import date
 from unittest.mock import MagicMock
 
 import pandas as pd
+import pytest
 
 
 def _create_vnstock_mock():
@@ -27,11 +27,13 @@ class TestVnstockFinanceSource:
 
     def test_invalid_report_type(self):
         from kactus_data.sources.finance.vnstock import VnstockFinanceSource
+
         with pytest.raises(ValueError, match="report_type must be one of"):
             VnstockFinanceSource(report_type="invalid_type")
 
     def test_valid_report_types(self):
         from kactus_data.sources.finance.vnstock import VnstockFinanceSource
+
         for report_type in ("income_statement", "balance_sheet", "cash_flow", "ratio"):
             source = VnstockFinanceSource(report_type=report_type)
             assert source.report_type == report_type
@@ -40,10 +42,12 @@ class TestVnstockFinanceSource:
         from kactus_data.sources.finance.vnstock import VnstockFinanceSource
 
         mock_vnstock = _create_vnstock_mock()
-        mock_df = pd.DataFrame([
-            {"year": 2024, "quarter": 1, "revenue": 100000, "net_income": 20000},
-            {"year": 2024, "quarter": 2, "revenue": 120000, "net_income": 25000},
-        ])
+        mock_df = pd.DataFrame(
+            [
+                {"year": 2024, "quarter": 1, "revenue": 100000, "net_income": 20000},
+                {"year": 2024, "quarter": 2, "revenue": 120000, "net_income": 25000},
+            ]
+        )
         mock_finance = MagicMock()
         mock_finance.income_statement.return_value = mock_df
         mock_vnstock.Finance.return_value = mock_finance
@@ -65,10 +69,12 @@ class TestFinanceTableSchema:
 
     def test_primary_keys(self):
         from kactus_data.sources.finance.tables import FINANCE_TABLE
+
         pks = FINANCE_TABLE.get_primary_key_columns()
         assert set(pks) == {"symbol", "period", "year", "quarter", "report_type"}
 
     def test_upsert_strategy(self):
         from kactus_common.database.duckdb.consts import UpdateStrategy
         from kactus_data.sources.finance.tables import FINANCE_TABLE
+
         assert FINANCE_TABLE.update_strategy == UpdateStrategy.UPSERT

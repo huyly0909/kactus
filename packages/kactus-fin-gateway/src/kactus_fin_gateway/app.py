@@ -2,10 +2,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-from kactus_fin_gateway.config import get_settings
-from kactus_fin_gateway.api.health import router as health_router
 from kactus_common.exceptions import install_exception_handlers
+from kactus_fin_gateway.api.health import router as health_router
+from kactus_fin_gateway.config import get_settings
 
 
 @asynccontextmanager

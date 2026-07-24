@@ -6,11 +6,10 @@ import json
 from datetime import date, datetime
 
 import pandas as pd
-
+from kactus_data.config import get_settings
 from kactus_data.schemas import SyncDataResponse
 from kactus_data.sources.stock.base import VnstockSource
 from loguru import logger
-from kactus_data.config import get_settings
 
 REPORT_TYPES = ("income_statement", "balance_sheet", "cash_flow", "ratio")
 
@@ -29,8 +28,10 @@ class VnstockFinanceSource(VnstockSource):
         period: str = "quarter",
     ) -> None:
         if report_type not in REPORT_TYPES:
-            raise ValueError(f"report_type must be one of {REPORT_TYPES}, got '{report_type}'")
-        settings = get_settings()
+            raise ValueError(
+                f"report_type must be one of {REPORT_TYPES}, got '{report_type}'"
+            )
+        get_settings()  # side effect: registers settings in the global registry
         super().__init__(name=f"vnstock_finance_{report_type}", source=source)
         self.report_type = report_type
         self.period = period
@@ -71,16 +72,20 @@ class VnstockFinanceSource(VnstockSource):
                 year = int(row_dict.get("year", row_dict.get("Year", 0)))
                 quarter = int(row_dict.get("quarter", row_dict.get("Quarter", 0)))
 
-                records.append({
-                    "symbol": code,
-                    "period": self.period,
-                    "year": year,
-                    "quarter": quarter,
-                    "report_type": self.report_type,
-                    "data_json": json.dumps(row_dict, default=str, ensure_ascii=False),
-                    "source": self.source,
-                    "synced_at": datetime.now().isoformat(),
-                })
+                records.append(
+                    {
+                        "symbol": code,
+                        "period": self.period,
+                        "year": year,
+                        "quarter": quarter,
+                        "report_type": self.report_type,
+                        "data_json": json.dumps(
+                            row_dict, default=str, ensure_ascii=False
+                        ),
+                        "source": self.source,
+                        "synced_at": datetime.now().isoformat(),
+                    }
+                )
 
             logger.info(
                 "Fetched %d %s records for %s (period=%s)",
@@ -101,7 +106,9 @@ class VnstockFinanceSource(VnstockSource):
             )
 
         except Exception as ex:
-            logger.error("Finance sync (%s) failed for %s: %s", self.report_type, code, ex)
+            logger.error(
+                "Finance sync (%s) failed for %s: %s", self.report_type, code, ex
+            )
             return SyncDataResponse(
                 success=False,
                 data_source=self.name,

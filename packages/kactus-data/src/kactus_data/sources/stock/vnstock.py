@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import date, datetime
 
 import pandas as pd
-
 from kactus_data.schemas import SyncDataResponse
 from kactus_data.sources.stock.base import VnstockSource
 from loguru import logger
@@ -39,7 +38,9 @@ class VnstockOHLCVSource(VnstockSource):
             )
 
             if df is None or df.empty:
-                logger.warning("No OHLCV data for %s [%s → %s]", code, start_date, end_date)
+                logger.warning(
+                    "No OHLCV data for %s [%s → %s]", code, start_date, end_date
+                )
                 return SyncDataResponse(
                     success=True,
                     data_source=self.name,

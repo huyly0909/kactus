@@ -1,13 +1,7 @@
 """Tests for kactus-fin-gateway settings: Settings inheritance and get_settings."""
 
-import pytest
-
-from kactus_common.config import (
-    BaseKactusSettings,
-    CommonSettings,
-    clear_settings,
-    get_settings as get_global_settings,
-)
+from kactus_common.config import BaseKactusSettings, CommonSettings, clear_settings
+from kactus_common.config import get_settings as get_global_settings
 from kactus_fin_gateway.config import Settings, get_settings
 
 

@@ -1,13 +1,7 @@
 """Tests for kactus-fin settings: Settings inheritance and get_settings."""
 
-import pytest
-
-from kactus_common.config import (
-    BaseKactusSettings,
-    CommonSettings,
-    clear_settings,
-    get_settings as get_global_settings,
-)
+from kactus_common.config import BaseKactusSettings, CommonSettings, clear_settings
+from kactus_common.config import get_settings as get_global_settings
 from kactus_data.config import DataSettings
 from kactus_fin.config import Settings, get_settings
 

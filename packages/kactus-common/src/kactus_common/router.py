@@ -174,4 +174,3 @@ def multipart_upload_openapi_multi(
             }
         }
     }
-

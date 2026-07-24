@@ -9,9 +9,8 @@ Usage::
 from datetime import date
 
 import typer
-from typer import Context, Option, Typer
-
 from kactus_data.config import DataSettings
+from typer import Context, Option, Typer
 
 cli = Typer()
 
@@ -22,13 +21,14 @@ _defaults = DataSettings()
 def main(
     ctx: Context,
     db_path: str = Option(_defaults.db_path, help="Path to DuckDB database file"),
-    data_source: str = Option(_defaults.data_source, "--data-source", "-d", help="Data source: KBS or VCI"),
+    data_source: str = Option(
+        _defaults.data_source, "--data-source", "-d", help="Data source: KBS or VCI"
+    ),
 ):
     """Stock price data collection commands."""
     from kactus_data.storage.duckdb import DuckDBStorage
 
     ctx.obj = {"storage": DuckDBStorage(db_path), "data_source": data_source}
-
 
 
 @cli.command()
@@ -37,18 +37,22 @@ def ohlcv(
     symbol: str = Option(..., "--symbol", "-s", help="Stock symbol (e.g. VCI, ACB)"),
     start: str = Option(..., "--start", help="Start date (YYYY-MM-DD)"),
     end: str = Option(..., "--end", help="End date (YYYY-MM-DD)"),
-    interval: str = Option("1D", "--interval", "-i", help="Interval: 1m, 5m, 15m, 30m, 1H, 1D, 1W, 1M"),
+    interval: str = Option(
+        "1D", "--interval", "-i", help="Interval: 1m, 5m, 15m, 30m, 1H, 1D, 1W, 1M"
+    ),
 ):
     """Sync OHLCV (candlestick) data for a stock symbol."""
     from kactus_data.pipeline import SyncPipeline
-    from kactus_data.sources.stock.vnstock import VnstockOHLCVSource
     from kactus_data.sources.stock.tables import STOCK_OHLCV_TABLE
+    from kactus_data.sources.stock.vnstock import VnstockOHLCVSource
 
     start_date = date.fromisoformat(start)
     end_date = date.fromisoformat(end)
     source_name = ctx.obj["data_source"]
 
-    typer.echo(f"Syncing OHLCV: {symbol} [{start} → {end}] interval={interval} source={source_name}")
+    typer.echo(
+        f"Syncing OHLCV: {symbol} [{start} → {end}] interval={interval} source={source_name}"
+    )
 
     source = VnstockOHLCVSource(source=source_name, interval=interval)
     storage = ctx.obj["storage"]
@@ -75,8 +79,8 @@ def ohlcv(
 def listing(ctx: Context):
     """Sync all listed stock symbols."""
     from kactus_data.pipeline import SyncPipeline
-    from kactus_data.sources.stock.vnstock import VnstockListingSource
     from kactus_data.sources.stock.tables import STOCK_LISTING_TABLE
+    from kactus_data.sources.stock.vnstock import VnstockListingSource
 
     source_name = ctx.obj["data_source"]
     today = date.today()

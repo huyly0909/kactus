@@ -169,9 +169,7 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_crawl_runs_asset_type"), table_name="crawl_runs")
     op.drop_table("crawl_runs")
     op.drop_table("supported_assets")
-    op.drop_index(
-        op.f("ix_portfolio_items_portfolio_id"), table_name="portfolio_items"
-    )
+    op.drop_index(op.f("ix_portfolio_items_portfolio_id"), table_name="portfolio_items")
     op.drop_table("portfolio_items")
     op.drop_index(op.f("ix_portfolios_owner_id"), table_name="portfolios")
     op.drop_table("portfolios")

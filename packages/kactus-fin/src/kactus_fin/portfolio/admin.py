@@ -56,7 +56,9 @@ async def crawl_status(request: Request) -> CrawlStatusSchema:
         for job in scheduler.get_jobs():
             nrt = getattr(job, "next_run_time", None)
             jobs.append(
-                CrawlJobSchema(id=job.id, next_run_time=nrt.isoformat() if nrt else None)
+                CrawlJobSchema(
+                    id=job.id, next_run_time=nrt.isoformat() if nrt else None
+                )
             )
     return CrawlStatusSchema(
         scheduler_running=running, vnstock_tier=_safe_tier_name(), jobs=jobs
@@ -84,7 +86,9 @@ async def crawl_run_now(
 
 
 @router.post("/catalog/sync")
-async def catalog_sync(request: Request, background: BackgroundTasks) -> CrawlTriggerResponse:
+async def catalog_sync(
+    request: Request, background: BackgroundTasks
+) -> CrawlTriggerResponse:
     """Refresh the supported-asset catalog for all providers (admin)."""
     runtime = get_runtime()
     background.add_task(sync_catalog, db=runtime.db, providers=runtime.providers)

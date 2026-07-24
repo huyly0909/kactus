@@ -154,8 +154,12 @@ class StockMarketSource:
                 rows.append(
                     {
                         "symbol": str(symbol).upper(),
-                        "match_price": _to_float(_pick(r, "match_price", "matchPrice", "close_price")),
-                        "ref_price": _to_float(_pick(r, "ref_price", "reference_price", "refPrice")),
+                        "match_price": _to_float(
+                            _pick(r, "match_price", "matchPrice", "close_price")
+                        ),
+                        "ref_price": _to_float(
+                            _pick(r, "ref_price", "reference_price", "refPrice")
+                        ),
                         "ceiling": _to_float(_pick(r, "ceiling", "ceiling_price")),
                         "floor": _to_float(_pick(r, "floor", "floor_price")),
                         "accumulated_volume": _to_float(
@@ -168,7 +172,9 @@ class StockMarketSource:
                 )
         return _to_table_df(rows, STOCK_PRICE_BOARD_TABLE)
 
-    def _per_symbol(self, codes: list[str], raw_fn, map_fn, table: Table) -> pd.DataFrame:
+    def _per_symbol(
+        self, codes: list[str], raw_fn, map_fn, table: Table
+    ) -> pd.DataFrame:
         """Loop ``codes`` resiliently; collect normalized rows into ``table``."""
         now = datetime.now()
         rows: list[dict] = []
@@ -189,12 +195,16 @@ class StockMarketSource:
 
     def news(self, codes: list[str]) -> pd.DataFrame:
         def _map(symbol, r, now):
-            news_id = _pick(r, "id", "news_id", "rsi") or _pick(r, "title", "news_title")
+            news_id = _pick(r, "id", "news_id", "rsi") or _pick(
+                r, "title", "news_title"
+            )
             return {
                 "symbol": symbol,
                 "news_id": str(news_id) if news_id is not None else "",
                 "title": _pick(r, "title", "news_title", "news_short_content"),
-                "published_at": str(_pick(r, "public_date", "published_at", "date") or ""),
+                "published_at": str(
+                    _pick(r, "public_date", "published_at", "date") or ""
+                ),
                 "url": _pick(r, "url", "news_source_link", "link"),
                 "source": self.source,
                 "crawled_at": now,
@@ -205,7 +215,9 @@ class StockMarketSource:
 
     def events(self, codes: list[str]) -> pd.DataFrame:
         def _map(symbol, r, now):
-            event_id = _pick(r, "id", "event_id", "rsi") or _pick(r, "event_title", "title")
+            event_id = _pick(r, "id", "event_id", "rsi") or _pick(
+                r, "event_title", "title"
+            )
             return {
                 "symbol": symbol,
                 "event_id": str(event_id) if event_id is not None else "",
@@ -224,15 +236,21 @@ class StockMarketSource:
             return {
                 "symbol": symbol,
                 "trade_date": str(trade_date or now.date().isoformat()),
-                "buy_value": _to_float(_pick(r, "buy_value", "foreign_buy_value", "buy")),
-                "sell_value": _to_float(_pick(r, "sell_value", "foreign_sell_value", "sell")),
+                "buy_value": _to_float(
+                    _pick(r, "buy_value", "foreign_buy_value", "buy")
+                ),
+                "sell_value": _to_float(
+                    _pick(r, "sell_value", "foreign_sell_value", "sell")
+                ),
                 "net_value": _to_float(_pick(r, "net_value", "net_val", "net")),
                 "source": self.source,
                 "crawled_at": now,
                 "raw_json": json.dumps(r, default=str, ensure_ascii=False),
             }
 
-        return self._per_symbol(codes, self._raw_foreign_trade, _map, STOCK_FOREIGN_TRADE_TABLE)
+        return self._per_symbol(
+            codes, self._raw_foreign_trade, _map, STOCK_FOREIGN_TRADE_TABLE
+        )
 
     def ratios(self, codes: list[str], period: str = "quarter") -> pd.DataFrame:
         """Financial ratios → one row per ``(symbol, period)``.
@@ -251,11 +269,15 @@ class StockMarketSource:
             try:
                 raw = self._raw_ratio(code)
             except Exception as ex:  # pragma: no cover - network failure path
-                logger.warning(f"{STOCK_RATIOS_TABLE.name} fetch failed for {code}: {ex}")
+                logger.warning(
+                    f"{STOCK_RATIOS_TABLE.name} fetch failed for {code}: {ex}"
+                )
                 continue
             if raw is None or (hasattr(raw, "empty") and raw.empty):
                 continue
-            rows.extend(self._ratio_rows(code.upper(), _flatten_columns(raw), period, now))
+            rows.extend(
+                self._ratio_rows(code.upper(), _flatten_columns(raw), period, now)
+            )
         return _to_table_df(rows, STOCK_RATIOS_TABLE)
 
     def _ratio_rows(
@@ -281,7 +303,9 @@ class StockMarketSource:
                         "period": str(p).strip(),
                         "source": self.source,
                         "crawled_at": now,
-                        "raw_json": json.dumps(metrics, default=str, ensure_ascii=False),
+                        "raw_json": json.dumps(
+                            metrics, default=str, ensure_ascii=False
+                        ),
                     }
                 )
             return out

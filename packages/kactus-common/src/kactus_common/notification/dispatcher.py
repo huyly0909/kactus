@@ -20,11 +20,7 @@ from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .channel import BaseNotificationChannel, RenderedMessage
-from .const import (
-    NotificationChannelType,
-    NotificationLogStatus,
-    NotificationTrigger,
-)
+from .const import NotificationChannelType, NotificationLogStatus, NotificationTrigger
 from .model import NotificationChannel
 from .registry import build_channel, get_template
 from .schema import NotificationEvent

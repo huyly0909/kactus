@@ -3,13 +3,11 @@
 
 import json
 import sys
-import pytest
-from datetime import date, datetime
+from datetime import date
 from unittest.mock import MagicMock
 
 import pandas as pd
-
-from kactus_data.schemas import SyncDataResponse
+import pytest
 
 
 def _create_vnstock_mock():
@@ -31,14 +29,18 @@ class TestVnstockCompanySource:
         from kactus_data.sources.company.vnstock import VnstockCompanySource
 
         mock_vnstock = _create_vnstock_mock()
-        overview_df = pd.DataFrame([{
-            "company_name": "Vietcap Securities",
-            "short_name": "VCI",
-            "industry": "Financial Services",
-            "exchange": "HOSE",
-            "market_cap": 5000000000,
-            "outstanding_share": 200000000,
-        }])
+        overview_df = pd.DataFrame(
+            [
+                {
+                    "company_name": "Vietcap Securities",
+                    "short_name": "VCI",
+                    "industry": "Financial Services",
+                    "exchange": "HOSE",
+                    "market_cap": 5000000000,
+                    "outstanding_share": 200000000,
+                }
+            ]
+        )
 
         mock_company = MagicMock()
         mock_company.overview.return_value = overview_df
@@ -65,9 +67,11 @@ class TestCompanyTableSchema:
 
     def test_primary_keys(self):
         from kactus_data.sources.company.tables import COMPANY_TABLE
+
         assert COMPANY_TABLE.get_primary_key_columns() == ["symbol"]
 
     def test_upsert_strategy(self):
         from kactus_common.database.duckdb.consts import UpdateStrategy
         from kactus_data.sources.company.tables import COMPANY_TABLE
+
         assert COMPANY_TABLE.update_strategy == UpdateStrategy.UPSERT

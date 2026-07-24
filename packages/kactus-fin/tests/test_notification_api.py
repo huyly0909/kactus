@@ -234,13 +234,21 @@ async def test_logs_endpoint(client, db, seed_user):
             session, channel_id=int(cid), owner_id=seed_user.id
         )
         await NotificationLogService.record(
-            session, channel=channel, event=NotificationEvent(title="ok"),
-            status=NotificationLogStatus.SUCCESS, attempts=1, error=None,
+            session,
+            channel=channel,
+            event=NotificationEvent(title="ok"),
+            status=NotificationLogStatus.SUCCESS,
+            attempts=1,
+            error=None,
             trigger=NotificationTrigger.MANUAL,
         )
         await NotificationLogService.record(
-            session, channel=channel, event=NotificationEvent(title="boom"),
-            status=NotificationLogStatus.FAILED, attempts=3, error="down",
+            session,
+            channel=channel,
+            event=NotificationEvent(title="boom"),
+            status=NotificationLogStatus.FAILED,
+            attempts=3,
+            error="down",
             trigger=NotificationTrigger.MANUAL,
         )
 
@@ -259,7 +267,9 @@ async def test_logs_endpoint(client, db, seed_user):
 async def test_logs_endpoint_ownership_404(client, db, seed_user):
     async with db.get_session() as session:
         other = await NotificationChannelService.create(
-            session, owner_id=seed_user.id + 999, name="theirs",
+            session,
+            owner_id=seed_user.id + 999,
+            name="theirs",
             channel_type=NotificationChannelType.TELEGRAM,
             config={"bot_token": "x", "chat_id": "1"},
         )

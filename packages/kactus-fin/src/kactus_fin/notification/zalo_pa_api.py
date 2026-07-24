@@ -57,9 +57,7 @@ async def zalo_generate_qr(request: Request) -> ZaloPAQRGenerateResponse:
 
 
 @zalo_pa_router.get("/qr/{session_id}/scan")
-async def zalo_wait_scan(
-    session_id: str, request: Request
-) -> ZaloPAQRStatusResponse:
+async def zalo_wait_scan(session_id: str, request: Request) -> ZaloPAQRStatusResponse:
     """Long-poll until the QR is scanned (``refreshed`` = swap image, keep polling)."""
     result = await wait_for_scan(session_id)
     return ZaloPAQRStatusResponse(**result)
@@ -75,9 +73,7 @@ async def zalo_wait_confirm(
 
 
 @zalo_pa_router.post("/qr/{session_id}/complete")
-async def zalo_complete(
-    session_id: str, request: Request
-) -> ZaloPACompleteResponse:
+async def zalo_complete(session_id: str, request: Request) -> ZaloPACompleteResponse:
     """Finalize login — verify the account and hold the session for recipient pick."""
     result = await complete_login(session_id)
     return ZaloPACompleteResponse(

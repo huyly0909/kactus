@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Tests for the HttpDataSource abstract base class."""
 
-import pytest
 from datetime import date, datetime
 
+import pytest
 from kactus_data.schemas import SyncDataResponse
 
 
@@ -38,6 +38,7 @@ class TestHttpDataSourceABC:
 
     def test_cannot_instantiate_abstract(self):
         from kactus_data.sources.http import HttpDataSource
+
         with pytest.raises(TypeError):
             HttpDataSource("http://example.com", "test")
 
