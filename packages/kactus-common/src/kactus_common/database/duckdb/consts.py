@@ -1,9 +1,18 @@
 from enum import StrEnum
 
+
 class DataType(StrEnum):
     """DuckDB data types."""
+
     INT = "INT"
+    # FLOAT is single-precision: exact only for integers below 2^24 (~16.7M).
+    # Fine for ratios and volumes; NEVER use it for money.
     FLOAT = "FLOAT"
+    DOUBLE = "DOUBLE"
+    # Money/prices MUST be DECIMAL — binary floats cannot represent decimal
+    # amounts exactly (VND gold at ~1.4e8 silently rounds under FLOAT).
+    # Precision/scale come from ``Column.precision``/``Column.scale``.
+    DECIMAL = "DECIMAL"
     STRING = "STRING"
     BOOLEAN = "BOOLEAN"
     DATE = "DATE"
@@ -12,8 +21,10 @@ class DataType(StrEnum):
     TIME = "TIME"
     BLOB = "BLOB"
 
+
 class UpdateStrategy(StrEnum):
     """Database update strategies."""
+
     APPEND = "APPEND"
     REPLACE = "REPLACE"
     UPSERT = "UPSERT"

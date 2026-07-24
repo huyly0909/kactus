@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import defaultdict
+from decimal import Decimal
 
 from fastapi import BackgroundTasks, Request
 from kactus_common.portfolio.const import AssetType, CrawlKind, CrawlTrigger
@@ -28,7 +29,7 @@ from kactus_common.portfolio.service import (
     SupportedAssetService,
 )
 from kactus_common.router import KactusAPIRouter
-from kactus_common.schemas import MessageResponse, Pagination
+from kactus_common.schemas import MessageResponse, Pagination, decimal_to_str
 from kactus_common.sse.broker import get_sse_broker
 from kactus_data.jobs.crawl import run_crawl
 from kactus_fin.dependencies import provide_session
@@ -203,7 +204,9 @@ async def remove_item(
 # --------------------------------------------------------------------------- #
 # Market reads (from DuckDB via providers)
 # --------------------------------------------------------------------------- #
-async def _items_by_type(session: AsyncSession, portfolio_id: int) -> dict[AssetType, list[str]]:
+async def _items_by_type(
+    session: AsyncSession, portfolio_id: int
+) -> dict[AssetType, list[str]]:
     items = await PortfolioService.get_items(session, portfolio_id)
     grouped: dict[AssetType, list[str]] = defaultdict(list)
     for it in items:
@@ -240,6 +243,7 @@ async def get_quotes(
                     floor=r.get("floor"),
                     buy_price=r.get("buy_price"),
                     sell_price=r.get("sell_price"),
+                    unit=r.get("unit"),
                     volume=r.get("accumulated_volume"),
                     source=r.get("source"),
                     crawled_at=r.get("crawled_at"),
@@ -345,6 +349,19 @@ async def get_asset_detail(
     out: list[MarketRowSchema] = []
     for r in rows:
         symbol = r.get("symbol") or r.get("code")
-        data = {k: v for k, v in r.items() if k not in ("raw_json",)}
+        data = {k: _jsonable(v) for k, v in r.items() if k not in ("raw_json",)}
         out.append(MarketRowSchema(symbol=symbol, data=data))
     return out
+
+
+def _jsonable(value: object) -> object:
+    """Normalise a DuckDB cell for an untyped (``OpaqueDict``) payload.
+
+    Money columns are DECIMAL, so they arrive as ``Decimal``. Inside an ``Any``
+    field Pydantic would emit those as JSON *strings* while floats stay bare
+    numbers — an inconsistent shape for one row. Render them as strings
+    explicitly, matching how ``FancyDecimal`` serialises the typed routes.
+    """
+    if isinstance(value, Decimal):
+        return decimal_to_str(value)
+    return value

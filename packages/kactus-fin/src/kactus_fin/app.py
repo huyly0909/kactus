@@ -14,7 +14,9 @@ from kactus_fin.api.health import router as health_router
 from kactus_fin.auth.app import auth_app
 from kactus_fin.config import get_settings
 from kactus_fin.dependencies import get_auth
+from kactus_fin.market.app import market_app
 from kactus_fin.notification.app import notification_app
+from kactus_fin.olap import set_olap_storage
 from kactus_fin.permission.app import permission_app
 from kactus_fin.portfolio.app import portfolio_app
 from kactus_fin.portfolio.runtime import PortfolioRuntime, set_runtime
@@ -53,6 +55,7 @@ app_manager.register(permission_app)
 app_manager.register(admin_app)
 app_manager.register(portfolio_app)
 app_manager.register(notification_app)
+app_manager.register(market_app)
 app_manager.set_auth_dependencies(
     session_dep=_session_auth,
     superuser_dep=_superuser_auth,
@@ -69,7 +72,10 @@ def _build_portfolio_runtime(settings) -> PortfolioRuntime:
     init_vnstock_auth()
 
     db = get_db()
+    # One DuckDB handle per process, shared with the read-only `market` feature
+    # (a second handle on the same file would contend for the write lock).
     storage = DuckDBStorage(settings.db_path)
+    set_olap_storage(storage)
     providers = build_providers(
         storage,
         data_source=settings.data_source,
@@ -116,6 +122,7 @@ def _shutdown_portfolio_runtime(runtime: PortfolioRuntime | None) -> None:
         except Exception:  # pragma: no cover - defensive
             pass
     set_runtime(None)
+    set_olap_storage(None)
 
 
 @asynccontextmanager

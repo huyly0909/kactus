@@ -14,12 +14,18 @@ from kactus_common.database.duckdb.schema import Column, Table
 STOCK_PRICE_BOARD_TABLE = Table(
     name="stock_price_board",
     columns=[
-        Column(name="symbol", data_type=DataType.STRING, is_primary_key=True, is_nullable=False),
-        Column(name="match_price", data_type=DataType.FLOAT),
-        Column(name="ref_price", data_type=DataType.FLOAT),
-        Column(name="ceiling", data_type=DataType.FLOAT),
-        Column(name="floor", data_type=DataType.FLOAT),
-        Column(name="accumulated_volume", data_type=DataType.FLOAT),
+        Column(
+            name="symbol",
+            data_type=DataType.STRING,
+            is_primary_key=True,
+            is_nullable=False,
+        ),
+        Column(name="match_price", data_type=DataType.DECIMAL),
+        Column(name="ref_price", data_type=DataType.DECIMAL),
+        Column(name="ceiling", data_type=DataType.DECIMAL),
+        Column(name="floor", data_type=DataType.DECIMAL),
+        # See stock_ohlcv.volume — FLOAT loses whole shares above ~16.7M.
+        Column(name="accumulated_volume", data_type=DataType.DOUBLE),
         Column(name="source", data_type=DataType.STRING),
         Column(name="crawled_at", data_type=DataType.TIMESTAMP),
         Column(name="raw_json", data_type=DataType.STRING),
@@ -30,8 +36,18 @@ STOCK_PRICE_BOARD_TABLE = Table(
 STOCK_NEWS_TABLE = Table(
     name="stock_news",
     columns=[
-        Column(name="symbol", data_type=DataType.STRING, is_primary_key=True, is_nullable=False),
-        Column(name="news_id", data_type=DataType.STRING, is_primary_key=True, is_nullable=False),
+        Column(
+            name="symbol",
+            data_type=DataType.STRING,
+            is_primary_key=True,
+            is_nullable=False,
+        ),
+        Column(
+            name="news_id",
+            data_type=DataType.STRING,
+            is_primary_key=True,
+            is_nullable=False,
+        ),
         Column(name="title", data_type=DataType.STRING),
         Column(name="published_at", data_type=DataType.STRING),
         Column(name="url", data_type=DataType.STRING),
@@ -45,11 +61,21 @@ STOCK_NEWS_TABLE = Table(
 STOCK_FOREIGN_TRADE_TABLE = Table(
     name="stock_foreign_trade",
     columns=[
-        Column(name="symbol", data_type=DataType.STRING, is_primary_key=True, is_nullable=False),
-        Column(name="trade_date", data_type=DataType.STRING, is_primary_key=True, is_nullable=False),
-        Column(name="buy_value", data_type=DataType.FLOAT),
-        Column(name="sell_value", data_type=DataType.FLOAT),
-        Column(name="net_value", data_type=DataType.FLOAT),
+        Column(
+            name="symbol",
+            data_type=DataType.STRING,
+            is_primary_key=True,
+            is_nullable=False,
+        ),
+        Column(
+            name="trade_date",
+            data_type=DataType.STRING,
+            is_primary_key=True,
+            is_nullable=False,
+        ),
+        Column(name="buy_value", data_type=DataType.DECIMAL),
+        Column(name="sell_value", data_type=DataType.DECIMAL),
+        Column(name="net_value", data_type=DataType.DECIMAL),
         Column(name="source", data_type=DataType.STRING),
         Column(name="crawled_at", data_type=DataType.TIMESTAMP),
         Column(name="raw_json", data_type=DataType.STRING),
@@ -60,8 +86,18 @@ STOCK_FOREIGN_TRADE_TABLE = Table(
 STOCK_RATIOS_TABLE = Table(
     name="stock_ratios",
     columns=[
-        Column(name="symbol", data_type=DataType.STRING, is_primary_key=True, is_nullable=False),
-        Column(name="period", data_type=DataType.STRING, is_primary_key=True, is_nullable=False),
+        Column(
+            name="symbol",
+            data_type=DataType.STRING,
+            is_primary_key=True,
+            is_nullable=False,
+        ),
+        Column(
+            name="period",
+            data_type=DataType.STRING,
+            is_primary_key=True,
+            is_nullable=False,
+        ),
         Column(name="source", data_type=DataType.STRING),
         Column(name="crawled_at", data_type=DataType.TIMESTAMP),
         Column(name="raw_json", data_type=DataType.STRING),
@@ -72,8 +108,18 @@ STOCK_RATIOS_TABLE = Table(
 STOCK_EVENTS_TABLE = Table(
     name="stock_events",
     columns=[
-        Column(name="symbol", data_type=DataType.STRING, is_primary_key=True, is_nullable=False),
-        Column(name="event_id", data_type=DataType.STRING, is_primary_key=True, is_nullable=False),
+        Column(
+            name="symbol",
+            data_type=DataType.STRING,
+            is_primary_key=True,
+            is_nullable=False,
+        ),
+        Column(
+            name="event_id",
+            data_type=DataType.STRING,
+            is_primary_key=True,
+            is_nullable=False,
+        ),
         Column(name="title", data_type=DataType.STRING),
         Column(name="event_date", data_type=DataType.STRING),
         Column(name="source", data_type=DataType.STRING),

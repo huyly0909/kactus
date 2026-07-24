@@ -35,7 +35,14 @@ class FullFakeMarket(StockMarketSource):
 
     def _raw_news(self, code):
         return pd.DataFrame(
-            [{"id": f"{code}-n", "title": "Tin", "public_date": "2026-01-01", "url": "u"}]
+            [
+                {
+                    "id": f"{code}-n",
+                    "title": "Tin",
+                    "public_date": "2026-01-01",
+                    "url": "u",
+                }
+            ]
         )
 
     def _raw_events(self, code):
@@ -48,7 +55,14 @@ class FullFakeMarket(StockMarketSource):
 
     def _raw_foreign_trade(self, code):
         return pd.DataFrame(
-            [{"trade_date": "2026-01-01", "buy_value": 100, "sell_value": 40, "net_value": 60}]
+            [
+                {
+                    "trade_date": "2026-01-01",
+                    "buy_value": 100,
+                    "sell_value": 40,
+                    "net_value": 60,
+                }
+            ]
         )
 
     def _raw_all_symbols(self):
@@ -111,15 +125,15 @@ def test_market_catalog_tags_indices():
 def test_market_flatten_multiindex_columns():
     from kactus_data.sources.stock.market import _flatten_columns
 
-    df = pd.DataFrame([[1, 2]], columns=pd.MultiIndex.from_tuples([("a", "b"), ("c", "")]))
+    df = pd.DataFrame(
+        [[1, 2]], columns=pd.MultiIndex.from_tuples([("a", "b"), ("c", "")])
+    )
     flat = _flatten_columns(df)
     assert list(flat.columns) == ["a_b", "c"]
 
 
 # ------------------------------------------------------------------- providers
-@pytest.mark.parametrize(
-    "kind", [CrawlKind.NEWS, CrawlKind.RATIOS, CrawlKind.EVENTS]
-)
+@pytest.mark.parametrize("kind", [CrawlKind.NEWS, CrawlKind.RATIOS, CrawlKind.EVENTS])
 def test_stock_provider_crawl_and_read(storage, kind):
     # decision-support kinds read from decision_market, so fake both seams.
     provider = StockAssetProvider(storage, FullFakeMarket(), FullFakeMarket())
@@ -183,29 +197,170 @@ def test_stock_provider_fetch_catalog(storage):
     assert {e["code"] for e in provider.fetch_catalog()} == {"FPT", "VCB"}
 
 
-def test_gold_provider(monkeypatch, storage):
-    class FakeMihong:
-        def __init__(self, token):
-            self.token = token
+class FakeMihong:
+    """mihong stub — quotes VND/chỉ, so the provider must scale ×10."""
 
-        def sync(self, s, e, code):
-            return SyncDataResponse(
-                success=True, data_source="mihong", code=code,
-                start_date="", end_date="",
-                data=[{"buyPrice": 8000, "sellPrice": 8200}], timestamp="",
-            )
+    name = "mihong"
 
-    monkeypatch.setattr(
-        "kactus_data.portfolio.provider.MihongGoldSource", FakeMihong
-    )
-    provider = GoldAssetProvider(storage, xsrf_token="tok")
+    def __init__(self, xsrf_token=None):
+        self.xsrf_token = xsrf_token
+
+    def sync(self, s, e, code):
+        return SyncDataResponse(
+            success=True,
+            data_source="mihong",
+            code=code,
+            start_date="",
+            end_date="",
+            data=[{"buyingPrice": 13657142, "sellingPrice": 13914285}],
+            timestamp="",
+        )
+
+
+class DeadSjc:
+    """SJC board unreachable (Cloudflare) → provider falls back to mihong."""
+
+    name = "sjc"
+
+    def fetch_board(self):
+        return []
+
+    def quote(self, code, board=None):
+        return None
+
+
+class LiveSjc(DeadSjc):
+    """SJC board reachable — already VND/lượng, must be stored unscaled."""
+
+    def fetch_board(self):
+        return [{"TypeName": "Vàng SJC 1L, 10L, 1KG", "BranchName": "Hồ Chí Minh"}]
+
+    def quote(self, code, board=None):
+        if str(code).upper() != "SJC":
+            return None
+        return {"buy_price": 134500000.0, "sell_price": 139500000.0, "raw": {}}
+
+
+class FakeYahoo:
+    """World-gold stub — quotes USD/oz, so the row must NOT be scaled."""
+
+    name = "yahoo"
+
+    def latest(self):
+        return {
+            "date": "2026-07-24",
+            "close": 4037.6999,
+            "open": 4020.0,
+            "high": 4041.0,
+            "low": 4015.0,
+        }
+
+
+class DeadYahoo(FakeYahoo):
+    def latest(self):
+        return None
+
+
+def _patch_gold(monkeypatch, sjc_cls, yahoo_cls=FakeYahoo):
+    monkeypatch.setattr("kactus_data.portfolio.provider.MihongGoldSource", FakeMihong)
+    monkeypatch.setattr("kactus_data.portfolio.provider.SjcGoldSource", sjc_cls)
+    monkeypatch.setattr("kactus_data.portfolio.provider.YahooGoldSource", yahoo_cls)
+
+
+def test_gold_provider_prefers_sjc_official(monkeypatch, storage):
+    """sjc.com.vn is the issuer reference — it wins over mihong."""
+    _patch_gold(monkeypatch, LiveSjc)
+    provider = GoldAssetProvider(storage)
     assert {e["code"] for e in provider.fetch_catalog()} >= {"SJC", "999"}
     assert provider.crawl(CrawlKind.QUOTES, ["SJC"]) == 1
     rows = provider.read(CrawlKind.QUOTES, ["SJC"])
-    assert rows[0]["code"] == "SJC" and rows[0]["buy_price"] == 8000.0
-    # NEWS unsupported for gold, and no-token skips.
+    assert rows[0]["code"] == "SJC"
+    assert rows[0]["buy_price"] == 134500000.0
+    assert rows[0]["source"] == "sjc"
+
+
+def test_gold_provider_falls_back_to_mihong_scaled(monkeypatch, storage):
+    """SJC down → mihong takes over, VND/chỉ scaled ×10 to VND/lượng."""
+    _patch_gold(monkeypatch, DeadSjc)
+    provider = GoldAssetProvider(storage)
+    assert provider.crawl(CrawlKind.QUOTES, ["SJC"]) == 1
+    rows = provider.read(CrawlKind.QUOTES, ["SJC"])
+    assert rows[0]["buy_price"] == 136571420.0  # 13,657,142 × 10
+    assert rows[0]["sell_price"] == 139142850.0
+    assert rows[0]["source"] == "mihong"
+
+
+def test_gold_provider_no_token_required(monkeypatch, storage):
+    """Regression: gold used to be skipped without an XSRF token."""
+    _patch_gold(monkeypatch, DeadSjc)
+    assert (
+        GoldAssetProvider(storage, xsrf_token="").crawl(CrawlKind.QUOTES, ["SJC"]) == 1
+    )
+
+
+def test_gold_provider_skips_unsupported_and_kinds(monkeypatch, storage):
+    """DOJI/PNJ have no feed on either source; NEWS is not a gold kind."""
+    _patch_gold(monkeypatch, DeadSjc)
+    provider = GoldAssetProvider(storage)
+    assert provider.crawl(CrawlKind.QUOTES, ["DOJI", "PNJ"]) == 0
     assert provider.crawl(CrawlKind.NEWS, ["SJC"]) == 0
-    assert GoldAssetProvider(storage, xsrf_token="").crawl(CrawlKind.QUOTES, ["SJC"]) == 0
+    assert provider.crawl(CrawlKind.QUOTES, []) == 0
+
+
+def test_gold_rows_record_their_price_unit(monkeypatch, storage):
+    """The board mixes VND/lượng and USD/oz — each row must say which."""
+    _patch_gold(monkeypatch, LiveSjc)
+    provider = GoldAssetProvider(storage)
+    assert provider.crawl(CrawlKind.QUOTES, ["SJC", "XAU"]) == 2
+
+    by_code = {r["code"]: r for r in provider.read(CrawlKind.QUOTES, ["SJC", "XAU"])}
+    assert by_code["SJC"]["unit"] == "VND/luong"
+    assert by_code["XAU"]["unit"] == "USD/oz"
+
+
+def test_gold_provider_crawls_world_gold_unscaled(monkeypatch, storage):
+    """XAU comes from Yahoo in USD/oz — the ×10 chỉ→lượng scaling must not apply."""
+    _patch_gold(monkeypatch, DeadSjc)
+    provider = GoldAssetProvider(storage)
+    assert provider.crawl(CrawlKind.QUOTES, ["XAU"]) == 1
+
+    row = provider.read(CrawlKind.QUOTES, ["XAU"])[0]
+    assert row["source"] == "yahoo"
+    # World gold has no bid/ask on the chart API, so both sides carry the close.
+    assert float(row["buy_price"]) == pytest.approx(4037.6999)
+    assert float(row["sell_price"]) == pytest.approx(4037.6999)
+
+
+def test_gold_provider_survives_yahoo_outage(monkeypatch, storage):
+    """A dead Yahoo drops XAU but must not take the domestic codes down."""
+    _patch_gold(monkeypatch, LiveSjc, yahoo_cls=DeadYahoo)
+    provider = GoldAssetProvider(storage)
+    assert provider.crawl(CrawlKind.QUOTES, ["SJC", "XAU"]) == 1
+    assert [r["code"] for r in provider.read(CrawlKind.QUOTES, ["SJC", "XAU"])] == [
+        "SJC"
+    ]
+
+
+def test_gold_catalog_flags_sourceless_codes_disabled(monkeypatch, storage):
+    """DOJI/PNJ stay listed so the UI can show them greyed out, not hidden."""
+    _patch_gold(monkeypatch, LiveSjc)
+    catalog = {e["code"]: e for e in GoldAssetProvider(storage).fetch_catalog()}
+
+    assert set(catalog) == {"SJC", "999", "XAU", "DOJI", "PNJ"}
+    for code in ("SJC", "999", "XAU"):
+        assert catalog[code]["meta_json"]["enabled"] is True
+        assert "disabled" not in catalog[code]["tags"]
+    for code in ("DOJI", "PNJ"):
+        assert catalog[code]["meta_json"]["enabled"] is False
+        assert catalog[code]["tags"] == ["disabled"]
+        assert catalog[code]["meta_json"]["disabled_reason"]
+
+    assert catalog["XAU"]["meta_json"]["unit"] == "USD/oz"
+    assert catalog["SJC"]["meta_json"]["unit"] == "VND/luong"
+
+    # is_crawlable is the flag the asset picker reads to grey a row out.
+    assert catalog["SJC"]["is_crawlable"] is True
+    assert catalog["DOJI"]["is_crawlable"] is False
 
 
 def test_build_providers_registry(storage):
@@ -229,8 +384,12 @@ async def test_build_scheduler_registers_jobs(db, storage):
     )
     ids = {j.id for j in scheduler.get_jobs()}
     assert {
-        "crawl_quotes", "crawl_news",
-        "crawl_ratios", "crawl_events", "crawl_ohlcv", "sync_catalog",
+        "crawl_quotes",
+        "crawl_news",
+        "crawl_ratios",
+        "crawl_events",
+        "crawl_ohlcv",
+        "sync_catalog",
     } <= ids
     # foreign_trade is intentionally not scheduled (unsupported by VCI in 4.x)
     assert "crawl_foreign_trade" not in ids
@@ -251,13 +410,24 @@ async def test_sync_catalog_upserts(db, storage):
 async def test_crawl_ohlcv(monkeypatch, db, storage):
     def fake_sync(self, start, end, code):
         return SyncDataResponse(
-            success=True, data_source="vnstock_ohlcv", code=code,
-            start_date="", end_date="",
-            data=[{
-                "symbol": code, "time": "2026-01-01 00:00:00", "interval": "1D",
-                "open": 1.0, "high": 2.0, "low": 0.5, "close": 1.5,
-                "volume": 1000.0, "source": "VCI",
-            }],
+            success=True,
+            data_source="vnstock_ohlcv",
+            code=code,
+            start_date="",
+            end_date="",
+            data=[
+                {
+                    "symbol": code,
+                    "time": "2026-01-01 00:00:00",
+                    "interval": "1D",
+                    "open": 1.0,
+                    "high": 2.0,
+                    "low": 0.5,
+                    "close": 1.5,
+                    "volume": 1000.0,
+                    "source": "VCI",
+                }
+            ],
             timestamp="",
         )
 
@@ -277,13 +447,12 @@ def test_init_vnstock_auth_with_key(monkeypatch):
     fake.get_tier_info = lambda: {"tier": "paid"}
     monkeypatch.setitem(sys.modules, "vnai", fake)
     register_settings(DataSettings(vnstock_api_key="secret-key"))
+    import kactus_data.sources.stock.auth as auth
     from kactus_data.sources.stock.auth import (
         _safe_tier_name,
         init_vnstock_auth,
         vnstock_max_concurrency,
     )
-
-    import kactus_data.sources.stock.auth as auth
 
     try:
         assert init_vnstock_auth() is True
@@ -336,9 +505,8 @@ def test_init_vnstock_auth_no_key():
 
 # ------------------------------------------------------------------- CLI
 def test_cli_crawl_and_sync(monkeypatch):
-    from typer.testing import CliRunner
-
     import kactus_data.cli.portfolio as pcli
+    from typer.testing import CliRunner
 
     async def fake_run_crawl(**kwargs):
         return [123]

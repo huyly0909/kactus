@@ -10,7 +10,13 @@ from __future__ import annotations
 import datetime
 
 from kactus_common.portfolio.const import AssetType
-from kactus_common.schemas import BaseSchema, FancyFloat, FancyInt, OpaqueDict
+from kactus_common.schemas import (
+    BaseSchema,
+    FancyDecimal,
+    FancyFloat,
+    FancyInt,
+    OpaqueDict,
+)
 
 
 class MarketQuoteSchema(BaseSchema):
@@ -18,12 +24,14 @@ class MarketQuoteSchema(BaseSchema):
 
     asset_type: AssetType
     code: str
-    match_price: FancyFloat | None = None
-    ref_price: FancyFloat | None = None
-    ceiling: FancyFloat | None = None
-    floor: FancyFloat | None = None
-    buy_price: FancyFloat | None = None
-    sell_price: FancyFloat | None = None
+    match_price: FancyDecimal | None = None
+    ref_price: FancyDecimal | None = None
+    ceiling: FancyDecimal | None = None
+    floor: FancyDecimal | None = None
+    buy_price: FancyDecimal | None = None
+    sell_price: FancyDecimal | None = None
+    #: Price unit for gold rows (`VND/luong` vs `USD/oz`); None for stocks.
+    unit: str | None = None
     volume: FancyFloat | None = None
     source: str | None = None
     crawled_at: datetime.datetime | None = None

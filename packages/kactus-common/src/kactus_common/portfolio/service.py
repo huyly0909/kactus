@@ -63,9 +63,7 @@ class PortfolioService:
         return portfolio
 
     @staticmethod
-    async def list_for_owner(
-        session: AsyncSession, owner_id: int
-    ) -> list[Portfolio]:
+    async def list_for_owner(session: AsyncSession, owner_id: int) -> list[Portfolio]:
         """All non-deleted portfolios owned by ``owner_id``."""
         return await Portfolio.all(session, owner_id=owner_id)
 
@@ -259,6 +257,10 @@ class SupportedAssetService:
                 session.add(row)
             else:
                 row.name = entry.get("name", row.name)
+                if "is_crawlable" in entry:
+                    # A code can lose (or regain) its feed — e.g. gold codes with
+                    # no working source are kept listed but flagged uncrawlable.
+                    row.is_crawlable = entry["is_crawlable"]
                 if "tags" in entry:
                     row.tags = entry["tags"] or []
                 if "meta_json" in entry:
@@ -337,8 +339,6 @@ class CrawlRunService:
         return (await session.scalars(stmt)).first() is not None
 
     @staticmethod
-    async def list_recent(
-        session: AsyncSession, *, limit: int = 50
-    ) -> list[CrawlRun]:
+    async def list_recent(session: AsyncSession, *, limit: int = 50) -> list[CrawlRun]:
         stmt = select(CrawlRun).order_by(CrawlRun.create_time.desc()).limit(limit)
         return list((await session.scalars(stmt)).all())

@@ -6,9 +6,18 @@ cli = AsyncTyper(help="Kactus Data — ETL pipelines & backups")
 
 
 def _add_subcommands():
-    from kactus_data.cli import backup, sync, stock, company, finance, portfolio  # noqa: F401
+    from kactus_data.cli import (  # noqa: F401
+        backup,
+        company,
+        finance,
+        portfolio,
+        schema,
+        stock,
+        sync,
+    )
 
     cli.add_typer(backup.cli, name="backup", help="DuckDB backup / export")
+    cli.add_typer(schema.cli, name="schema", help="DuckDB schema drift check / rebuild")
     cli.add_typer(stock.cli, name="stock", help="Stock price data (OHLCV, listings)")
     cli.add_typer(company.cli, name="company", help="Company overview data")
     cli.add_typer(finance.cli, name="finance", help="Financial statements & ratios")
@@ -16,4 +25,3 @@ def _add_subcommands():
 
 
 _add_subcommands()
-

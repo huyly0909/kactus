@@ -80,7 +80,7 @@
 
 ### Frontend — `kactus-bloom`
 
-#### 1. Infrastructure (🔄 Đang migration)
+#### 1. Infrastructure (✅ migration hoàn tất)
 
 **Đã hoàn thành:**
 - [x] **Monorepo structure** — pnpm workspaces + Turborepo (2 packages: bloom-app, bloom-ui)
@@ -90,16 +90,17 @@
 - [x] **Linting & formatting** — ESLint 9 + Prettier + Husky
 - [x] **Docker deployment** — Docker Compose cho dev/stag/prod
 
-**Migration Mantine → Tailwind + shadcn (đang làm):**
+**Migration Mantine → Tailwind + shadcn (✅ xong — `grep -r @mantine packages/` = 0 hit):**
 - [x] **Tailwind CSS v4** — Installed via `@tailwindcss/vite` plugin (không dùng PostCSS)
 - [x] **shadcn/ui configuration** — `components.json` + path aliases
 - [x] **Design system CSS** — `index.css` với oklch color system, dark mode default, fintech tokens (gain/loss/warning)
-- [x] **shadcn primitives** — Button, Input, Label, Card, Badge, Skeleton
+- [x] **shadcn primitives** — Button, Input, Label, Card, Badge, Skeleton, **Dialog, Select, Form, Table, DataTable, ConfirmDialog**
 - [x] **i18next** — Dual language (vi + en), `locales/{vi,en}.json`
 - [x] **Sonner** — Toast notifications (thay Mantine Notifications)
-- [x] **lib/ utilities** — `cn()`, `config.ts`, `locale-format.ts`, `module-core.ts`
-- [ ] ~~Mantine components~~ — **Removed** (migration in progress)
-- [ ] ~~PostCSS Mantine preset~~ — **Removed** (`postcss.config.cjs` deleted)
+- [x] **lib/ utilities** — `cn()`, `config.ts`, `locale-format.ts`, `module-core.ts`, `format.ts`
+- [x] **Code splitting** — `React.lazy` mỗi route + `manualChunks` (react/query/radix/i18n/chart vendor)
+- [x] ~~Mantine components~~ — **Removed** (bloom-ui đã port sang Tailwind/shadcn)
+- [x] ~~PostCSS Mantine preset~~ — **Removed** (`postcss.config.cjs` deleted)
 
 #### 2. Authentication UI
 - [x] **Login page** — Email + password form (**rewritten as shadcn Card + Input + Button**)
@@ -114,16 +115,17 @@
 - [x] **Project store** — Zustand + cookie persistence (`kactus_project_id`)
 - [x] **Project service** — CRUD operations + permission queries
 
-#### 4. Admin Panel (legacy Mantine — cần rewrite)
-- [x] **Admin guard** — Chỉ superusers truy cập
-- [x] **Admin layout** — Sidebar navigation riêng
-- [x] **User management page** — List, create, deactivate, reset password, toggle role
-- [x] **Project management page** — List tất cả projects
-- [x] **Authorization page** — Xem role-permission mappings
+#### 4. Admin Panel ✅ (shadcn — `modules/admin/`)
+- [x] **Admin guard** — `AdminGuard` layout route, chỉ superusers (backend vẫn enforce riêng)
+- [x] **Admin nav** — Nhóm "Quản trị" trong sidebar, chỉ hiện với superuser
+- [x] **User management page** — DataTable + create dialog (Form+zod), toggle role / reset password / deactivate qua `ConfirmDialog`; mật khẩu mới hiện 1 lần + copy
+- [x] **Project management page** — List tất cả projects (read-only DataTable)
+- [x] **Authorization page** — Role → permission mapping, badge theo act
 
-#### 5. Layout (🔄 migrating)
-- [x] **DashboardLayout** — Collapsible sidebar, user avatar, module nav, responsive (**new, shadcn/Tailwind**)
-- [ ] **Legacy AppLayout** — (cũ, Mantine-based — sẽ bị thay thế bởi DashboardLayout)
+#### 5. Layout ✅
+- [x] **DashboardLayout** — Collapsible sidebar, user avatar, module nav, responsive, `Suspense` cho lazy routes (shadcn/Tailwind)
+- [x] **Dashboard home** — `modules/core/dashboard/` — stat cards (portfolios/channels/active) + recent portfolios + quick actions
+- [x] **bloom-ui `AppLayout`** — đã port sang Tailwind/shadcn (không còn Mantine)
 
 #### 6. Shared Hooks
 - [x] **useAuth** — Login/logout/session management
@@ -164,17 +166,27 @@
 - [ ] Live smoke (Telegram + Zalo PA thật)
 - [ ] Event-driven auto-fire (deferred — `trigger=EVENT` đã luồn sẵn qua log)
 
+#### Market feature (gold / stock / finance reads) ✅
+
+REST API đọc thẳng các bảng OLAP (DuckDB) do ETL kactus-data ghi — không có ETL mới, không có bảng mới. 366 backend tests pass (12 test riêng cho market); frontend `tsc -b` + `vite build` + vitest xanh. Chưa live-smoke với DuckDB có dữ liệu thật.
+
+- [x] **kactus-common/data** — `DatabaseClient.execute(sql, params)` + `DuckDBStorage.query(sql, params)` nhận positional params (hết nội suy chuỗi cho giá trị từ client)
+- [x] **kactus-fin** — `olap.py` (một `DuckDBStorage` dùng chung cho cả process) + `market/` (`const`/`schema`/`service`/`api`/`app`), `KactusApp(name="market", session_routes=[router])`
+- [x] **Endpoints** — `GET /api/market/gold`, `/stocks` (search), `/stocks/quotes`, `/stocks/{symbol}`, `/stocks/{symbol}/ohlcv`, `/stocks/{symbol}/news`, `/stocks/{symbol}/finance`
+- [x] **Đọc blocking → `asyncio.to_thread`**, limit bị chặn trần (`MAX_LIMIT=2000`), bảng chưa crawl = list rỗng chứ không 500
+- [x] **kactus-bloom** — `modules/market/` (Gold board, Stock list + detail có chart recharts + news, Finance pivot theo kỳ) + `useMarketQuery` + i18n vi+en + route/sidebar
+- [ ] Live smoke sau khi chạy crawl thật (bảng OHLCV/finance hiện phụ thuộc lịch ETL)
+- [ ] Realtime cho market pages (hiện chỉ portfolio có SSE)
+
 ## 🚧 Features đang làm (In Progress)
 
 | Area | Feature | Trạng thái | Ghi chú |
 |------|---------|-----------|---------|
-| Frontend | **Mantine → Tailwind + shadcn migration** | 🚧 Phase 0 | shadcn primitives + design system done, rewriting pages |
 | Frontend | **Module-based architecture** | 🚧 Foundation | `defineAppModule` + `module-core.ts` created, modules skeleton pending |
 | Frontend | **i18n (vi + en)** | 🚧 Setup done | `i18n.ts` + locale files created, not yet wired vào tất cả components |
 | Backend | **Event system integration** | 🚧 Framework done | Handlers chưa implement |
 | Backend | **Background services** | 🚧 Khai báo chưa implement | `background_services` field có `# TODO: here` |
-| Frontend | **Dashboard real data** | 🚧 UI done, data hardcoded | Cần connect API |
-| Frontend | **WebSocket integration** | 🚧 Hook ready | Chưa có backend WS endpoint |
+| Frontend | **WebSocket integration** | 🚧 Hook ready | Chưa có backend WS endpoint (portfolio dùng SSE) |
 | Backend | **Gateway features** | 🚧 Skeleton | Chỉ có health check |
 | Backend | **Coin data source** | 🚧 Module tạo rồi | Chưa implement (COIN provider defer trong portfolio) |
 
@@ -188,23 +200,23 @@
 |---|---------|-------|--------|
 | 1 | **Form System** | `Form` + `FieldRow` + `useAppForm` (explicit zod, adapted from Builtiful) | Skeleton |
 | 2 | **Entity Page** | `EntityPage` 3-region layout (header/body/footer) | Skeleton |
-| 3 | **Data View** | Schema-driven table (`ViewSchema` + TanStack Table + toolbar/cells) | Skeleton |
-| 4 | **ConfirmDialog** | shadcn Dialog with bullet-point confirmations | Skeleton |
+| 3 | **Data View** | Schema-driven table — `components/ui/data-table.tsx` (TanStack Table + search + pagination) | ✅ Done |
+| 4 | **ConfirmDialog** | `components/ui/confirm-dialog.tsx` (shadcn Dialog, destructive variant) | ✅ Done |
 | 5 | **Error Bridge** | `applyKactusErrors()` — map Axios errors → RHF field errors | Skeleton |
 | 6 | **Module Registry** | `defineAppModule` + auto-discovery via `import.meta.glob` | Skeleton |
-| 7 | **Admin pages rewrite** | Rewrite User/Project/Auth pages from Mantine → shadcn | TODO |
-| 8 | **Dashboard rewrite** | Rewrite Dashboard page from Mantine → shadcn | TODO |
+| 7 | **Admin pages** | User/Project/Authorization pages (shadcn, `modules/admin/`) | ✅ Done |
+| 8 | **Dashboard** | Dashboard home với dữ liệu thật (portfolios + channels) | ✅ Done |
 
 ### High Priority — Core Business Logic
 
-| # | Area | Feature | Mô tả |
-|---|------|---------|-------|
-| 9 | Backend | **Gold price API** | Expose giá vàng từ DuckDB qua REST API |
-| 10 | Backend | **Stock data API** | Expose dữ liệu chứng khoán (OHLCV, listing) qua REST API |
-| 11 | Backend | **Financial report API** | Expose báo cáo tài chính qua REST API |
-| 12 | Frontend | **Gold dashboard** | UI hiển thị giá vàng real-time, charts lịch sử |
-| 13 | Frontend | **Stock dashboard** | UI hiển thị dữ liệu chứng khoán, candlestick charts |
-| 14 | Frontend | **Financial analysis** | UI phân tích báo cáo tài chính |
+| # | Area | Feature | Mô tả | Status |
+|---|------|---------|-------|--------|
+| 9 | Backend | **Gold price API** | `GET /api/market/gold` — bảng giá vàng từ DuckDB | ✅ Done |
+| 10 | Backend | **Stock data API** | `/api/market/stocks{,/quotes,/{symbol},/ohlcv,/news}` | ✅ Done |
+| 11 | Backend | **Financial report API** | `GET /api/market/stocks/{symbol}/finance` | ✅ Done |
+| 12 | Frontend | **Gold dashboard** | `GoldPricesPage` — bảng giá + spread + nguồn/thời điểm | ✅ Done |
+| 13 | Frontend | **Stock dashboard** | `StockMarketPage` + `StockDetailPage` (chart lịch sử giá + news) | ✅ Done |
+| 14 | Frontend | **Financial analysis** | `FinancePage` — pivot chỉ tiêu × kỳ, chọn loại báo cáo/kỳ | ✅ Done |
 
 ### Medium Priority — Platform Features
 
@@ -249,59 +261,36 @@
 - ❌ Scheduled sync chưa có
 - ❌ Sync history/retry chưa có
 
-### `kactus-fin` — ✅ Auth/Admin Done, ❌ Business APIs Missing
+### `kactus-fin` — ✅ Auth/Admin/Portfolio/Notification/Market Done
 - Auth module hoàn chỉnh
 - Admin module hoàn chỉnh
 - Project CRUD hoàn chỉnh
 - Permission system hoàn chỉnh
-- ❌ Chưa có API expose dữ liệu tài chính từ DuckDB
-- ❌ Chưa có WebSocket endpoints
+- Portfolio + Notification hoàn chỉnh
+- **Market module** — expose gold/stock/finance từ DuckDB qua `/api/market/*` ✅
+- ❌ Chưa có WebSocket endpoints (portfolio dùng SSE)
 
 ### `kactus-fin-gateway` — 🚧 Skeleton Only
 - Server chạy được
 - Chỉ có health check endpoint
 - ❌ Chưa có public API routes
 
-### `bloom-ui` — 🔄 Legacy (Mantine) → Being replaced
-- **Status**: Đang migration sang bloom-app (Tailwind + shadcn)
-- Component library (AppLayout, ChartCard, DataTable, ChatBox) — **legacy Mantine code**
+### `bloom-ui` — ✅ Mantine-free shared lib (chưa được bloom-app dùng)
+- Component library (AppLayout, ChartCard, DataTable, ChatBox) — **đã port sang Tailwind/shadcn**
+- `useNotification` → sonner; `theme/index.ts` → token object thuần (không còn Mantine)
 - Hooks, services, stores — **migrated to bloom-app** (`src/hooks/`, `src/services/`, `src/store/`)
-- Theme system — **replaced** by Tailwind CSS variables + `index.css`
+- ⚠️ bloom-app hiện vẫn giữ bản shadcn primitives riêng, **chưa** consume `@kactus-bloom/ui` (hợp nhất là việc sau)
 
-### `bloom-app` — 🚧 Migrating to Builtiful Architecture
-- **New stack**: Tailwind v4 + shadcn/ui + i18next + Sonner
+### `bloom-app` — ✅ shadcn/Tailwind, feature-complete cho các module hiện có
+- **Stack**: Tailwind v4 + shadcn/ui + i18next + Sonner + TanStack Query/Table + recharts
 - **Design system**: oklch colors, dark mode default, fintech tokens
-- **shadcn primitives**: Button, Input, Label, Card, Badge, Skeleton ✅
-- **Auth**: Login page rewritten (shadcn), auth guards working ✅
-- **Layout**: DashboardLayout rewritten (Tailwind, collapsible sidebar) ✅
+- **shadcn primitives**: button, input, label, card, badge, skeleton, dialog, select, form, table, data-table, confirm-dialog ✅
+- **Auth**: Login page (shadcn), auth guards working ✅
+- **Layout**: DashboardLayout (collapsible sidebar, Suspense cho lazy routes) ✅
+- **Pages**: Dashboard, Portfolio, Notification, Admin (users/projects/authorization), Market (gold/stocks/finance) ✅
+- **Perf**: route-level `React.lazy` + vendor `manualChunks` ✅
 - **i18n**: vi + en locale files, i18next configured ✅
 - **Modules**: `defineAppModule` + `module-core.ts` ready ✅
-- ❌ Admin pages still use legacy Mantine (need rewrite)
-- ❌ Dashboard still uses legacy Mantine (need rewrite)
-- ❌ Form system (useAppForm, FieldRow) — skeleton only
+- ❌ Form system (useAppForm, FieldRow) — skeleton only (RHF+zod dùng trực tiếp qua shadcn `Form`)
 - ❌ EntityPage pattern — skeleton only
-- ❌ DataView pattern — skeleton only
-- ❌ Gold/Stock/Finance module pages — not started (waiting for backend APIs + data)
-
-### Migration Progress (Mantine → Tailwind + shadcn)
-
-```
-bloom-app src/ file status:
-────────────────────────────────
-✅ NEW (Tailwind/shadcn)         ❌ LEGACY (Mantine, needs rewrite)
-─────────────────────────────── ────────────────────────────────────
-components/ui/button.tsx         pages/Admin/*.tsx
-components/ui/input.tsx          pages/Dashboard/index.tsx
-components/ui/label.tsx          pages/Login/index.tsx (old)
-components/ui/card.tsx           pages/ProjectSelect/index.tsx
-components/ui/badge.tsx          pages/NotFound/index.tsx
-components/ui/skeleton.tsx       pages/Welcome/index.tsx
-layouts/DashboardLayout.tsx      router/index.tsx (old router)
-modules/core/auth/LoginPage.tsx  router/guards.tsx
-lib/utils.ts
-lib/config.ts
-lib/locale-format.ts
-lib/module-core.ts
-i18n.ts
-locales/{vi,en}.json
-```
+- ❌ Test coverage mỏng (data-table + format helpers)

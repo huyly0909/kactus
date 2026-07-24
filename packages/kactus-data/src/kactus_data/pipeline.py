@@ -5,13 +5,11 @@ Designed to be called from Airflow DAGs, Celery tasks, or the CLI.
 
 from __future__ import annotations
 
-import logging
 import time
 from datetime import date
 from typing import Protocol
 
 import pandas as pd
-
 from kactus_common.database.duckdb.consts import UpdateStrategy
 from kactus_common.database.duckdb.schema import Table
 from kactus_data.schemas import SyncDataResponse, SyncResult
@@ -144,11 +142,12 @@ class SyncPipeline:
                 success=True,
             )
 
-        # Reorder DataFrame columns to match the table schema
-        # (INSERT uses positional VALUES — order must match the table definition)
+        # Align DataFrame columns to the table schema.  The INSERT is positional
+        # (``SELECT *`` from the registered view), so a missing column must be
+        # filled with NULL rather than dropped — dropping it shifts every later
+        # value into the wrong column, or fails the arity check outright.
         table_col_names = [col.name for col in table.columns]
-        available_cols = [c for c in table_col_names if c in df.columns]
-        df = df[available_cols]
+        df = df.reindex(columns=table_col_names)
 
         rows_stored = self.storage.store(table, df, strategy)
         elapsed = (time.perf_counter() - t0) * 1000

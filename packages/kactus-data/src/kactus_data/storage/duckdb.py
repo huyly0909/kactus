@@ -7,11 +7,9 @@ ETL-friendly methods for storing, querying, and exporting data.
 from __future__ import annotations
 
 import os
-import logging
 from datetime import datetime
 
 import pandas as pd
-
 from kactus_common.database.duckdb.client import DatabaseClient
 from kactus_common.database.duckdb.consts import UpdateStrategy
 from kactus_common.database.duckdb.schema import Table
@@ -71,12 +69,57 @@ class DuckDBStorage:
         return len(data)
 
     # ------------------------------------------------------------------
+    # Schema
+    # ------------------------------------------------------------------
+
+    def schema_drift(self, table: Table) -> list[str]:
+        """Describe how the on-disk table differs from its definition.
+
+        Tables are created with ``CREATE TABLE IF NOT EXISTS``, so a definition
+        change (a new column, FLOAT → DECIMAL) never reaches a database that
+        already has the table. Since the INSERT is positional, drift is not
+        cosmetic: it misaligns values or fails outright. Returns an empty list
+        when the table matches or does not exist yet.
+        """
+        if not self._client.table_exists(table.name):
+            return []
+
+        actual = self._client.get_column_types(table.name)
+        expected = {c.name: c.sql_type for c in table.columns}
+        # DESCRIBE reports canonical names (VARCHAR, INTEGER); our definitions
+        # use aliases (STRING, INT). Normalise before comparing.
+        canonical = self._client.canonical_types(list(expected.values()))
+        drift: list[str] = []
+
+        for name, want in expected.items():
+            have = actual.get(name)
+            if have is None:
+                drift.append(f"missing column {name} ({want})")
+            elif have != canonical[want]:
+                drift.append(f"{name}: {have} → {want}")
+
+        drift.extend(
+            f"extra column {n} ({t})" for n, t in actual.items() if n not in expected
+        )
+        return drift
+
+    def recreate_table(self, table: Table) -> None:
+        """Drop the table and rebuild it from its definition. Destructive."""
+        self._client.drop_table(table.name)
+        self._client.create_table(table.name, table.columns)
+        logger.warning("Recreated table {} — previous rows discarded", table.name)
+
+    # ------------------------------------------------------------------
     # Query
     # ------------------------------------------------------------------
 
-    def query(self, sql: str) -> pd.DataFrame:
-        """Execute a SQL query and return results as a DataFrame."""
-        result = self._client.execute(sql)
+    def query(self, sql: str, params: list | tuple | None = None) -> pd.DataFrame:
+        """Execute a SQL query and return results as a DataFrame.
+
+        ``params`` binds DuckDB positional placeholders (``?``); use it for any
+        caller-supplied value instead of interpolating into *sql*.
+        """
+        result = self._client.execute(sql, params)
         if result and hasattr(result, "df"):
             return result.df()
         return pd.DataFrame()
@@ -153,4 +196,3 @@ class DuckDBStorage:
 
     def close(self) -> None:
         """No-op — connections are managed per-operation via context manager."""
-        pass

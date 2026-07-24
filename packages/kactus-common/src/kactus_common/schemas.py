@@ -1,5 +1,6 @@
 """Shared Pydantic schemas and serialisation helpers."""
 
+from decimal import Decimal
 from typing import Annotated, Any, Generic, TypeVar, get_args
 
 from pydantic import (
@@ -19,6 +20,25 @@ FancyInt = Annotated[
 # FancyFloat serializes float → str in JSON for precision
 FancyFloat = Annotated[
     float, PlainSerializer(lambda v: str(v), return_type=str, when_used="json")
+]
+
+
+def decimal_to_str(value: Decimal) -> str:
+    """Render a Decimal in plain notation, without padding or exponents.
+
+    DuckDB hands back the column's full scale (``DECIMAL(24,4)`` →
+    ``121000000.0000``); ``normalize()`` drops the padding but switches to
+    scientific notation for round numbers (``2E+6``), so ``format(..., "f")``
+    forces it back to plain digits.
+    """
+    return format(value.normalize(), "f")
+
+
+# FancyDecimal is FancyFloat's exact-arithmetic counterpart — use it for money.
+# Binary floats cannot represent VND prices (~1.4e8 for gold) exactly, so money
+# stays a Decimal end to end: DECIMAL column → Decimal in Python → JSON string.
+FancyDecimal = Annotated[
+    Decimal, PlainSerializer(decimal_to_str, return_type=str, when_used="json")
 ]
 
 # OpaqueDict: a `dict[str, Any]` whose generated JSON schema uses

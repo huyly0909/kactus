@@ -18,12 +18,10 @@ kactus-data is NOT called in that scenario.
 """
 
 from functools import lru_cache
-
-from pydantic_settings import SettingsConfigDict
-
 from typing import ClassVar
 
 from kactus_common.config import CommonSettings, register_settings
+from pydantic_settings import SettingsConfigDict
 
 
 class DataSettings(CommonSettings):
@@ -37,7 +35,9 @@ class DataSettings(CommonSettings):
     (e.g. kactus-fin), that package's ``model_config`` takes precedence.
     """
 
-    INSTALLED_PACKAGES: ClassVar[list[str]] = CommonSettings.INSTALLED_PACKAGES + ["kactus_data"]
+    INSTALLED_PACKAGES: ClassVar[list[str]] = CommonSettings.INSTALLED_PACKAGES + [
+        "kactus_data"
+    ]
 
     data_source: str = "KBS"
 
@@ -47,8 +47,10 @@ class DataSettings(CommonSettings):
     # Empty → guest tier (~20 req/min).
     vnstock_api_key: str = ""
 
-    # mihong.vn XSRF token for gold prices (``KACTUS_MIHONG_XSRF_TOKEN``).
-    # Empty → gold crawl is skipped (logged, not fatal).
+    # Legacy mihong.vn XSRF token (``KACTUS_MIHONG_XSRF_TOKEN``).  No longer
+    # required: the current api.mihong.vn endpoint is unauthenticated and the
+    # gold crawl prefers sjc.com.vn anyway.  Kept so existing .env files and the
+    # kactus-fin wiring keep loading; safe to leave empty.
     mihong_xsrf_token: str = ""
 
     model_config = SettingsConfigDict(

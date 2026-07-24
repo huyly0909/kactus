@@ -20,8 +20,14 @@ from kactus_common.portfolio.const import AssetType, CrawlKind
 from kactus_data.sources.gold.mihong import CHI_TO_LUONG as MIHONG_CHI_TO_LUONG
 from kactus_data.sources.gold.mihong import SUPPORTED_CODES as MIHONG_CODES
 from kactus_data.sources.gold.mihong import MihongGoldSource
-from kactus_data.sources.gold.portfolio_tables import GOLD_PRICE_BOARD_TABLE
+from kactus_data.sources.gold.portfolio_tables import (
+    GOLD_PRICE_BOARD_TABLE,
+    UNIT_USD_PER_OZ,
+    UNIT_VND_PER_LUONG,
+)
 from kactus_data.sources.gold.sjc import SjcGoldSource
+from kactus_data.sources.gold.yahoo import CODE as XAU_CODE
+from kactus_data.sources.gold.yahoo import YahooGoldSource
 from kactus_data.sources.stock.market import StockMarketSource, _to_table_df
 from kactus_data.sources.stock.portfolio_tables import (
     STOCK_EVENTS_TABLE,
@@ -125,50 +131,162 @@ class StockAssetProvider(AssetProvider):
 
 
 class GoldAssetProvider(AssetProvider):
-    """GOLD provider — mihong.vn quotes. Seeded catalog (SJC, 999, …)."""
+    """GOLD provider — SJC-official quotes with a mihong.vn fallback.
+
+    sjc.com.vn is the issuer of the SJC bar reference price, so it is tried
+    first; mihong covers the same two codes and takes over whenever the SJC
+    board is unreachable (it sits behind Cloudflare).  Every price stored in
+    ``gold_price_board`` is **VND per lượng** — mihong quotes per chỉ and is
+    scaled on the way in, so rows stay comparable across sources.
+
+    DOJI/PNJ remain in the seeded catalog but have no free daily feed wired yet,
+    so they are skipped rather than crawled.
+    """
 
     asset_type = AssetType.GOLD
-    _SEED = ["SJC", "999", "DOJI", "PNJ"]
+
+    _NAMES = {
+        "SJC": "Vàng miếng SJC",
+        "999": "Vàng nhẫn 99,99%",
+        XAU_CODE: "Vàng thế giới (XAU/USD)",
+        "DOJI": "DOJI",
+        "PNJ": "PNJ",
+    }
+    #: Codes with a working daily feed.  DOJI/PNJ stay in the catalog so the UI
+    #: can list them, but are flagged disabled until a source is wired.
+    _ENABLED = frozenset({"SJC", "999", XAU_CODE})
+    _SEED = ["SJC", "999", XAU_CODE, "DOJI", "PNJ"]
 
     def __init__(self, storage: DuckDBStorage, xsrf_token: str | None = None) -> None:
         self.storage = storage
+        # Retained for backwards compatibility: the current mihong endpoint is
+        # unauthenticated, so gold no longer needs a token to crawl.
         self.xsrf_token = xsrf_token or ""
 
     def supported_kinds(self) -> set[CrawlKind]:
         return {CrawlKind.QUOTES}
 
     def fetch_catalog(self) -> list[dict]:
-        return [{"code": c, "name": c, "tags": [], "meta_json": {}} for c in self._SEED]
+        entries = []
+        for code in self._SEED:
+            enabled = code in self._ENABLED
+            meta = {
+                "enabled": enabled,
+                "unit": UNIT_USD_PER_OZ if code == XAU_CODE else UNIT_VND_PER_LUONG,
+            }
+            if not enabled:
+                meta["disabled_reason"] = "No free daily price feed wired yet"
+            entries.append(
+                {
+                    "code": code,
+                    "name": self._NAMES.get(code, code),
+                    # Listed either way so the UI can show it greyed out rather
+                    # than silently hiding a gold type users expect to see.
+                    "is_crawlable": enabled,
+                    "tags": [] if enabled else ["disabled"],
+                    "meta_json": meta,
+                }
+            )
+        return entries
 
     def crawl(self, kind: CrawlKind, codes: list[str]) -> int:
         if kind != CrawlKind.QUOTES or not codes:
             return 0
-        if not self.xsrf_token:
-            logger.warning("Gold crawl skipped — no mihong XSRF token configured")
-            return 0
-        source = MihongGoldSource(self.xsrf_token)
+
+        wanted = [str(c).upper() for c in codes]
         today = date.today()
         now = datetime.now()
+
+        # Only reach for the domestic sources if a domestic code was asked for;
+        # one SJC request prices every code SJC publishes.
+        domestic = [c for c in wanted if c != XAU_CODE]
+        sjc = SjcGoldSource()
+        sjc_board = sjc.fetch_board() if domestic else []
+        mihong = MihongGoldSource()
+
         rows: list[dict] = []
-        for code in codes:
-            resp = source.sync(today, today, code)
-            if not resp.success or not resp.data:
+        for code in wanted:
+            if code == XAU_CODE:
+                row = self._yahoo_row(YahooGoldSource(), now)
+            else:
+                row = self._sjc_row(sjc, code, sjc_board, now) or self._mihong_row(
+                    mihong, code, today, now
+                )
+            if row is None:
+                logger.debug("No gold quote available for {code}", code=code)
                 continue
-            point = self._latest_point(resp.data)
-            rows.append(
-                {
-                    "code": str(code).upper(),
-                    "buy_price": _safe_float(_dig(point, "buyPrice", "buy", "buy_price")),
-                    "sell_price": _safe_float(_dig(point, "sellPrice", "sell", "sell_price")),
-                    "source": "mihong",
-                    "crawled_at": now,
-                    "raw_json": json.dumps(point, default=str, ensure_ascii=False),
-                }
-            )
+            rows.append(row)
+
         df = _to_table_df(rows, GOLD_PRICE_BOARD_TABLE)
         if df.empty:
             return 0
         return self.storage.store(GOLD_PRICE_BOARD_TABLE, df)
+
+    @staticmethod
+    def _sjc_row(
+        sjc: SjcGoldSource, code: str, board: list[dict], now: datetime
+    ) -> dict | None:
+        """Board row from sjc.com.vn (already VND/lượng), or ``None``."""
+        if not board:
+            return None
+        quote = sjc.quote(code, board=board)
+        if quote is None:
+            return None
+        if quote["buy_price"] is None and quote["sell_price"] is None:
+            return None
+        return {
+            "code": str(code).upper(),
+            "buy_price": quote["buy_price"],
+            "sell_price": quote["sell_price"],
+            "unit": UNIT_VND_PER_LUONG,
+            "source": SjcGoldSource.name,
+            "crawled_at": now,
+            "raw_json": json.dumps(quote["raw"], default=str, ensure_ascii=False),
+        }
+
+    @classmethod
+    def _mihong_row(
+        cls, mihong: MihongGoldSource, code: str, today: date, now: datetime
+    ) -> dict | None:
+        """Board row from mihong, scaled VND/chỉ → VND/lượng, or ``None``."""
+        if str(code).upper() not in MIHONG_CODES:
+            return None
+        resp = mihong.sync(today, today, code)
+        if not resp.success or not resp.data:
+            return None
+        point = cls._latest_point(resp.data)
+        buy = _safe_float(_dig(point, "buyingPrice", "buyPrice", "buy", "buy_price"))
+        sell = _safe_float(
+            _dig(point, "sellingPrice", "sellPrice", "sell", "sell_price")
+        )
+        if buy is None and sell is None:
+            return None
+        return {
+            "code": str(code).upper(),
+            "buy_price": None if buy is None else buy * MIHONG_CHI_TO_LUONG,
+            "sell_price": None if sell is None else sell * MIHONG_CHI_TO_LUONG,
+            "unit": UNIT_VND_PER_LUONG,
+            "source": mihong.name,
+            "crawled_at": now,
+            "raw_json": json.dumps(point, default=str, ensure_ascii=False),
+        }
+
+    @staticmethod
+    def _yahoo_row(yahoo: YahooGoldSource, now: datetime) -> dict | None:
+        """World gold row (USD/oz).  Spot has no dealer spread → buy == sell."""
+        bar = yahoo.latest()
+        if bar is None or bar.get("close") is None:
+            return None
+        close = _safe_float(bar["close"])
+        return {
+            "code": XAU_CODE,
+            "buy_price": close,
+            "sell_price": close,
+            "unit": UNIT_USD_PER_OZ,
+            "source": yahoo.name,
+            "crawled_at": now,
+            "raw_json": json.dumps(bar, default=str, ensure_ascii=False),
+        }
 
     def read(self, kind: CrawlKind, codes: list[str]) -> list[dict]:
         if kind != CrawlKind.QUOTES:

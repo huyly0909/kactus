@@ -3,9 +3,9 @@
 from datetime import date
 
 import typer
-
 from kactus_data.cli import cli
 from kactus_data.config import DataSettings
+from kactus_data.sources.gold.mihong import MihongGoldSource
 
 _defaults = DataSettings()
 
@@ -14,7 +14,9 @@ _defaults = DataSettings()
 def sync(
     domain: str = typer.Argument(help="Domain: gold, stock, coin"),
     source: str = typer.Argument(help="Source name: mihong, ..."),
-    code: str = typer.Option(..., "--code", "-c", help="Source-specific code (e.g. SJC, BTC)"),
+    code: str = typer.Option(
+        ..., "--code", "-c", help="Source-specific code (e.g. SJC, BTC)"
+    ),
     start: str = typer.Option(..., "--start", "-s", help="Start date (YYYY-MM-DD)"),
     end: str = typer.Option(..., "--end", "-e", help="End date (YYYY-MM-DD)"),
     db_path: str = typer.Option(_defaults.db_path, help="DuckDB database path"),
@@ -30,10 +32,10 @@ def sync(
 
     # Resolve source
     if domain == "gold" and source == "mihong":
-        from kactus_data.sources.gold.mihong import MihongGoldSource
-
-        token = typer.prompt("XSRF token", hide_input=True)
-        src = MihongGoldSource(xsrf_token=token)
+        # api.mihong.vn is unauthenticated — no XSRF token needed any more.
+        # Note it serves a trailing window, so the range is snapped to the
+        # smallest window covering it (see MihongGoldSource.sync).
+        src = MihongGoldSource()
     else:
         typer.secho(
             f"Unknown source: {domain}/{source}",
