@@ -1,5 +1,5 @@
 ---
-name: api-endpoint
+name: api-conventions
 description: Use when creating or modifying FastAPI API endpoints. Covers KactusAPIRouter usage, permission patterns, response schemas, and database access in endpoints.
 ---
 
