@@ -84,6 +84,21 @@ services:
     command: >
       uvicorn kactus_data_server.app:app --host 0.0.0.0 --port 17602 --reload --log-level debug
 
+  # Frontend SPA + reverse proxy. In dev this is for full-stack smoke tests;
+  # day-to-day frontend work runs on the host (`cd frontend && bun run dev`,
+  # vite on 17630 proxying to localhost:17600) — don't run both at once, they
+  # claim the same port.
+  bloom-app:
+    build:
+      context: ../../
+      dockerfile: deploy/Dockerfile.bloom-app
+    ports:
+      - "17630:80"
+    # Startup ordering only — nginx proxies per request, so a kactus-fin
+    # restart doesn't require restarting this container.
+    depends_on:
+      - kactus-fin
+
   kactus-fin-gw:
     build:
       context: ../../
