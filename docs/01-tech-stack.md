@@ -2,10 +2,11 @@
 
 ## Tổng quan kiến trúc
 
-Hệ thống Kactus là một **fintech platform** xử lý dữ liệu tài chính (giá vàng, chứng khoán, báo cáo tài chính), được chia thành 2 repository:
+Hệ thống Kactus là một **fintech platform** xử lý dữ liệu tài chính (giá vàng, chứng khoán, báo cáo tài chính), nằm trong **một monorepo thống nhất**:
 
-- **kactus** — Backend (Python monorepo)
-- **kactus-bloom** — Frontend (TypeScript/React monorepo)
+- **`backend/`** — Backend (Python, uv workspaces)
+- **`frontend/`** — Frontend (TypeScript/React, bun + turborepo; trước đây là repo riêng `kactus-bloom`)
+- **`deploy/`** — Dockerfiles + compose chung cho cả cụm
 
 Frontend áp dụng best practices từ dự án **Builtiful** (ERP/POS platform sử dụng PocketBase + Go + React), cụ thể:
 - **UI Framework**: Tailwind CSS v4 + shadcn/ui (Radix primitives + CVA variants)
@@ -74,7 +75,7 @@ Frontend áp dụng best practices từ dự án **Builtiful** (ERP/POS platform
 
 ---
 
-## Frontend — `kactus-bloom` (TypeScript/React Monorepo)
+## Frontend — `frontend/` (TypeScript/React workspace, formerly repo `kactus-bloom`)
 
 ### Ngôn ngữ & Runtime
 
@@ -87,7 +88,7 @@ Frontend áp dụng best practices từ dự án **Builtiful** (ERP/POS platform
 ### Monorepo Structure
 
 ```
-kactus-bloom/
+frontend/
 ├── packages/
 │   ├── bloom-app/          ← Main application (Vite SPA)
 │   │   ├── src/
@@ -104,12 +105,14 @@ kactus-bloom/
 │   │   ├── components.json      ← shadcn/ui configuration
 │   │   └── vite.config.ts       ← Vite + Tailwind v4
 │   │
-│   ├── bloom-ui/           ← Shared UI library (legacy, migrating)
-│   └── docker-hub/         ← Docker deployment configs
+│   └── bloom-ui/           ← Shared UI library (legacy, migrating)
 │
 ├── turbo.json
 └── package.json
 ```
+
+> Deployment configs (trước đây `packages/docker-hub/`) đã chuyển về `deploy/`
+> dùng chung với backend (`Dockerfile.bloom-app`, `nginx.bloom-app.conf`).
 
 > **2-package approach**: `bloom-app` chứa app code + shadcn primitives. `bloom-ui` hiện đang là legacy (Mantine-based) và sẽ dần được chuyển sang. Có thể thêm packages trong tương lai (ví dụ: `bloom-charts`, `bloom-shared`).
 

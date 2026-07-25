@@ -226,7 +226,7 @@ Stack: React 18 + Vite + TanStack Query v5 + Zustand + shadcn/ui + i18next + **s
 - `hooks/useMarketStream.ts` — 1 `EventSource('/api/portfolios/stream', {withCredentials:true})`; nhận `data_refreshed` → invalidate keys quotes/news + optional toast; mount 1 lần ở layout. (SSE đi qua vite proxy `/api` → :17600.)
 - `store/portfolioStore.ts` — portfolio đang chọn (cookie-backed, như `projectStore`).
 - Pages `modules/portfolio/pages/`: list (cards + create dialog); detail (asset picker combobox có badge VN30/VN100 + filter asset-type, quotes table màu gain/loss + cột foreign/ratios, news widget, **nút refresh icon** cho quotes + news).
-- Route + sidebar item ([App.tsx](../../kactus-bloom/packages/bloom-app/src/App.tsx), [DashboardLayout.tsx](../../kactus-bloom/packages/bloom-app/src/layouts/DashboardLayout.tsx)) + i18n `portfolio.*` (vi + en).
+- Route + sidebar item ([App.tsx](../frontend/packages/bloom-app/src/App.tsx), [DashboardLayout.tsx](../frontend/packages/bloom-app/src/layouts/DashboardLayout.tsx)) + i18n `portfolio.*` (vi + en).
 
 ---
 
@@ -262,7 +262,7 @@ Stack: React 18 + Vite + TanStack Query v5 + Zustand + shadcn/ui + i18next + **s
 - [x] **kactus-common**: [model](../libs/core/kactus-common/src/kactus_common/portfolio/model.py) (`portfolios`, `portfolio_items`, `supported_assets`, `crawl_runs`) + [schema](../libs/core/kactus-common/src/kactus_common/portfolio/schema.py) + [service](../libs/core/kactus-common/src/kactus_common/portfolio/service.py) (`get_union_codes_by_type`) + [events](../libs/core/kactus-common/src/kactus_common/portfolio/events.py) + [sse/broker.py](../libs/core/kactus-common/src/kactus_common/sse/broker.py) + [symbol_provider](../libs/core/kactus-common/src/kactus_common/portfolio/symbol_provider.py) Protocol; thêm vào `MODELS`.
 - [x] **kactus-data**: [market.py](../libs/kactus-data/src/kactus_data/sources/stock/market.py) (price_board/news/events/foreign/ratios/catalog) + DuckDB tables + [jobs/crawl.py](../libs/kactus-data/src/kactus_data/jobs/crawl.py) + [jobs/scheduler.py](../libs/kactus-data/src/kactus_data/jobs/scheduler.py) + [AssetProvider registry](../libs/kactus-data/src/kactus_data/portfolio/provider.py) (STOCK, GOLD) + [CLI](../libs/kactus-data/src/kactus_data/cli/portfolio.py).
 - [x] **kactus-fin**: [portfolio/api.py](../services/kactus-fin/src/kactus_fin/portfolio/api.py) + [admin.py](../services/kactus-fin/src/kactus_fin/portfolio/admin.py) + [app.py](../services/kactus-fin/src/kactus_fin/app.py) lifespan (auth → SSE handler → scheduler) + Alembic migration `a1b2c3d4e5f6`.
-- [x] **kactus-bloom**: [service](../../kactus-bloom/packages/bloom-app/src/services/portfolioService.ts) + hooks ([usePortfolioQuery](../../kactus-bloom/packages/bloom-app/src/hooks/usePortfolioQuery.ts), [useMarketStream](../../kactus-bloom/packages/bloom-app/src/hooks/useMarketStream.ts)) + pages + i18n (vi+en); **components tự viết** (dialog/picker/table) thay vì shadcn CLI.
+- [x] **kactus-bloom**: [service](../frontend/packages/bloom-app/src/services/portfolioService.ts) + hooks ([usePortfolioQuery](../frontend/packages/bloom-app/src/hooks/usePortfolioQuery.ts), [useMarketStream](../frontend/packages/bloom-app/src/hooks/useMarketStream.ts)) + pages + i18n (vi+en); **components tự viết** (dialog/picker/table) thay vì shadcn CLI.
 - [x] **Tests**: service union/dedup, sources (fake vnstock), crawl→DuckDB (text-safe tiếng Việt), API (create→add→quotes), manual-refresh dedup, SSE bridge — **280 pass**. Coverage tổng **77%** (module mới 80–100%; baseline repo ~71%, gate 80 chưa từng đạt). SSE HTTP-stream endpoint chưa test (giới hạn ASGITransport) — broker + event bridge đã test.
 
 ---
@@ -306,5 +306,5 @@ python manage.py data portfolio crawl --kind quotes --codes FPT,VCB
 .venv/bin/python -m pytest                   # 280 tests
 
 # Frontend
-cd ../kactus-bloom/packages/bloom-app && bun run dev   # :17630, proxy /api → :17600
+cd frontend/packages/bloom-app && bun run dev   # :17630, proxy /api → :17600
 ```

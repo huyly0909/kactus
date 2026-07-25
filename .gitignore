@@ -176,3 +176,10 @@ cython_debug/
 # VSCode
 .history/
 .DS_Store
+
+# Node / frontend
+node_modules/
+.turbo/
+*.tsbuildinfo
+.env.local
+.env.*.local

@@ -78,7 +78,7 @@
 
 ---
 
-### Frontend — `kactus-bloom`
+### Frontend — `frontend/` (formerly `kactus-bloom`)
 
 #### 1. Infrastructure (✅ migration hoàn tất)
 

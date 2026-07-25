@@ -1,11 +1,11 @@
 ---
-description: Frontend coding conventions for kactus-bloom (bloom-app + bloom-ui)
-globs: ["packages/bloom-app/**/*.ts", "packages/bloom-app/**/*.tsx", "packages/bloom-ui/**/*.ts", "packages/bloom-ui/**/*.tsx"]
+description: Frontend coding conventions (bloom-app + bloom-ui)
+globs: ["frontend/packages/bloom-app/**/*.ts", "frontend/packages/bloom-app/**/*.tsx", "frontend/packages/bloom-ui/**/*.ts", "frontend/packages/bloom-ui/**/*.tsx"]
 ---
 
 # Frontend Conventions
 
-> The frontend lives in the **`kactus-bloom`** repo (separate from this backend repo).
+> The frontend lives in **`frontend/`** (bun + turborepo workspace in this monorepo).
 
 ## Tech Stack
 - React 18 + TypeScript 5 + Vite 6
@@ -16,8 +16,8 @@ globs: ["packages/bloom-app/**/*.ts", "packages/bloom-app/**/*.tsx", "packages/b
 - React Router v7 + Axios (HTTP) + i18next (vi + en)
 
 ## Monorepo (Turborepo)
-- `packages/bloom-app/` — the shipped web app (all active development)
-- `packages/bloom-ui/` — shared component library (`@kactus-bloom/ui`)
+- `frontend/packages/bloom-app/` — the shipped web app (all active development)
+- `frontend/packages/bloom-ui/` — shared component library (`@kactus-bloom/ui`)
 - `bloom-app` MAY import from `bloom-ui`, NEVER the reverse. (Today `bloom-app`
   owns its own copy of the shadcn primitives and does not yet consume `bloom-ui`.)
 

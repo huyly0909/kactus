@@ -233,7 +233,7 @@ List/get/update/delete/test/send của kênh zalo_pa dùng route **generic**.
 
 ---
 
-## 11. Frontend (`kactus-bloom/packages/bloom-app`)
+## 11. Frontend (`frontend/packages/bloom-app`)
 
 Clone `modules/portfolio/`. Stack thực tế: React 18 + Vite 6 + **Radix + Tailwind v4 + CVA**, axios `apiClient` (`ApiResponse<T>`), TanStack Query v5 (key factory), `sonner`, i18next (vi/en). *(Bỏ qua `.claude/rules/frontend-*.md` — chúng mô tả project "usonia" Mantine, sai với bloom.)*
 
@@ -289,7 +289,7 @@ Clone `modules/portfolio/`. Stack thực tế: React 18 + Vite 6 + **Radix + Tai
 ```bash
 .venv/bin/python -m pytest libs/core/kactus-common/tests services/kactus-fin/tests -q   # 337 pass
 .venv/bin/python manage.py fin db upgrade      # tạo notification_logs (cần Postgres)
-cd ../kactus-bloom/packages/bloom-app && npx tsc -b && npx vite build   # xanh
+cd frontend/packages/bloom-app && npx tsc -b && npx vite build   # xanh
 ```
 
 **Live smoke** (chưa chạy): Telegram — tạo kênh, `/send`, xác nhận nhận + log `success`. Zalo PA — quét QR (qua proxy) → chọn friend/group → tạo kênh → `/send` → xác nhận báo cáo tới + log `success`; ép session hết hạn → `error` (non-retryable) + log `failed`.

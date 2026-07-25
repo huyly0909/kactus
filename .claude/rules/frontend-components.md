@@ -1,11 +1,11 @@
 ---
-description: Component development patterns for kactus-bloom (shadcn/ui + Tailwind v4)
-globs: ["packages/bloom-app/**/components/**", "packages/bloom-ui/**/components/**"]
+description: Component development patterns for the frontend (shadcn/ui + Tailwind v4)
+globs: ["frontend/packages/bloom-app/**/components/**", "frontend/packages/bloom-ui/**/components/**"]
 ---
 
 # Component Development
 
-> The frontend lives in the **`kactus-bloom`** repo. UI is **shadcn/ui (Radix + CVA) + Tailwind CSS v4**.
+> The frontend lives in **`frontend/`** in this monorepo. UI is **shadcn/ui (Radix + CVA) + Tailwind CSS v4**.
 
 ## Where components live
 - **shadcn primitives** — `bloom-app/src/components/ui/` (lowercase files, generated
