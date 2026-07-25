@@ -47,9 +47,9 @@ services:
         condition: service_healthy
     volumes:
       # No kactus-data mount: the control plane does not import it any more.
-      - ../../libs/core/kactus-common/src:/app/libs/core/kactus-common/src
-      - ../../libs/kactus-notification/src:/app/libs/kactus-notification/src
-      - ../../services/kactus-fin/src:/app/services/kactus-fin/src
+      - ../../backend/libs/core/kactus-common/src:/app/libs/core/kactus-common/src
+      - ../../backend/libs/kactus-notification/src:/app/libs/kactus-notification/src
+      - ../../backend/services/kactus-fin/src:/app/services/kactus-fin/src
     command: >
       uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --reload --log-level debug
 
@@ -78,9 +78,9 @@ services:
         condition: service_healthy
     volumes:
       - duckdb_data:/data
-      - ../../libs/core/kactus-common/src:/app/libs/core/kactus-common/src
-      - ../../libs/kactus-data/src:/app/libs/kactus-data/src
-      - ../../services/kactus-data-server/src:/app/services/kactus-data-server/src
+      - ../../backend/libs/core/kactus-common/src:/app/libs/core/kactus-common/src
+      - ../../backend/libs/kactus-data/src:/app/libs/kactus-data/src
+      - ../../backend/services/kactus-data-server/src:/app/services/kactus-data-server/src
     command: >
       uvicorn kactus_data_server.app:app --host 0.0.0.0 --port 17602 --reload --log-level debug
 
@@ -97,8 +97,8 @@ services:
       redis:
         condition: service_healthy
     volumes:
-      - ../../libs/core/kactus-common/src:/app/libs/core/kactus-common/src
-      - ../../services/kactus-fin-gateway/src:/app/services/kactus-fin-gateway/src
+      - ../../backend/libs/core/kactus-common/src:/app/libs/core/kactus-common/src
+      - ../../backend/services/kactus-fin-gateway/src:/app/services/kactus-fin-gateway/src
     command: >
       uvicorn kactus_fin_gateway.app:app --host 0.0.0.0 --port 17601 --reload --log-level debug
 
