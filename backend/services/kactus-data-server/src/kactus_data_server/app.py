@@ -25,6 +25,7 @@ from kactus_data.sources.stock.auth import init_vnstock_auth
 from kactus_data.storage.duckdb import DuckDBStorage
 from kactus_data_server.api.assets import router as assets_router
 from kactus_data_server.api.health import router as health_router
+from kactus_data_server.api.imports import router as imports_router
 from kactus_data_server.api.jobs import router as jobs_router
 from kactus_data_server.api.market import router as market_router
 from kactus_data_server.config import get_settings
@@ -171,6 +172,7 @@ def create_app() -> FastAPI:
     app.include_router(market_router)
     app.include_router(assets_router)
     app.include_router(jobs_router)
+    app.include_router(imports_router)
 
     return app
 

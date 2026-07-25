@@ -325,6 +325,44 @@ class TestDatabaseClient:
         ).fetchone()
         assert rating[0] == 5
 
+    def test_upsert_strategy_multiple_primary_keys_large_batch(self, client):
+        """A 5k-row composite-PK upsert must not blow up the DELETE statement.
+
+        Guards against the old per-row OR'd WHERE clause, whose SQL string grew
+        with the batch (unusable at history-import sizes, ~92k rows).
+        """
+        table = Table(
+            name="composite_pk_large_test",
+            columns=[
+                Column(name="code", data_type=DataType.STRING, is_primary_key=True),
+                Column(name="day", data_type=DataType.INT, is_primary_key=True),
+                Column(name="value", data_type=DataType.INT),
+            ],
+            update_strategy=UpdateStrategy.UPSERT,
+        )
+        client.create_table(table.name, table.columns)
+
+        n = 5000
+        first = pd.DataFrame(
+            {
+                "code": [f"C{i % 7}" for i in range(n)],
+                "day": list(range(n)),
+                "value": [0] * n,
+            }
+        )
+        client.update_table(table, first)
+
+        # Re-upsert the same keys with new values — row count must not grow.
+        second = first.assign(value=1)
+        client.update_table(table, second)
+
+        count = client.execute(f"SELECT COUNT(*) FROM {table.name}").fetchone()
+        assert count[0] == n
+        stale = client.execute(
+            f"SELECT COUNT(*) FROM {table.name} WHERE value = 0"
+        ).fetchone()
+        assert stale[0] == 0
+
     def test_upsert_strategy_no_primary_key(self, client, sample_data):
         """Test UPSERT strategy falls back to APPEND when no primary key."""
         table = Table(

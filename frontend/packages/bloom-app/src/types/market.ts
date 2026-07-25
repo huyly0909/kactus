@@ -22,6 +22,42 @@ export interface GoldPrice {
   crawled_at?: string | null;
 }
 
+export interface GoldHistoryPoint {
+  code: string;
+  date: string;
+  buy_price?: string | null;
+  sell_price?: string | null;
+  open?: string | null;
+  high?: string | null;
+  low?: string | null;
+  close?: string | null;
+  /** `VND/luong` (domestic) or `USD/oz` (world) — never mix on one axis. */
+  unit: string;
+  source?: string | null;
+  location?: string | null;
+  gold_type?: string | null;
+}
+
+export interface GoldHistoryCode {
+  code: string;
+  unit: string;
+  points: string;
+  first_date?: string | null;
+  last_date?: string | null;
+  location?: string | null;
+  gold_type?: string | null;
+}
+
+export interface GoldImportResult {
+  dataset: string;
+  filename?: string | null;
+  rows_parsed: string;
+  rows_imported: string;
+  rows_skipped: string;
+  codes: string;
+  errors: string[];
+}
+
 export interface StockListing {
   symbol: string;
   organ_name?: string | null;

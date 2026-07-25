@@ -16,6 +16,10 @@ from enum import StrEnum
 
 # Read caps — the OLAP tables are unbounded, the API is not.
 MAX_LIMIT = 2000
+# Gold history gets its own cap: the XAU series alone is ~6.5k daily points,
+# so the global MAX_LIMIT would silently truncate a "Max" range request.
+DEFAULT_GOLD_HISTORY_LIMIT = 2500
+GOLD_HISTORY_MAX_LIMIT = 10_000
 DEFAULT_OHLCV_LIMIT = 500
 DEFAULT_LIST_LIMIT = 50
 DEFAULT_NEWS_LIMIT = 20

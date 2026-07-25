@@ -1,10 +1,19 @@
-import { useQuery } from '@tanstack/react-query';
-import { marketService, type FinanceParams, type OHLCVParams } from '@/services/marketService';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  marketService,
+  type FinanceParams,
+  type GoldHistoryParams,
+  type OHLCVParams,
+} from '@/services/marketService';
 
 /** Query key factory — the single source of cache keys for the market feature. */
 export const marketKeys = {
   all: ['market'] as const,
   gold: () => [...marketKeys.all, 'gold'] as const,
+  goldHistoryAll: () => [...marketKeys.all, 'gold-history'] as const,
+  goldHistory: (code: string, params: GoldHistoryParams) =>
+    [...marketKeys.goldHistoryAll(), code, params] as const,
+  goldHistoryCodes: () => [...marketKeys.goldHistoryAll(), 'codes'] as const,
   stocks: (q: string) => [...marketKeys.all, 'stocks', q] as const,
   quotes: (symbols: string[]) => [...marketKeys.all, 'quotes', symbols] as const,
   stock: (symbol: string) => [...marketKeys.all, 'stock', symbol] as const,
@@ -19,6 +28,31 @@ export function useGoldPrices() {
   return useQuery({
     queryKey: marketKeys.gold(),
     queryFn: () => marketService.gold(),
+  });
+}
+
+export function useGoldHistory(code: string, params: GoldHistoryParams = {}) {
+  return useQuery({
+    queryKey: marketKeys.goldHistory(code, params),
+    queryFn: () => marketService.goldHistory(code, params),
+    enabled: !!code,
+  });
+}
+
+export function useGoldHistoryCodes() {
+  return useQuery({
+    queryKey: marketKeys.goldHistoryCodes(),
+    queryFn: () => marketService.goldHistoryCodes(),
+  });
+}
+
+export function useImportGoldHistory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (files: File[]) => marketService.importGoldHistory(files),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: marketKeys.goldHistoryAll() });
+    },
   });
 }
 

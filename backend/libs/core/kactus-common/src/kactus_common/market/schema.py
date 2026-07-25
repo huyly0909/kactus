@@ -39,6 +39,52 @@ class GoldPriceSchema(BaseSchema):
     crawled_at: datetime.datetime | None = None
 
 
+class GoldHistoryPointSchema(BaseSchema):
+    """One day of one gold series.
+
+    Domestic series (SJC, PNJ variants) carry ``buy_price``/``sell_price``;
+    world gold (XAU) carries OHLC. ``unit`` says which currency/quantity the
+    prices are in (``VND/luong`` vs ``USD/oz``) — never assume VND.
+    """
+
+    code: str
+    date: datetime.date
+    buy_price: FancyDecimal | None = None
+    sell_price: FancyDecimal | None = None
+    open: FancyDecimal | None = None
+    high: FancyDecimal | None = None
+    low: FancyDecimal | None = None
+    close: FancyDecimal | None = None
+    unit: str
+    source: str | None = None
+    location: str | None = None
+    gold_type: str | None = None
+
+
+class GoldHistoryCodeSchema(BaseSchema):
+    """Catalogue entry for one stored gold series."""
+
+    code: str
+    unit: str
+    points: FancyInt
+    first_date: datetime.date | None = None
+    last_date: datetime.date | None = None
+    location: str | None = None
+    gold_type: str | None = None
+
+
+class GoldImportResultSchema(BaseSchema):
+    """Outcome of importing one gold-history CSV file."""
+
+    dataset: str
+    filename: str | None = None
+    rows_parsed: FancyInt
+    rows_imported: FancyInt
+    rows_skipped: FancyInt
+    codes: FancyInt
+    errors: list[str] = []
+
+
 class StockListingSchema(BaseSchema):
     """A listed symbol from the exchange catalogue."""
 

@@ -23,9 +23,12 @@ from typing import Any
 
 import httpx
 from kactus_common.config import settings
-from kactus_common.exceptions import ExternalServiceError
+from kactus_common.exceptions import ExternalServiceError, ValidationError
 from kactus_common.market.schema import (
     FinanceReportSchema,
+    GoldHistoryCodeSchema,
+    GoldHistoryPointSchema,
+    GoldImportResultSchema,
     GoldPriceSchema,
     OHLCVSchema,
     StockDetailSchema,
@@ -130,6 +133,68 @@ def _clean(params: dict[str, Any]) -> dict[str, Any]:
 async def list_gold(*, codes: list[str] | None = None) -> list[GoldPriceSchema]:
     rows = await _get("/internal/market/gold", _clean({"code": codes}))
     return [GoldPriceSchema.model_validate(r) for r in rows]
+
+
+async def list_gold_history(
+    *,
+    code: str,
+    start: datetime.date | None = None,
+    end: datetime.date | None = None,
+    limit: int | None = None,
+) -> list[GoldHistoryPointSchema]:
+    rows = await _get(
+        "/internal/market/gold/history",
+        _clean(
+            {
+                "code": code,
+                "start": start.isoformat() if start else None,
+                "end": end.isoformat() if end else None,
+                "limit": limit,
+            }
+        ),
+    )
+    return [GoldHistoryPointSchema.model_validate(r) for r in rows]
+
+
+async def list_gold_history_codes() -> list[GoldHistoryCodeSchema]:
+    rows = await _get("/internal/market/gold/history/codes")
+    return [GoldHistoryCodeSchema.model_validate(r) for r in rows]
+
+
+async def import_gold_history(filename: str, content: bytes) -> GoldImportResultSchema:
+    """Forward one gold-history CSV to the data plane's import endpoint.
+
+    Not routed through ``_request``: a rejected file (unknown header, garbage
+    rows) is the *caller's* mistake and must come back as a 400, not be
+    laundered into the 502 that ``ExternalServiceError`` means. The explicit
+    timeout overrides the pool default — parsing + upserting the largest file
+    is seconds, but a cold laptop disk should not trip a 30s cap.
+    """
+    try:
+        resp = await get_client().post(
+            "/internal/gold/import",
+            params={"filename": filename},
+            content=content,
+            headers={"Content-Type": "text/csv"},
+            timeout=120.0,
+        )
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as ex:
+        detail = _envelope_message(ex.response)
+        if ex.response.status_code in (400, 422):
+            raise ValidationError(f"Import rejected: {detail}") from ex
+        logger.error(
+            f"Data plane POST /internal/gold/import → "
+            f"{ex.response.status_code}: {detail}"
+        )
+        raise ExternalServiceError(f"Data plane request failed: {detail}") from ex
+    except httpx.HTTPError as ex:
+        logger.error(f"Data plane POST /internal/gold/import unreachable: {ex}")
+        raise ExternalServiceError(f"Data plane is unreachable: {ex}") from ex
+
+    body = resp.json()
+    data = body.get("data") if isinstance(body, dict) else body
+    return GoldImportResultSchema.model_validate(data)
 
 
 async def search_stocks(

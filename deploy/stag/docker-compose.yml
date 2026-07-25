@@ -51,8 +51,10 @@ services:
     # gone: KACTUS_COORDINATION_BACKEND=redis shares the SSE broker and the Zalo
     # PA QR session store across processes, and the scheduler + DuckDB write
     # handle have moved into kactus-data-server, which runs a single replica.
+    # Migrations run on every start — one fin replica per env, no upgrade race.
     command: >
-      uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --workers 2 --log-level info
+      sh -c "python manage.py fin db upgrade &&
+      uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --workers 2 --log-level info"
 
   # The data plane — not published, same as prod. Staging shares the vnstock
   # rate-limit budget with prod if it points at the same key, so consider

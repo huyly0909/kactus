@@ -22,11 +22,14 @@ from __future__ import annotations
 import httpx
 import pytest
 import pytest_asyncio
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from httpx import ASGITransport
 from kactus_common.exceptions import install_exception_handlers
 from kactus_common.market.schema import (
     FinanceReportSchema,
+    GoldHistoryCodeSchema,
+    GoldHistoryPointSchema,
+    GoldImportResultSchema,
     GoldPriceSchema,
     OHLCVSchema,
     StockDetailSchema,
@@ -49,6 +52,11 @@ class FakeDataPlane:
 
     def __init__(self) -> None:
         self.gold: list[GoldPriceSchema] = []
+        self.gold_history: list[GoldHistoryPointSchema] = []
+        self.gold_history_codes: list[GoldHistoryCodeSchema] = []
+        self.import_result: GoldImportResultSchema | None = None
+        #: raw bodies received by /internal/gold/import, in call order
+        self.import_bodies: list[bytes] = []
         self.listings: list[StockListingSchema] = []
         self.quotes: list[StockQuoteSchema] = []
         self.detail: StockDetailSchema | None = None
@@ -67,6 +75,44 @@ class FakeDataPlane:
         async def gold(code: list[str] | None = Query(default=None)):
             fake.calls.append(("gold", {"code": code}))
             return fake.gold
+
+        @router.get("/market/gold/history")
+        async def gold_history(
+            code: str,
+            start: str | None = None,
+            end: str | None = None,
+            limit: int = 2500,
+        ):
+            fake.calls.append(
+                (
+                    "gold_history",
+                    {"code": code, "start": start, "end": end, "limit": limit},
+                )
+            )
+            return fake.gold_history
+
+        @router.get("/market/gold/history/codes")
+        async def gold_history_codes():
+            fake.calls.append(("gold_history_codes", {}))
+            return fake.gold_history_codes
+
+        @router.post("/gold/import")
+        async def gold_import(
+            request: Request, filename: str | None = None
+        ) -> GoldImportResultSchema:
+            body = await request.body()
+            fake.import_bodies.append(body)
+            fake.calls.append(
+                ("gold_import", {"filename": filename, "size": len(body)})
+            )
+            return fake.import_result or GoldImportResultSchema(
+                dataset="sjc",
+                filename=filename,
+                rows_parsed=len(body),
+                rows_imported=0,
+                rows_skipped=0,
+                codes=0,
+            )
 
         @router.get("/market/stocks")
         async def stocks(q: str | None = None, limit: int = 50):

@@ -50,8 +50,11 @@ services:
       - ../../backend/libs/core/kactus-common/src:/app/libs/core/kactus-common/src
       - ../../backend/libs/kactus-notification/src:/app/libs/kactus-notification/src
       - ../../backend/services/kactus-fin/src:/app/services/kactus-fin/src
+    # Migrations run on every start — one fin replica in every env, so there is
+    # no concurrent-upgrade race, and a deploy can never forget the schema.
     command: >
-      uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --reload --log-level debug
+      sh -c "python manage.py fin db upgrade &&
+      uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --reload --log-level debug"
 
   # The data plane. Owns the DuckDB write handle and the crawl scheduler, so it
   # runs exactly one worker and one replica — see Dockerfile.data-server.

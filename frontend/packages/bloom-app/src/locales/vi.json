@@ -155,7 +155,28 @@
       "spread": "Chênh lệch",
       "unit": "Đơn vị",
       "unit_vnd_luong": "VND/lượng",
-      "unit_usd_oz": "USD/oz"
+      "unit_usd_oz": "USD/oz",
+      "import": {
+        "button": "Nhập dữ liệu",
+        "title": "Nhập CSV lịch sử giá vàng",
+        "drop_hint": "Kéo & thả file CSV vào đây",
+        "browse": "hoặc bấm để chọn file",
+        "only_csv": "Chỉ nhận file .csv",
+        "submit": "Nhập",
+        "success": "Nhập dữ liệu xong",
+        "failed": "Nhập dữ liệu thất bại",
+        "result_rows": "{{imported}} dòng đã nhập · {{skipped}} bỏ qua · {{codes}} chuỗi"
+      },
+      "history": {
+        "title": "Lịch sử giá",
+        "series": "Chuỗi giá",
+        "group_main": "Chính",
+        "close": "Giá đóng cửa",
+        "range_1y": "1N",
+        "range_5y": "5N",
+        "range_max": "Tất cả",
+        "empty": "Chưa có dữ liệu lịch sử — nhập file CSV backfill để xem biểu đồ."
+      }
     },
     "stock": {
       "title": "Chứng khoán",

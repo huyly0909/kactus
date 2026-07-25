@@ -13,6 +13,7 @@ dependencies = [
     "sse-starlette>=3.4.4",
     "httpx>=0.28.1",
     "kactus-notification",
+    "python-multipart>=0.0.20",
 ]
 
 [tool.uv.sources]

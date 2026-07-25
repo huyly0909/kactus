@@ -19,10 +19,18 @@ import datetime
 import json
 
 import pandas as pd
-from kactus_common.market.const import MAX_LIMIT, ReportPeriod, ReportType
+from kactus_common.market.const import (
+    DEFAULT_GOLD_HISTORY_LIMIT,
+    GOLD_HISTORY_MAX_LIMIT,
+    MAX_LIMIT,
+    ReportPeriod,
+    ReportType,
+)
 from kactus_common.market.schema import (
     CompanySchema,
     FinanceReportSchema,
+    GoldHistoryCodeSchema,
+    GoldHistoryPointSchema,
     GoldPriceSchema,
     OHLCVSchema,
     StockDetailSchema,
@@ -32,6 +40,7 @@ from kactus_common.market.schema import (
 )
 from kactus_data.market.const import (
     GOLD_BOARD_TABLE,
+    GOLD_HISTORY_TABLE,
     STOCK_COMPANY_TABLE,
     STOCK_FINANCE_TABLE,
     STOCK_LISTING_TABLE,
@@ -112,6 +121,63 @@ class MarketService:
                 )
             )
         return out
+
+    @staticmethod
+    async def list_gold_history(
+        storage: DuckDBStorage,
+        *,
+        code: str,
+        start: datetime.date | None = None,
+        end: datetime.date | None = None,
+        limit: int = DEFAULT_GOLD_HISTORY_LIMIT,
+    ) -> list[GoldHistoryPointSchema]:
+        """Daily points for one gold series, oldest → newest (newest *limit*).
+
+        Gold history has its own cap: the XAU series alone exceeds the global
+        ``MAX_LIMIT``, which would silently truncate a full-range request.
+        """
+        capped = (
+            DEFAULT_GOLD_HISTORY_LIMIT
+            if limit <= 0
+            else min(limit, GOLD_HISTORY_MAX_LIMIT)
+        )
+
+        def _read() -> list[dict]:
+            sql = f"SELECT * FROM {GOLD_HISTORY_TABLE} WHERE code = ?"  # noqa: S608
+            params: list = [code]
+            if start is not None:
+                sql += " AND date >= ?"
+                params.append(start)
+            if end is not None:
+                sql += " AND date <= ?"
+                params.append(end)
+            # Newest first so the cap keeps the *recent* window, then re-sorted below.
+            sql += f" ORDER BY date DESC LIMIT {capped}"
+            return _rows(storage, sql, params)
+
+        rows = await asyncio.to_thread(_read)
+        points = [GoldHistoryPointSchema.model_validate(r) for r in rows]
+        points.reverse()
+        return points
+
+    @staticmethod
+    async def list_gold_history_codes(
+        storage: DuckDBStorage,
+    ) -> list[GoldHistoryCodeSchema]:
+        """Catalogue of stored gold series (code, unit, span, point count)."""
+
+        def _read() -> list[dict]:
+            sql = (
+                "SELECT code, unit, count(*) AS points, "
+                "min(date) AS first_date, max(date) AS last_date, "
+                "any_value(location) AS location, any_value(gold_type) AS gold_type "
+                f"FROM {GOLD_HISTORY_TABLE} "  # noqa: S608
+                "GROUP BY code, unit ORDER BY code"
+            )
+            return _rows(storage, sql)
+
+        rows = await asyncio.to_thread(_read)
+        return [GoldHistoryCodeSchema.model_validate(r) for r in rows]
 
     # ----------------------------------------------------------------- stock
     @staticmethod

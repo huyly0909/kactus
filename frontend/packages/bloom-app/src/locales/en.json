@@ -155,7 +155,28 @@
       "spread": "Spread",
       "unit": "Unit",
       "unit_vnd_luong": "VND/tael",
-      "unit_usd_oz": "USD/oz"
+      "unit_usd_oz": "USD/oz",
+      "import": {
+        "button": "Import",
+        "title": "Import gold history CSV",
+        "drop_hint": "Drag & drop CSV files here",
+        "browse": "or click to browse",
+        "only_csv": "Only .csv files are accepted",
+        "submit": "Import",
+        "success": "Import finished",
+        "failed": "Import failed",
+        "result_rows": "{{imported}} rows imported · {{skipped}} skipped · {{codes}} series"
+      },
+      "history": {
+        "title": "Price history",
+        "series": "Series",
+        "group_main": "Main",
+        "close": "Close",
+        "range_1y": "1Y",
+        "range_5y": "5Y",
+        "range_max": "Max",
+        "empty": "No history yet — import the backfill CSVs to see the chart."
+      }
     },
     "stock": {
       "title": "Stock Market",

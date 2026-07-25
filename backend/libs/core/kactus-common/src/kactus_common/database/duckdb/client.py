@@ -255,31 +255,29 @@ class DatabaseClient:
                             f"Deleted existing rows with conflicting {pk_col} values"
                         )
                 else:
-                    # Multiple primary keys - need to build more complex WHERE clause
-                    where_conditions = []
-                    for _, row in data.iterrows():
-                        pk_conditions = []
-                        for pk_col in primary_key_columns:
-                            value = row[pk_col]
-                            if pd.isna(value):
-                                pk_conditions.append(f"{pk_col} IS NULL")
-                            elif isinstance(value, str):
-                                escaped_value = value.replace("'", "''")
-                                pk_conditions.append(f"{pk_col} = '{escaped_value}'")
-                            elif isinstance(value, (int, float)):
-                                pk_conditions.append(f"{pk_col} = {value}")
-                            else:
-                                # datetime, date, and other types — quote as string
-                                escaped_value = str(value).replace("'", "''")
-                                pk_conditions.append(f"{pk_col} = '{escaped_value}'")
-                        where_conditions.append(f"({' AND '.join(pk_conditions)})")
-
-                    if where_conditions:
-                        delete_query = f"DELETE FROM {table.name} WHERE {' OR '.join(where_conditions)}"
-                        conn.execute(delete_query)
-                        logger.info(
-                            "Deleted existing rows with conflicting primary key combinations"
+                    # Multiple primary keys — set-based anti-join delete. Building
+                    # a per-row OR'd WHERE clause is O(rows) SQL-string size and
+                    # collapses on large batches (e.g. 90k-row history imports).
+                    keys_view = "_kactus_upsert_keys"
+                    conn.register(
+                        keys_view, data[primary_key_columns].drop_duplicates()
+                    )
+                    try:
+                        # IS NOT DISTINCT FROM keeps NULL-key rows matching,
+                        # same as the old explicit IS NULL branches.
+                        condition = " AND ".join(
+                            f"t.{col} IS NOT DISTINCT FROM k.{col}"
+                            for col in primary_key_columns
                         )
+                        conn.execute(
+                            f"DELETE FROM {table.name} AS t "
+                            f"USING {keys_view} AS k WHERE {condition}"
+                        )
+                    finally:
+                        conn.unregister(keys_view)
+                    logger.info(
+                        "Deleted existing rows with conflicting primary key combinations"
+                    )
 
                 # Insert the new/updated data
                 if not data.empty:

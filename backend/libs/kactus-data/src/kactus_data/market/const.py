@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from kactus_data.sources.company.tables import COMPANY_TABLE
 from kactus_data.sources.finance.tables import FINANCE_TABLE
+from kactus_data.sources.gold.history_tables import GOLD_PRICE_HISTORY_TABLE
 from kactus_data.sources.gold.portfolio_tables import GOLD_PRICE_BOARD_TABLE
 from kactus_data.sources.stock.portfolio_tables import (
     STOCK_NEWS_TABLE as _STOCK_NEWS_TABLE,
@@ -22,6 +23,7 @@ from kactus_data.sources.stock.tables import STOCK_LISTING_TABLE as _STOCK_LISTI
 from kactus_data.sources.stock.tables import STOCK_OHLCV_TABLE as _STOCK_OHLCV_TABLE
 
 GOLD_BOARD_TABLE = GOLD_PRICE_BOARD_TABLE.name
+GOLD_HISTORY_TABLE = GOLD_PRICE_HISTORY_TABLE.name
 STOCK_LISTING_TABLE = _STOCK_LISTING_TABLE.name
 STOCK_COMPANY_TABLE = COMPANY_TABLE.name
 STOCK_PRICE_BOARD_TABLE = _STOCK_PRICE_BOARD_TABLE.name

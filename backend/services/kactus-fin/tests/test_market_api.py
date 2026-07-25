@@ -24,6 +24,9 @@ from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.market.schema import (
+    GoldHistoryCodeSchema,
+    GoldHistoryPointSchema,
+    GoldImportResultSchema,
     GoldPriceSchema,
     StockDetailSchema,
     StockListingSchema,
@@ -254,6 +257,126 @@ async def test_data_plane_error_envelope_is_surfaced(client, monkeypatch):
     resp = await client.get("/api/market/gold")
     assert resp.status_code == 502
     assert "Invalid or missing token" in resp.json()["message"]
+
+
+# --------------------------------------------------------------------------- #
+# Gold history + import
+# --------------------------------------------------------------------------- #
+@pytest_asyncio.fixture
+async def admin_client(app, db):
+    async with db.get_session() as session:
+        admin = User.init(
+            email="admin@kactus.io",
+            username="admin",
+            password_hash="Admin123!",
+            name="Admin",
+            status="active",
+            is_superuser=True,
+        )
+        session.add(admin)
+        await session.commit()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as c:
+        login = await c.post(
+            "/api/auth/login",
+            json={"email": "admin@kactus.io", "password": "Admin123!"},
+        )
+        c.cookies.update(dict(login.cookies))
+        yield c
+
+
+SJC_CSV = b"date,buy_vnd_per_luong,sell_vnd_per_luong\n2026-07-24,134500000,139500000\n"
+
+
+@pytest.mark.asyncio
+async def test_gold_history_forwards_code_and_window(client, data_plane):
+    data_plane.gold_history = [
+        GoldHistoryPointSchema(
+            code="SJC",
+            date="2026-07-24",
+            buy_price="134500000",
+            sell_price="139500000",
+            unit="VND/luong",
+            source="sjc",
+        )
+    ]
+    resp = await client.get(
+        "/api/market/gold/history",
+        params={"code": "SJC", "start": "2026-01-01", "limit": 100},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["data"][0]["buy_price"] == "134500000"
+    sent = data_plane.last("gold_history")
+    assert sent["code"] == "SJC"
+    assert sent["start"] == "2026-01-01"
+    assert sent["limit"] == 100
+
+
+@pytest.mark.asyncio
+async def test_gold_history_codes_passthrough(client, data_plane):
+    data_plane.gold_history_codes = [
+        GoldHistoryCodeSchema(
+            code="PNJ:TPHCM:SJC",
+            unit="VND/luong",
+            points=5321,
+            location="TPHCM",
+            gold_type="SJC",
+        )
+    ]
+    resp = await client.get("/api/market/gold/history/codes")
+    assert resp.status_code == 200
+    assert resp.json()["data"][0]["code"] == "PNJ:TPHCM:SJC"
+
+
+@pytest.mark.asyncio
+async def test_import_requires_superuser(client, data_plane):
+    """A normal session must not reach the import endpoint at all."""
+    resp = await client.post(
+        "/api/market/gold/import",
+        files=[("files", ("sjc.csv", SJC_CSV, "text/csv"))],
+    )
+    assert resp.status_code == 403
+    assert not [c for c, _ in data_plane.calls if c == "gold_import"]
+
+
+@pytest.mark.asyncio
+async def test_import_forwards_bytes_verbatim(admin_client, data_plane):
+    data_plane.import_result = GoldImportResultSchema(
+        dataset="sjc",
+        filename="sjc.csv",
+        rows_parsed=1,
+        rows_imported=1,
+        rows_skipped=0,
+        codes=1,
+    )
+    resp = await admin_client.post(
+        "/api/market/gold/import",
+        files=[("files", ("sjc.csv", SJC_CSV, "text/csv"))],
+    )
+    assert resp.status_code == 200
+    results = resp.json()["data"]
+    assert len(results) == 1
+    assert results[0]["dataset"] == "sjc"
+    assert results[0]["rows_imported"] == "1"
+    # The multipart wrapper is unwrapped here; the data plane sees raw CSV.
+    assert data_plane.import_bodies == [SJC_CSV]
+    assert data_plane.last("gold_import")["filename"] == "sjc.csv"
+
+
+@pytest.mark.asyncio
+async def test_import_data_plane_down_is_502(admin_client, monkeypatch):
+    from kactus_fin import data_client
+
+    async def boom(*args, **kwargs):
+        raise httpx.ConnectError("connection refused")
+
+    monkeypatch.setattr(data_client.get_client(), "post", boom)
+
+    resp = await admin_client.post(
+        "/api/market/gold/import",
+        files=[("files", ("sjc.csv", SJC_CSV, "text/csv"))],
+    )
+    assert resp.status_code == 502
 
 
 @pytest.mark.asyncio

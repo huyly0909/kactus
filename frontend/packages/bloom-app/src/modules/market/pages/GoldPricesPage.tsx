@@ -1,10 +1,15 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Coins } from 'lucide-react';
+import { Coins, Upload } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
+import { useAuth } from '@/hooks/useAuth';
 import { useGoldPrices } from '@/hooks/useMarketQuery';
 import { fmtGold, fmtDateTime } from '@/lib/format';
 import { UNIT_USD_PER_OZ, type GoldPrice } from '@/types/market';
+import { GoldHistoryCard } from '@modules/market/components/GoldHistoryCard';
+import { GoldImportDialog } from '@modules/market/components/GoldImportDialog';
 
 /**
  * Gold board — latest buy/sell quote per gold code.
@@ -16,6 +21,8 @@ import { UNIT_USD_PER_OZ, type GoldPrice } from '@/types/market';
 export function GoldPricesPage() {
   const { t } = useTranslation();
   const { data, isLoading } = useGoldPrices();
+  const { user } = useAuth();
+  const [importOpen, setImportOpen] = useState(false);
 
   const columns: DataTableColumn<GoldPrice>[] = [
     {
@@ -72,11 +79,19 @@ export function GoldPricesPage() {
         <div className="flex h-10 w-10 items-center justify-center rounded-md bg-[var(--warning)]/15 text-[var(--warning)]">
           <Coins className="h-5 w-5" />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold tracking-tight">{t('market.gold.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('market.gold.subtitle')}</p>
         </div>
+        {user?.is_superuser && (
+          <Button variant="outline" onClick={() => setImportOpen(true)}>
+            <Upload className="h-4 w-4" />
+            {t('market.gold.import.button')}
+          </Button>
+        )}
       </div>
+
+      <GoldHistoryCard />
 
       <DataTable
         columns={columns}
@@ -87,6 +102,8 @@ export function GoldPricesPage() {
         emptyMessage={t('market.empty')}
         getRowKey={(g) => g.code}
       />
+
+      <GoldImportDialog open={importOpen} onOpenChange={setImportOpen} />
     </div>
   );
 }

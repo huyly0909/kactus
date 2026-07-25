@@ -13,6 +13,7 @@ from fastapi import Query
 from kactus_common.exceptions import NotFoundError
 from kactus_common.market.const import (
     DEFAULT_FINANCE_LIMIT,
+    DEFAULT_GOLD_HISTORY_LIMIT,
     DEFAULT_LIST_LIMIT,
     DEFAULT_NEWS_LIMIT,
     DEFAULT_OHLCV_LIMIT,
@@ -22,6 +23,8 @@ from kactus_common.market.const import (
 )
 from kactus_common.market.schema import (
     FinanceReportSchema,
+    GoldHistoryCodeSchema,
+    GoldHistoryPointSchema,
     GoldPriceSchema,
     OHLCVSchema,
     StockDetailSchema,
@@ -44,6 +47,27 @@ async def list_gold_prices(
 ) -> list[GoldPriceSchema]:
     """Latest gold quotes (VND per lượng), optionally filtered by code."""
     return await data_client.list_gold(codes=code)
+
+
+# ``code`` is a query param, not a path segment — PNJ series codes carry
+# spaces, colons and diacritics ("PNJ:Hà Nội:Vàng 916").
+@router.get("/gold/history")
+async def list_gold_history(
+    code: str,
+    start: datetime.date | None = None,
+    end: datetime.date | None = None,
+    limit: int = DEFAULT_GOLD_HISTORY_LIMIT,
+) -> list[GoldHistoryPointSchema]:
+    """Daily points for one gold series, oldest → newest."""
+    return await data_client.list_gold_history(
+        code=code, start=start, end=end, limit=limit
+    )
+
+
+@router.get("/gold/history/codes")
+async def list_gold_history_codes() -> list[GoldHistoryCodeSchema]:
+    """Catalogue of stored gold series (for the history chart's picker)."""
+    return await data_client.list_gold_history_codes()
 
 
 # --------------------------------------------------------------------------- #

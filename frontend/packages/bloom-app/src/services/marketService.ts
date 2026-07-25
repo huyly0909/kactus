@@ -2,6 +2,9 @@ import { apiClient } from './apiClient';
 import type { ApiResponse } from '@/types/api';
 import type {
   FinanceReport,
+  GoldHistoryCode,
+  GoldHistoryPoint,
+  GoldImportResult,
   GoldPrice,
   OHLCV,
   OHLCVInterval,
@@ -20,6 +23,12 @@ export interface OHLCVParams {
   limit?: number;
 }
 
+export interface GoldHistoryParams {
+  start?: string;
+  end?: string;
+  limit?: number;
+}
+
 export interface FinanceParams {
   report_type: ReportType;
   period?: ReportPeriod;
@@ -32,6 +41,40 @@ export const marketService = {
     const { data } = await apiClient.get<ApiResponse<GoldPrice[]>>('/api/market/gold', {
       params: codes?.length ? { code: codes } : undefined,
     });
+    return data.data;
+  },
+
+  goldHistory: async (
+    code: string,
+    params: GoldHistoryParams = {},
+  ): Promise<GoldHistoryPoint[]> => {
+    const { data } = await apiClient.get<ApiResponse<GoldHistoryPoint[]>>(
+      '/api/market/gold/history',
+      { params: { code, ...params } },
+    );
+    return data.data;
+  },
+
+  goldHistoryCodes: async (): Promise<GoldHistoryCode[]> => {
+    const { data } = await apiClient.get<ApiResponse<GoldHistoryCode[]>>(
+      '/api/market/gold/history/codes',
+    );
+    return data.data;
+  },
+
+  importGoldHistory: async (files: File[]): Promise<GoldImportResult[]> => {
+    const form = new FormData();
+    files.forEach((f) => form.append('files', f));
+    const { data } = await apiClient.post<ApiResponse<GoldImportResult[]>>(
+      '/api/market/gold/import',
+      form,
+      {
+        // Override the JSON default so the browser sets the multipart boundary,
+        // and give the parse+upsert of a ~92k-row file room past the 30s default.
+        headers: { 'Content-Type': 'multipart/form-data' },
+        timeout: 120_000,
+      },
+    );
     return data.data;
   },
 

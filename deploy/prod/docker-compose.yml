@@ -52,8 +52,10 @@ services:
     # PA QR session store across processes, and the scheduler + DuckDB write
     # handle have moved into kactus-data-server, which runs a single replica.
     # This process is stateless — nothing here is worth keeping at one worker.
+    # Migrations run on every start — one fin replica per env, no upgrade race.
     command: >
-      uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --workers 4 --log-level warning
+      sh -c "python manage.py fin db upgrade &&
+      uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --workers 4 --log-level warning"
 
   # The data plane. Not published: no port mapping, reachable only from the
   # compose network, and every /internal route additionally requires
