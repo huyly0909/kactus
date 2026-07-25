@@ -17,6 +17,7 @@ Manual deployment guide for Kactus services using Docker Compose.
 | `kactus-fin` | Built from `Dockerfile.fin` | 17600 | Main API server (control plane) |
 | `kactus-fin-gw` | Built from `Dockerfile.fin-gw` | 17601 | Gateway API server |
 | `kactus-data-server` | Built from `Dockerfile.data-server` | 17602 | ETL + DuckDB + crawl scheduler (data plane) |
+| `bloom-app` | Built from `Dockerfile.bloom-app` | 17630 (prod: 80) | Frontend SPA (nginx) + `/api` reverse proxy |
 
 ## Environment Comparison
 
@@ -26,9 +27,24 @@ Manual deployment guide for Kactus services using Docker Compose.
 | `kactus-fin-gw` workers | 1 (reload) | 2 | 4 |
 | `kactus-data-server` workers | **1** (reload) | **1** | **1** |
 | `kactus-data-server` port published | ✅ 17602 | ❌ | ❌ |
+| `bloom-app` port | 17630 | 17630 | 80 |
 | Log level | debug | info | warning |
 | Restart | no | unless-stopped | always |
 | Source volumes | ✅ (hot-reload) | ❌ | ❌ |
+
+### bloom-app — frontend + reverse proxy
+
+`Dockerfile.bloom-app` builds the SPA with **bun** (`bun install --frozen-lockfile`
+against `frontend/bun.lock`, then a turbo/vite build) and ships it in
+`nginx:alpine`. The nginx config (`nginx.bloom-app.conf`) also reverse-proxies
+`/api` (plus the SSE stream and `/ws`) to `kactus-fin:17600` over the compose
+network, so the browser talks to **one origin** — no CORS, no
+`SameSite=None` cookies, no `VITE_API_BASE_URL` baked into the bundle.
+
+In dev, day-to-day frontend work runs on the host instead:
+`cd frontend && bun run dev` (vite on 17630, proxying to `localhost:17600`).
+Don't run that while the dev compose `bloom-app` container is up — both claim
+port 17630.
 
 ### Why `kactus-data-server` is pinned to one worker and one replica
 

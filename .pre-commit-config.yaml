@@ -26,3 +26,22 @@ repos:
         # flake8 resolves config from cwd (repo root), not the file's dir
         args: ["--config=backend/.flake8"]
         files: ^backend/
+
+  # Frontend hooks replace husky/lint-staged — one hook manager owns .git/hooks.
+  # Requires `cd frontend && bun install` once so node_modules exists.
+  - repo: local
+    hooks:
+      - id: frontend-prettier
+        name: prettier (frontend)
+        language: system
+        entry: frontend/node_modules/.bin/prettier --write
+        files: ^frontend/.*\.(ts|tsx|css|json|md)$
+        exclude: ^frontend/bun\.lock$
+      - id: frontend-eslint
+        name: eslint (frontend)
+        language: system
+        # eslint flat config resolves from cwd, so run through the workspace
+        # script instead of passing repo-root-relative filenames
+        entry: bash -c 'cd frontend && bun run lint'
+        pass_filenames: false
+        files: ^frontend/.*\.(ts|tsx)$
