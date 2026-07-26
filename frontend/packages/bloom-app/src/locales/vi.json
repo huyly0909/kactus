@@ -30,7 +30,11 @@
     "showing": "Hiển thị",
     "remove": "Xoá",
     "debug_mode": "Chế độ gỡ lỗi",
-    "debug_mode_on": "Bật"
+    "debug_mode_on": "Bật",
+    "range_pick": "Chọn khoảng",
+    "range_from": "Từ",
+    "range_to": "Đến",
+    "range_clear": "Xóa"
   },
   "auth": {
     "login": "Đăng nhập",
@@ -226,8 +230,10 @@
         "group_main": "Chính",
         "close": "Giá đóng cửa",
         "range_1y": "1N",
+        "range_3y": "3N",
         "range_5y": "5N",
         "range_max": "Tất cả",
+        "range_custom": "Tùy chọn",
         "empty": "Chưa có dữ liệu lịch sử — nhập file CSV backfill để xem biểu đồ."
       }
     },

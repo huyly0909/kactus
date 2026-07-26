@@ -87,20 +87,33 @@ services:
     command: >
       uvicorn kactus_data_server.app:app --host 0.0.0.0 --port 17602 --reload --log-level debug
 
-  # Frontend SPA + reverse proxy. In dev this is for full-stack smoke tests;
-  # day-to-day frontend work runs on the host (`cd frontend && bun run dev`,
-  # vite on 17630 proxying to localhost:17600) — don't run both at once, they
-  # claim the same port.
+  # Frontend SPA — vite dev server with HMR (the `dev` stage of the Dockerfile,
+  # not the nginx build stag/prod use). Source is bind-mounted, so edits on the
+  # host hot-reload in the browser. Running `cd frontend && bun run dev` on the
+  # host still works for standalone frontend work, but don't run both at once —
+  # they claim the same port (17630).
   bloom-app:
     build:
       context: ../../
       dockerfile: deploy/Dockerfile.bloom-app
+      target: dev
+    environment:
+      # Vite runs inside the compose network: reach kactus-fin by service name
+      # (the host default localhost:17600 would resolve to this container), and
+      # flip on the container-only server tweaks (poll, listen-all, no-open).
+      VITE_DOCKER: "1"
+      VITE_PROXY_TARGET: http://kactus-fin:17600
     ports:
-      - "17630:80"
-    # Startup ordering only — nginx proxies per request, so a kactus-fin
-    # restart doesn't require restarting this container.
+      - "17630:17630"
+    # Startup ordering only — vite proxies per request, so a kactus-fin restart
+    # doesn't require restarting this container.
     depends_on:
       - kactus-fin
+    # Only src/ is mounted (not the whole package) so the image's linux
+    # node_modules are never shadowed by the host's darwin ones.
+    volumes:
+      - ../../frontend/packages/bloom-app/src:/app/packages/bloom-app/src
+      - ../../frontend/packages/bloom-ui/src:/app/packages/bloom-ui/src
 
   kactus-fin-gw:
     build:

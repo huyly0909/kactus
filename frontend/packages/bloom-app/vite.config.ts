@@ -3,6 +3,12 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 
+// Set in the dev container (see deploy/dev/docker-compose.yml). On the host
+// every branch below falls back to vite's normal defaults.
+const inDocker = !!process.env.VITE_DOCKER;
+// Host: kactus-fin on localhost. Container: reach it by compose service name.
+const apiTarget = process.env.VITE_PROXY_TARGET || 'http://localhost:17600';
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -34,14 +40,19 @@ export default defineConfig({
   },
   server: {
     port: 17630,
-    open: true,
+    // In the dev container: no browser to open, listen on all interfaces so the
+    // host can reach it, and poll for file changes (bind-mount fs events are
+    // not always delivered to the container). On the host these are vite defaults.
+    open: !inDocker,
+    host: inDocker || undefined,
+    watch: inDocker ? { usePolling: true } : undefined,
     proxy: {
       '/api': {
-        target: 'http://localhost:17600',
+        target: apiTarget,
         changeOrigin: true,
       },
       '/ws': {
-        target: 'ws://localhost:17600',
+        target: apiTarget.replace(/^http/, 'ws'),
         ws: true,
       },
     },

@@ -30,7 +30,11 @@
     "showing": "Showing",
     "remove": "Remove",
     "debug_mode": "Debug mode",
-    "debug_mode_on": "On"
+    "debug_mode_on": "On",
+    "range_pick": "Pick range",
+    "range_from": "From",
+    "range_to": "To",
+    "range_clear": "Clear"
   },
   "auth": {
     "login": "Log in",
@@ -226,8 +230,10 @@
         "group_main": "Main",
         "close": "Close",
         "range_1y": "1Y",
+        "range_3y": "3Y",
         "range_5y": "5Y",
         "range_max": "Max",
+        "range_custom": "Custom",
         "empty": "No history yet — import the backfill CSVs to see the chart."
       }
     },
