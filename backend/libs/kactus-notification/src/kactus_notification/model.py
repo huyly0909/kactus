@@ -14,6 +14,7 @@ from kactus_common.database.oltp.models import (
     Base,
     LogicalDeleteMixin,
     ModelMixin,
+    ProjectScopedMixin,
 )
 from kactus_common.database.oltp.types import EncryptedJSON, UnsignedBigInt
 from sqlalchemy import Boolean, Integer, String, Text
@@ -22,8 +23,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .const import NotificationChannelType, NotificationLevel, NotificationTrigger
 
 
-class NotificationChannel(Base, ModelMixin, AuditMixin, LogicalDeleteMixin):
-    """A user-owned delivery target (Telegram chat, Slack webhook, …)."""
+class NotificationChannel(
+    Base, ModelMixin, AuditMixin, LogicalDeleteMixin, ProjectScopedMixin
+):
+    """A project-scoped delivery target (Telegram chat, Slack webhook, …).
+
+    ``owner_id`` records the creator (audit); access is governed by the owning
+    ``project_id`` + the member's role.
+    """
 
     __tablename__ = "notification_channels"
 
@@ -51,6 +58,10 @@ class NotificationLog(Base, ModelMixin):
 
     channel_id: Mapped[UnsignedBigInt] = mapped_column(index=True)
     owner_id: Mapped[UnsignedBigInt] = mapped_column(index=True)
+    # Plain column (NOT ProjectScopedMixin): the queue consumer writes this with
+    # no request context, so it is set from the parent channel and filtered
+    # explicitly in list queries.
+    project_id: Mapped[UnsignedBigInt | None] = mapped_column(index=True, default=None)
     channel_type: Mapped[str] = mapped_column(String(16))
     event_title: Mapped[str] = mapped_column(String(255))
     level: Mapped[str] = mapped_column(String(16), default=NotificationLevel.INFO)

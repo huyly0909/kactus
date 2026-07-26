@@ -1,9 +1,11 @@
-"""Portfolio API — user-owned watchlists, market reads, manual refresh, SSE.
+"""Portfolio API — project-scoped watchlists, market reads, manual refresh, SSE.
 
-Portfolios are user-owned: every route resolves ownership via
-``request.state.user`` (not project-scoped Casbin).  Market data comes from the
-data plane over HTTP — this process cannot open DuckDB, which the crawler holds
-read-write.
+Portfolios are shared within a project: access is gated by the member's role via
+``@permission(ProjectPermission.project, ...)`` — MEMBER reads, MANAGER/OWNER
+read+write — and the active project (cookie) scopes every query through
+``ProjectScopedMixin``. ``owner_id`` is retained only as an audit of who created
+each row. Market data comes from the data plane over HTTP — this process cannot
+open DuckDB, which the crawler holds read-write.
 """
 
 from __future__ import annotations
@@ -13,6 +15,9 @@ import json
 from collections import defaultdict
 
 from fastapi import Request
+from kactus_common.audit import audit
+from kactus_common.authorization.const import PermissionAct
+from kactus_common.authorization.decorator import permission
 from kactus_common.portfolio.const import AssetType, CrawlKind, CrawlTrigger
 from kactus_common.portfolio.schema import (
     CrawlTriggerResponse,
@@ -30,6 +35,7 @@ from kactus_common.portfolio.service import (
     PortfolioService,
     SupportedAssetService,
 )
+from kactus_common.project.const import ProjectPermission
 from kactus_common.router import KactusAPIRouter
 from kactus_common.schemas import MessageResponse, Pagination
 from kactus_common.sse.broker import get_sse_broker
@@ -80,42 +86,42 @@ async def stream_market_events(request: Request):
 # Portfolio CRUD
 # --------------------------------------------------------------------------- #
 @router.post("")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def create_portfolio(
     body: PortfolioCreateRequest,
     request: Request,
     session: AsyncSession,
 ) -> PortfolioSchema:
-    """Create a portfolio owned by the current user."""
+    """Create a portfolio in the current project (creator recorded as owner)."""
     user = request.state.user
     portfolio = await PortfolioService.create(
         session, name=body.name, description=body.description, owner_id=user.id
     )
+    audit("portfolio.create", "portfolio", portfolio.id, meta={"name": body.name})
     return PortfolioSchema.model_validate(portfolio)
 
 
 @router.get("")
+@permission(ProjectPermission.project, PermissionAct.read)
 @provide_session
 async def list_portfolios(
     request: Request, session: AsyncSession
 ) -> Pagination[PortfolioSchema]:
-    """List the current user's portfolios."""
-    user = request.state.user
-    portfolios = await PortfolioService.list_for_owner(session, user.id)
+    """List the current project's portfolios."""
+    portfolios = await PortfolioService.list_for_project(session)
     items = [PortfolioSchema.model_validate(p) for p in portfolios]
     return Pagination(total=len(items), items=items)
 
 
 @router.get("/{portfolio_id}")
+@permission(ProjectPermission.project, PermissionAct.read)
 @provide_session
 async def get_portfolio(
     portfolio_id: int, request: Request, session: AsyncSession
 ) -> PortfolioDetailSchema:
     """Get a portfolio with its watchlist items."""
-    user = request.state.user
-    portfolio = await PortfolioService.get_owned_or_404(
-        session, portfolio_id=portfolio_id, owner_id=user.id
-    )
+    portfolio = await PortfolioService.get_or_404(session, portfolio_id)
     items = await PortfolioService.get_items(session, portfolio_id)
     detail = PortfolioDetailSchema.model_validate(portfolio)
     detail.items = [PortfolioItemSchema.model_validate(i) for i in items]
@@ -123,6 +129,7 @@ async def get_portfolio(
 
 
 @router.put("/{portfolio_id}")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def update_portfolio(
     portfolio_id: int,
@@ -131,27 +138,24 @@ async def update_portfolio(
     session: AsyncSession,
 ) -> PortfolioSchema:
     """Update a portfolio's name/description."""
-    user = request.state.user
-    portfolio = await PortfolioService.get_owned_or_404(
-        session, portfolio_id=portfolio_id, owner_id=user.id
-    )
+    portfolio = await PortfolioService.get_or_404(session, portfolio_id)
     portfolio = await PortfolioService.update(
         session, portfolio, name=body.name, description=body.description
     )
+    audit("portfolio.update", "portfolio", portfolio.id)
     return PortfolioSchema.model_validate(portfolio)
 
 
 @router.delete("/{portfolio_id}")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def delete_portfolio(
     portfolio_id: int, request: Request, session: AsyncSession
 ) -> MessageResponse:
     """Logically delete a portfolio."""
-    user = request.state.user
-    portfolio = await PortfolioService.get_owned_or_404(
-        session, portfolio_id=portfolio_id, owner_id=user.id
-    )
+    portfolio = await PortfolioService.get_or_404(session, portfolio_id)
     await PortfolioService.delete(session, portfolio)
+    audit("portfolio.delete", "portfolio", portfolio_id)
     return MessageResponse(message="deleted")
 
 
@@ -159,6 +163,7 @@ async def delete_portfolio(
 # Watchlist items
 # --------------------------------------------------------------------------- #
 @router.post("/{portfolio_id}/items")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def add_item(
     portfolio_id: int,
@@ -167,17 +172,21 @@ async def add_item(
     session: AsyncSession,
 ) -> PortfolioItemSchema:
     """Add an instrument to a portfolio (validated against the catalog)."""
-    user = request.state.user
-    await PortfolioService.get_owned_or_404(
-        session, portfolio_id=portfolio_id, owner_id=user.id
-    )
+    await PortfolioService.get_or_404(session, portfolio_id)
     item = await PortfolioService.add_item(
         session, portfolio_id=portfolio_id, asset_type=body.asset_type, code=body.code
+    )
+    audit(
+        "portfolio.item.add",
+        "portfolio",
+        portfolio_id,
+        meta={"asset_type": str(body.asset_type), "code": body.code},
     )
     return PortfolioItemSchema.model_validate(item)
 
 
 @router.delete("/{portfolio_id}/items")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def remove_item(
     portfolio_id: int,
@@ -187,12 +196,15 @@ async def remove_item(
     asset_type: AssetType = AssetType.STOCK,
 ) -> MessageResponse:
     """Remove an instrument from a portfolio."""
-    user = request.state.user
-    await PortfolioService.get_owned_or_404(
-        session, portfolio_id=portfolio_id, owner_id=user.id
-    )
+    await PortfolioService.get_or_404(session, portfolio_id)
     await PortfolioService.remove_item(
         session, portfolio_id=portfolio_id, asset_type=asset_type, code=code
+    )
+    audit(
+        "portfolio.item.remove",
+        "portfolio",
+        portfolio_id,
+        meta={"asset_type": str(asset_type), "code": code},
     )
     return MessageResponse(message="removed")
 
@@ -211,15 +223,13 @@ async def _items_by_type(
 
 
 @router.get("/{portfolio_id}/quotes")
+@permission(ProjectPermission.project, PermissionAct.read)
 @provide_session
 async def get_quotes(
     portfolio_id: int, request: Request, session: AsyncSession
 ) -> list[MarketQuoteSchema]:
     """Latest quotes for every instrument in the portfolio."""
-    user = request.state.user
-    await PortfolioService.get_owned_or_404(
-        session, portfolio_id=portfolio_id, owner_id=user.id
-    )
+    await PortfolioService.get_or_404(session, portfolio_id)
     grouped = await _items_by_type(session, portfolio_id)
     out: list[MarketQuoteSchema] = []
     for asset_type, codes in grouped.items():
@@ -246,15 +256,13 @@ async def get_quotes(
 
 
 @router.get("/{portfolio_id}/news")
+@permission(ProjectPermission.project, PermissionAct.read)
 @provide_session
 async def get_news(
     portfolio_id: int, request: Request, session: AsyncSession
 ) -> list[MarketNewsSchema]:
     """Recent news for the portfolio's stock instruments."""
-    user = request.state.user
-    await PortfolioService.get_owned_or_404(
-        session, portfolio_id=portfolio_id, owner_id=user.id
-    )
+    await PortfolioService.get_or_404(session, portfolio_id)
     grouped = await _items_by_type(session, portfolio_id)
     out: list[MarketNewsSchema] = []
     for asset_type, codes in grouped.items():
@@ -264,6 +272,7 @@ async def get_news(
 
 
 @router.post("/{portfolio_id}/refresh")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def refresh_portfolio(
     portfolio_id: int,
@@ -272,10 +281,7 @@ async def refresh_portfolio(
     kind: CrawlKind = CrawlKind.QUOTES,
 ) -> CrawlTriggerResponse:
     """Manually trigger a crawl for this portfolio (deduped vs in-flight runs)."""
-    user = request.state.user
-    await PortfolioService.get_owned_or_404(
-        session, portfolio_id=portfolio_id, owner_id=user.id
-    )
+    await PortfolioService.get_or_404(session, portfolio_id)
     grouped = await _items_by_type(session, portfolio_id)
     if not grouped:
         return CrawlTriggerResponse(skipped=True, message="Portfolio is empty")
@@ -299,6 +305,7 @@ async def refresh_portfolio(
         portfolio_id=portfolio_id,
         dedup=True,
     )
+    audit("portfolio.refresh", "portfolio", portfolio_id, meta={"kind": str(kind)})
     return CrawlTriggerResponse(skipped=False, message="Refresh scheduled")
 
 

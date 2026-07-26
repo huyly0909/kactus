@@ -2,6 +2,11 @@
 
 In-memory SQLite (OLTP). Settings are registered with a real Fernet key so the
 ``EncryptedJSON`` config column round-trips (encrypt on write / decrypt on read).
+
+Channels are **project-scoped** now (``ProjectScopedMixin``): the active project
+comes from the ``_current_project_id`` ContextVar, is auto-stamped on insert, and
+the global SELECT filter enforces the boundary. Tests drive that ContextVar
+directly to stand in for "which project the request is in".
 """
 
 from __future__ import annotations
@@ -15,6 +20,7 @@ from kactus_common.crypto import CryptoService
 from kactus_common.database.oltp.models import Base, utcnow
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.exceptions import NotFoundError, ValidationError
+from kactus_common.user.context import set_current_project_id
 from kactus_notification.config import NotificationSettings
 from kactus_notification.const import (
     NotificationChannelType,
@@ -58,8 +64,16 @@ async def db():
     clear_settings()
 
 
+@pytest.fixture(autouse=True)
+def _reset_project_ctx():
+    """No project selected by default; clear any test's ctx leakage afterwards."""
+    set_current_project_id(None)
+    yield
+    set_current_project_id(None)
+
+
 @pytest.mark.asyncio
-async def test_create_and_get_owned(db):
+async def test_create_and_get(db):
     async with db.get_session() as session:
         channel = await NotificationChannelService.create(
             session,
@@ -74,15 +88,17 @@ async def test_create_and_get_owned(db):
         # config decrypts back to the original dict after refresh
         assert channel.config["bot_token"] == "secret-token"
 
-        fetched = await NotificationChannelService.get_owned_or_404(
-            session, channel_id=channel.id, owner_id=1
+        fetched = await NotificationChannelService.get_or_404(
+            session, channel_id=channel.id
         )
         assert fetched.id == channel.id
 
 
 @pytest.mark.asyncio
-async def test_ownership_isolation(db):
+async def test_project_isolation(db):
+    """A channel created in project 1 is invisible from project 2 — 404, no leak."""
     async with db.get_session() as session:
+        set_current_project_id(1)
         channel = await NotificationChannelService.create(
             session,
             owner_id=1,
@@ -90,16 +106,24 @@ async def test_ownership_isolation(db):
             channel_type=NotificationChannelType.TELEGRAM,
             config=TELEGRAM_CFG,
         )
-        # Another user cannot see it — 404, not a leak.
+        assert channel.project_id == 1
+
+        # Another project cannot see it — 404, not a leak.
+        set_current_project_id(2)
         with pytest.raises(NotFoundError):
-            await NotificationChannelService.get_owned_or_404(
-                session, channel_id=channel.id, owner_id=2
-            )
+            await NotificationChannelService.get_or_404(session, channel_id=channel.id)
+
+        # …but its own project resolves it.
+        set_current_project_id(1)
+        assert (
+            await NotificationChannelService.get_or_404(session, channel_id=channel.id)
+        ).id == channel.id
 
 
 @pytest.mark.asyncio
-async def test_list_for_owner_scoped(db):
+async def test_list_for_project_scoped(db):
     async with db.get_session() as session:
+        set_current_project_id(1)
         await NotificationChannelService.create(
             session,
             owner_id=1,
@@ -107,6 +131,7 @@ async def test_list_for_owner_scoped(db):
             channel_type=NotificationChannelType.TELEGRAM,
             config=TELEGRAM_CFG,
         )
+        set_current_project_id(2)
         await NotificationChannelService.create(
             session,
             owner_id=2,
@@ -114,7 +139,8 @@ async def test_list_for_owner_scoped(db):
             channel_type=NotificationChannelType.SLACK,
             config={"webhook_url": "https://hooks.slack.com/services/x/y/z"},
         )
-        mine = await NotificationChannelService.list_for_owner(session, 1)
+        set_current_project_id(1)
+        mine = await NotificationChannelService.list_for_project(session)
         assert [c.name for c in mine] == ["A"]
 
 
@@ -140,7 +166,7 @@ async def test_update_and_soft_delete(db):
         assert updated.config["chat_id"] == "999"
 
         await NotificationChannelService.delete(session, channel)
-        assert await NotificationChannelService.list_for_owner(session, 1) == []
+        assert await NotificationChannelService.list_for_project(session) == []
 
 
 @pytest.mark.asyncio
@@ -233,9 +259,13 @@ async def test_log_record_success(db):
 @pytest.mark.asyncio
 async def test_log_list_scoped_and_filtered(db):
     async with db.get_session() as session:
+        # ch1/ch2 belong to project 1; other belongs to project 2.
+        set_current_project_id(1)
         ch1 = await _channel(session, owner_id=1)
         ch2 = await _channel(session, owner_id=1)
+        set_current_project_id(2)
         other = await _channel(session, owner_id=2)
+        set_current_project_id(None)
         for ch, title in ((ch1, "a"), (ch1, "b"), (ch2, "c"), (other, "d")):
             await NotificationLogService.record(
                 session,
@@ -245,11 +275,11 @@ async def test_log_list_scoped_and_filtered(db):
                 attempts=1,
                 error=None,
             )
-        # Owner-scoped: user 1 sees 3, not user 2's row.
-        mine = await NotificationLogService.list_for_owner(session, 1)
+        # Project-scoped: project 1 sees 3, not project 2's row.
+        mine = await NotificationLogService.list_for_project(session, 1)
         assert {log.event_title for log in mine} == {"a", "b", "c"}
         # Channel filter narrows to ch1's two rows.
-        ch1_logs = await NotificationLogService.list_for_owner(
+        ch1_logs = await NotificationLogService.list_for_project(
             session, 1, channel_id=ch1.id
         )
         assert {log.event_title for log in ch1_logs} == {"a", "b"}
@@ -258,7 +288,9 @@ async def test_log_list_scoped_and_filtered(db):
 @pytest.mark.asyncio
 async def test_log_list_limit(db):
     async with db.get_session() as session:
+        set_current_project_id(1)
         channel = await _channel(session)
+        set_current_project_id(None)
         for i in range(5):
             await NotificationLogService.record(
                 session,
@@ -268,5 +300,5 @@ async def test_log_list_limit(db):
                 attempts=1,
                 error=None,
             )
-        limited = await NotificationLogService.list_for_owner(session, 1, limit=3)
+        limited = await NotificationLogService.list_for_project(session, 1, limit=3)
         assert len(limited) == 3

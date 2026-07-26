@@ -41,6 +41,26 @@ class ProjectMemberSchema(BaseSchema):
     role: str
 
 
+class ProjectMemberDetailSchema(ProjectMemberSchema):
+    """Project member enriched with the user's email/name for display."""
+
+    email: str | None = None
+    name: str | None = None
+
+
+class AddMemberRequest(BaseSchema):
+    """Invite an existing user to a project by email."""
+
+    email: str
+    role: str = "member"
+
+
+class UpdateMemberRoleRequest(BaseSchema):
+    """Change a member's role."""
+
+    role: str
+
+
 class ProjectDetailSchema(ProjectSchema):
     """Project detail with members."""
 

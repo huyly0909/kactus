@@ -1,7 +1,6 @@
 import { type FC, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
@@ -12,25 +11,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { DateRangePicker, type DateRange } from '@/components/ui/date-range-picker';
+import { DateRangeControl, datePresets, type DateRange } from '@/components/ui/date-range-picker';
 import { useGoldHistory, useGoldHistoryCodes } from '@/hooks/useMarketQuery';
 import type { GoldHistoryParams } from '@/services/marketService';
 import { UNIT_USD_PER_OZ, type GoldHistoryCode } from '@/types/market';
 import { GoldHistoryChart } from './GoldHistoryChart';
 
-type RangeKey = '1y' | '3y' | '5y' | 'max';
+// Quick selections for the gold chart: this week / month / quarter, then
+// trailing 1/3/5 years, then all-time. The widget hardcodes no presets — each
+// chart passes the ones it needs.
+const GOLD_PRESETS = datePresets('week', 'month', 'quarter', '1y', '3y', '5y', 'all');
+const defaultRange = (): DateRange => datePresets('1y')[0]?.range() ?? { from: '', to: '' };
 
-const RANGE_KEYS: RangeKey[] = ['1y', '3y', '5y', 'max'];
-const RANGE_YEARS: Record<Exclude<RangeKey, 'max'>, number> = { '1y': 1, '3y': 3, '5y': 5 };
+const DAY_MS = 86_400_000;
 
-/** "Max" must clear the backend's default cap — XAU alone is ~6.5k points. */
-const RANGE_LIMIT: Record<RangeKey, number> = { '1y': 400, '3y': 1200, '5y': 2000, max: 10_000 };
-
-function rangeStart(range: RangeKey): string | undefined {
-  if (range === 'max') return undefined;
-  const d = new Date();
-  d.setFullYear(d.getFullYear() - RANGE_YEARS[range]);
-  return d.toISOString().slice(0, 10);
+/**
+ * Points to fetch for a range: ~one row per calendar day plus headroom. An
+ * unbounded ("all") range clears the backend's default cap — XAU alone is ~6.5k
+ * points.
+ */
+function rangeLimit(r: DateRange): number {
+  if (!r.from) return 10_000;
+  const from = new Date(r.from).getTime();
+  const to = (r.to ? new Date(r.to) : new Date()).getTime();
+  const days = Math.max(1, Math.round((to - from) / DAY_MS));
+  return Math.min(10_000, days + 60);
 }
 
 /**
@@ -45,30 +50,15 @@ export const GoldHistoryCard: FC = () => {
   const { t } = useTranslation();
   const { data: codes, isLoading: codesLoading } = useGoldHistoryCodes();
   const [selected, setSelected] = useState<string>('');
-  // The view is driven by *either* a quick-range preset *or* a custom from→to
-  // range. Picking one clears the other; `preset === null` means custom drives.
-  const [preset, setPreset] = useState<RangeKey | null>('1y');
-  const [custom, setCustom] = useState<DateRange>({ from: '', to: '' });
+  // A single { from, to } range drives the view — a preset chip and a custom
+  // calendar pick emit the same shape. Default: trailing 1 year.
+  const [range, setRange] = useState<DateRange>(defaultRange);
 
-  const pickPreset = (key: RangeKey) => {
-    setPreset(key);
-    setCustom({ from: '', to: '' });
+  const historyParams: GoldHistoryParams = {
+    start: range.from || undefined,
+    end: range.to || undefined,
+    limit: rangeLimit(range),
   };
-  const pickCustom = (r: DateRange) => {
-    // Clearing the custom range falls back to the default 1-year preset.
-    if (!r.from && !r.to) {
-      setCustom({ from: '', to: '' });
-      setPreset('1y');
-      return;
-    }
-    setCustom(r);
-    setPreset(null);
-  };
-
-  const historyParams: GoldHistoryParams =
-    preset !== null
-      ? { start: rangeStart(preset), limit: RANGE_LIMIT[preset] }
-      : { start: custom.from || undefined, end: custom.to || undefined, limit: RANGE_LIMIT.max };
 
   const { primary, pnj } = useMemo(() => {
     const all = codes ?? [];
@@ -123,24 +113,12 @@ export const GoldHistoryCard: FC = () => {
               )}
             </SelectContent>
           </Select>
-          <div className="flex flex-wrap items-center gap-1">
-            {RANGE_KEYS.map((r) => (
-              <Button
-                key={r}
-                size="sm"
-                variant={preset === r ? 'default' : 'outline'}
-                onClick={() => pickPreset(r)}
-              >
-                {t(`market.gold.history.range_${r}`)}
-              </Button>
-            ))}
-            <DateRangePicker
-              value={custom}
-              onChange={pickCustom}
-              active={preset === null}
-              placeholder={t('market.gold.history.range_custom')}
-            />
-          </div>
+          <DateRangeControl
+            value={range}
+            onChange={setRange}
+            presets={GOLD_PRESETS}
+            placeholder={t('common.range_custom')}
+          />
         </div>
       </CardHeader>
       <CardContent>

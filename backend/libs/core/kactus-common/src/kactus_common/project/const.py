@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from enum import Enum
+from enum import Enum, StrEnum
 
 from kactus_common.authorization.const import Permission
 
@@ -13,8 +13,14 @@ class ProjectPermission(Permission):
     project = "project"
 
 
-class DefaultRole(str, Enum):
-    """Default roles available across all packages."""
+class DefaultRole(StrEnum):
+    """Default roles available across all packages.
+
+    A ``StrEnum`` (not the old ``(str, Enum)`` idiom) so ``str(DefaultRole.OWNER)``
+    is ``"owner"``, matching the role string persisted on ``ProjectMember.role``
+    and the Casbin policy subject. With ``(str, Enum)`` it was ``"DefaultRole.OWNER"``,
+    so a role read back from the DB never matched its own policy.
+    """
 
     OWNER = "owner"
     MANAGER = "manager"

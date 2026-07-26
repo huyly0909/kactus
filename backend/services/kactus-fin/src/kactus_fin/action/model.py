@@ -15,13 +15,18 @@ from __future__ import annotations
 
 import datetime
 
-from kactus_common.database.oltp.models import AuditMixin, Base, ModelMixin
+from kactus_common.database.oltp.models import (
+    AuditMixin,
+    Base,
+    ModelMixin,
+    ProjectScopedMixin,
+)
 from kactus_common.database.oltp.types import UnsignedBigInt
 from sqlalchemy import JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 
-class ActionToken(Base, ModelMixin, AuditMixin):
+class ActionToken(Base, ModelMixin, AuditMixin, ProjectScopedMixin):
     """A single-use authorisation to run one action on one user's behalf."""
 
     __tablename__ = "action_tokens"

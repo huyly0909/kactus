@@ -5,6 +5,7 @@ from __future__ import annotations
 import typer
 from kactus_common.cli import AsyncTyper
 from kactus_common.database.oltp.session import get_db
+from kactus_common.project.service import ProjectService
 from kactus_common.user.model import User
 
 cli = AsyncTyper(help="User management commands")
@@ -59,6 +60,10 @@ async def _create_user(
         await session.commit()
         await session.refresh(user)
 
+        # Non-admins get a personal project (owner) so scoped features work
+        # immediately; ensure_personal_project is a no-op for superusers.
+        project = await ProjectService.ensure_personal_project(session, user=user)
+
         role_label = "Admin user" if is_superuser else "User"
         typer.echo(f"✅ {role_label} created successfully!")
         typer.echo(f"   ID:          {user.id}")
@@ -67,6 +72,8 @@ async def _create_user(
         typer.echo(f"   Name:        {user.name}")
         typer.echo(f"   Status:      {user.status}")
         typer.echo(f"   Superuser:   {user.is_superuser}")
+        if project is not None:
+            typer.echo(f"   Project:     {project.name} (id={project.id})")
 
     await db.close()
 

@@ -67,20 +67,25 @@ def permission(perm: Permission, act: PermissionAct):
             if project_id is None:
                 raise PermissionDeniedError("No project selected")
 
-            # Look up user's role in this project
+            # Look up the user's role in this project. Use our own short-lived
+            # session rather than the handler's: ``@permission`` is the outer
+            # wrapper and runs *before* ``@provide_session`` injects a session, so
+            # ``kwargs["session"]`` is not populated yet. A quick independent read
+            # keeps the decorator order-independent (works above or below
+            # ``@provide_session``).
+            from kactus_common.database.oltp.session import get_db
             from kactus_common.project.service import ProjectService
 
-            # Get session from kwargs (injected by @provide_session)
             session = kwargs.get("session")
-            if session is None:
-                raise PermissionDeniedError(
-                    "Session not available for permission check. "
-                    "Ensure @provide_session is applied after @permission."
+            if session is not None:
+                role = await ProjectService.get_member_role(
+                    session, project_id=project_id, user_id=user.id
                 )
-
-            role = await ProjectService.get_member_role(
-                session, project_id=project_id, user_id=user.id
-            )
+            else:
+                async with get_db().get_session() as check_session:
+                    role = await ProjectService.get_member_role(
+                        check_session, project_id=project_id, user_id=user.id
+                    )
             if not role:
                 raise PermissionDeniedError("You are not a member of this project")
 

@@ -23,6 +23,7 @@ from kactus_common.portfolio.service import (
     PortfolioService,
     SupportedAssetService,
 )
+from kactus_common.user.context import set_current_project_id
 
 TEST_DB_URL = "sqlite+aiosqlite://"
 
@@ -166,18 +167,19 @@ async def test_remove_item(db):
 
 
 @pytest.mark.asyncio
-async def test_get_owned_or_404_hides_other_owners(db):
+async def test_get_or_404_hides_other_projects(db):
     async with db.get_session() as session:
+        set_current_project_id(1)
         p1 = await PortfolioService.create(session, name="A", owner_id=1)
-        # Owner 2 cannot see owner 1's portfolio.
+        assert p1.project_id == 1
+        # A request in another project cannot see it — 404, no existence leak.
+        set_current_project_id(2)
         with pytest.raises(NotFoundError):
-            await PortfolioService.get_owned_or_404(
-                session, portfolio_id=p1.id, owner_id=2
-            )
-        # Owner 1 can.
-        got = await PortfolioService.get_owned_or_404(
-            session, portfolio_id=p1.id, owner_id=1
-        )
+            await PortfolioService.get_or_404(session, p1.id)
+        # …its own project resolves it.
+        set_current_project_id(1)
+        got = await PortfolioService.get_or_404(session, p1.id)
+    set_current_project_id(None)
     assert got.id == p1.id
 
 

@@ -61,17 +61,23 @@ class AuthDependency:
         if user_session is None or user is None:
             raise AuthenticationError("Session expired or invalid")
 
-        # Set ContextVar for AuditMixin auto-populate
-        from kactus_common.user.context import set_current_user_id
+        # Set ContextVars for AuditMixin / ProjectScopedMixin auto-populate
+        from kactus_common.user.context import (
+            set_current_project_id,
+            set_current_user_id,
+        )
 
         set_current_user_id(user.id)
 
         # Set request.state.user for @permission decorator
         request.state.user = user
 
-        # Read selected project from cookie
+        # Read selected project from cookie. Always set the ContextVar (including
+        # None) so a no-cookie request cannot inherit the previous request's
+        # project on the same worker.
         project_id_str = request.cookies.get(self._config.project_cookie_name)
         request.state.project_id = int(project_id_str) if project_id_str else None
+        set_current_project_id(request.state.project_id)
 
         return user
 

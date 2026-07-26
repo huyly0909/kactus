@@ -16,6 +16,12 @@ export interface ProjectMember {
   role: string;
 }
 
+/** A member enriched with the user's email/name for display. */
+export interface ProjectMemberDetail extends ProjectMember {
+  email?: string;
+  name?: string;
+}
+
 export interface PermissionsResponse {
   project_id: string;
   permissions: PermissionItem[];

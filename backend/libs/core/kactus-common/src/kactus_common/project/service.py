@@ -56,6 +56,29 @@ class ProjectService:
         return project
 
     @staticmethod
+    async def ensure_personal_project(session: AsyncSession, *, user) -> Project | None:
+        """Ensure a non-admin user has their personal project (idempotent).
+
+        Superusers get none — they hold full cross-project access already and act
+        as operators, not as regular project members. Idempotent via the
+        deterministic ``user-<id>`` code, so it is safe to call on every user
+        creation and to re-run in the backfill.
+        """
+        if user.is_superuser:
+            return None
+        code = f"user-{user.id}"
+        existing = await Project.first(session, code=code)
+        if existing:
+            return existing
+        return await ProjectService.create(
+            session,
+            name=f"{user.name}'s Project",
+            code=code,
+            description="Personal project",
+            creator_id=user.id,
+        )
+
+    @staticmethod
     async def get_by_id(session: AsyncSession, project_id: int) -> Project | None:
         """Find a project by primary key."""
         return await Project.get(session, project_id)
@@ -157,18 +180,34 @@ class ProjectService:
         return member
 
     @staticmethod
+    async def count_owners(session: AsyncSession, project_id: int) -> int:
+        """Number of OWNER members in a project."""
+        owners = await ProjectMember.all(
+            session, project_id=project_id, role=DefaultRole.OWNER
+        )
+        return len(owners)
+
+    @staticmethod
     async def remove_member(
         session: AsyncSession,
         *,
         project_id: int,
         user_id: int,
     ) -> None:
-        """Remove a user from a project."""
+        """Remove a user from a project.
+
+        Refuses to remove the last OWNER — a project must always have one.
+        """
         member = await ProjectMember.first(
             session, project_id=project_id, user_id=user_id
         )
         if not member:
             raise NotFoundError("Member not found in this project")
+        if (
+            member.role == DefaultRole.OWNER
+            and await ProjectService.count_owners(session, project_id) <= 1
+        ):
+            raise ConflictError("Cannot remove the last owner of a project")
         await member.delete(session)
 
     @staticmethod
@@ -202,6 +241,13 @@ class ProjectService:
         )
         if not member:
             raise NotFoundError("Member not found in this project")
+        # Demoting the last owner would leave the project ownerless.
+        if (
+            member.role == DefaultRole.OWNER
+            and role != DefaultRole.OWNER
+            and await ProjectService.count_owners(session, project_id) <= 1
+        ):
+            raise ConflictError("Cannot demote the last owner of a project")
         member.role = role
         await member.save(session)
         return member

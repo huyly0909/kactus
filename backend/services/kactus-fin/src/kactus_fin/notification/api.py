@@ -1,15 +1,21 @@
-"""Notification API — user-owned channels, CRUD + test + send.
+"""Notification API — project-scoped channels, CRUD + test + send.
 
-Channels are user-owned: every route resolves ownership via
-``request.state.user`` (mirrors the portfolio API). Secrets in ``config`` are
-masked on the way out; sends/tests run through the :class:`Notifier`.
+Channels are shared within a project: access is gated by the member's role via
+``@permission(ProjectPermission.project, ...)`` (MEMBER reads, MANAGER/OWNER
+read+write) and the active project scopes every query. ``owner_id`` is retained
+only as an audit of who created the channel. Secrets in ``config`` are masked on
+the way out; sends/tests run through the :class:`Notifier`.
 """
 
 from __future__ import annotations
 
 from fastapi import Request
+from kactus_common.audit import audit
+from kactus_common.authorization.const import PermissionAct
+from kactus_common.authorization.decorator import permission
 from kactus_common.config import settings
 from kactus_common.exceptions import ExternalServiceError
+from kactus_common.project.const import ProjectPermission
 from kactus_common.router import KactusAPIRouter
 from kactus_common.schemas import MessageResponse, Pagination
 from kactus_fin.dependencies import provide_session
@@ -70,13 +76,14 @@ def _log_to_schema(log: NotificationLog) -> NotificationLogSchema:
 # Channel CRUD
 # --------------------------------------------------------------------------- #
 @router.post("")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def create_channel(
     body: NotificationChannelCreateRequest,
     request: Request,
     session: AsyncSession,
 ) -> NotificationChannelSchema:
-    """Create a notification channel owned by the current user."""
+    """Create a notification channel in the current project."""
     user = request.state.user
     channel = await NotificationChannelService.create(
         session,
@@ -85,35 +92,40 @@ async def create_channel(
         channel_type=body.channel_type,
         config=body.config,
     )
+    audit(
+        "notification.channel.create",
+        "notification_channel",
+        channel.id,
+        meta={"channel_type": str(body.channel_type)},
+    )
     return _to_schema(channel)
 
 
 @router.get("")
+@permission(ProjectPermission.project, PermissionAct.read)
 @provide_session
 async def list_channels(
     request: Request, session: AsyncSession
 ) -> Pagination[NotificationChannelSchema]:
-    """List the current user's notification channels."""
-    user = request.state.user
-    channels = await NotificationChannelService.list_for_owner(session, user.id)
+    """List the current project's notification channels."""
+    channels = await NotificationChannelService.list_for_project(session)
     items = [_to_schema(c) for c in channels]
     return Pagination(total=len(items), items=items)
 
 
 @router.get("/{channel_id}")
+@permission(ProjectPermission.project, PermissionAct.read)
 @provide_session
 async def get_channel(
     channel_id: int, request: Request, session: AsyncSession
 ) -> NotificationChannelSchema:
-    """Get one channel (must be owned by the current user)."""
-    user = request.state.user
-    channel = await NotificationChannelService.get_owned_or_404(
-        session, channel_id=channel_id, owner_id=user.id
-    )
+    """Get one channel in the current project."""
+    channel = await NotificationChannelService.get_or_404(session, channel_id)
     return _to_schema(channel)
 
 
 @router.put("/{channel_id}")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def update_channel(
     channel_id: int,
@@ -122,27 +134,24 @@ async def update_channel(
     session: AsyncSession,
 ) -> NotificationChannelSchema:
     """Update a channel's name / active flag / config."""
-    user = request.state.user
-    channel = await NotificationChannelService.get_owned_or_404(
-        session, channel_id=channel_id, owner_id=user.id
-    )
+    channel = await NotificationChannelService.get_or_404(session, channel_id)
     channel = await NotificationChannelService.update(
         session, channel, name=body.name, is_active=body.is_active, config=body.config
     )
+    audit("notification.channel.update", "notification_channel", channel.id)
     return _to_schema(channel)
 
 
 @router.delete("/{channel_id}")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def delete_channel(
     channel_id: int, request: Request, session: AsyncSession
 ) -> MessageResponse:
     """Logically delete a channel."""
-    user = request.state.user
-    channel = await NotificationChannelService.get_owned_or_404(
-        session, channel_id=channel_id, owner_id=user.id
-    )
+    channel = await NotificationChannelService.get_or_404(session, channel_id)
     await NotificationChannelService.delete(session, channel)
+    audit("notification.channel.delete", "notification_channel", channel_id)
     return MessageResponse(message="deleted")
 
 
@@ -150,15 +159,13 @@ async def delete_channel(
 # Test + send
 # --------------------------------------------------------------------------- #
 @router.post("/{channel_id}/test")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def test_channel(
     channel_id: int, request: Request, session: AsyncSession
 ) -> MessageResponse:
     """Validate the channel's credentials/config (e.g. Telegram getMe)."""
-    user = request.state.user
-    channel = await NotificationChannelService.get_owned_or_404(
-        session, channel_id=channel_id, owner_id=user.id
-    )
+    channel = await NotificationChannelService.get_or_404(session, channel_id)
     if not await Notifier.test(channel):
         raise ExternalServiceError("Channel test failed — check the credentials/config")
     await NotificationChannelService.mark_used(session, channel)
@@ -180,6 +187,7 @@ def _queue_enabled() -> bool:
 
 
 @router.post("/{channel_id}/send", status_code=202)
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def send_to_channel(
     channel_id: int,
@@ -198,21 +206,29 @@ async def send_to_channel(
     sitting in front of a form waiting to hear whether the credentials work.
     """
     user = request.state.user
-    channel = await NotificationChannelService.get_owned_or_404(
-        session, channel_id=channel_id, owner_id=user.id
-    )
+    channel = await NotificationChannelService.get_or_404(session, channel_id)
 
     if _queue_enabled():
         message_id = await enqueue(channel_id=channel.id, owner_id=user.id, event=body)
         logger.info(f"Queued notification {message_id} for channel {channel.id}")
+        audit(
+            "notification.send",
+            "notification_channel",
+            channel.id,
+            meta={"queued": True},
+        )
         return MessageResponse(message="queued")
 
     await Notifier.send_event(session, channel, body)
     await NotificationChannelService.mark_used(session, channel)
+    audit(
+        "notification.send", "notification_channel", channel.id, meta={"queued": False}
+    )
     return MessageResponse(message="sent")
 
 
 @router.get("/{channel_id}/logs")
+@permission(ProjectPermission.project, PermissionAct.read)
 @provide_session
 async def list_channel_logs(
     channel_id: int,
@@ -220,14 +236,11 @@ async def list_channel_logs(
     session: AsyncSession,
     limit: int = 50,
 ) -> Pagination[NotificationLogSchema]:
-    """List a channel's send history (most-recent-first, owner-scoped)."""
-    user = request.state.user
-    # Assert ownership before exposing logs (raises 404 otherwise).
-    await NotificationChannelService.get_owned_or_404(
-        session, channel_id=channel_id, owner_id=user.id
-    )
-    logs = await NotificationLogService.list_for_owner(
-        session, user.id, channel_id=channel_id, limit=limit
+    """List a channel's send history (most-recent-first, project-scoped)."""
+    # Resolve the channel in-project before exposing logs (raises 404 otherwise).
+    channel = await NotificationChannelService.get_or_404(session, channel_id)
+    logs = await NotificationLogService.list_for_project(
+        session, channel.project_id, channel_id=channel_id, limit=limit
     )
     items = [_log_to_schema(log) for log in logs]
     return Pagination(total=len(items), items=items)

@@ -25,7 +25,9 @@ from kactus_common.database.oltp.models import Base, utcnow
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.portfolio.const import AssetType
 from kactus_common.portfolio.model import Portfolio, PortfolioItem, SupportedAsset
+from kactus_common.project.service import ProjectService
 from kactus_common.user import auth as auth_mod
+from kactus_common.user.context import set_current_project_id
 from kactus_common.user.model import User
 from kactus_fin.action.const import ActionType
 from kactus_fin.action.model import ActionToken
@@ -74,6 +76,14 @@ async def app(db, tmp_path):
     clear_settings()
 
 
+@pytest.fixture(autouse=True)
+def _reset_project_ctx():
+    """Keep the project ContextVar from leaking between tests."""
+    set_current_project_id(None)
+    yield
+    set_current_project_id(None)
+
+
 async def _make_user(db, email: str, username: str) -> User:
     async with db.get_session() as session:
         user = User.init(
@@ -86,6 +96,9 @@ async def _make_user(db, email: str, username: str) -> User:
         session.add(user)
         await session.commit()
         await session.refresh(user)
+        # A non-admin user gets a personal project; the action API is project-gated.
+        project = await ProjectService.ensure_personal_project(session, user=user)
+        user._project_id = project.id
         return user
 
 
@@ -105,6 +118,11 @@ def _client_for(app, user: User) -> AsyncClient:
     class _Auth:
         async def get_current_user(self, request):
             request.state.user = user
+            # Mirror real auth: select the user's personal project so the
+            # project-scoped SELECT filter and @permission checks apply.
+            project_id = getattr(user, "_project_id", None)
+            request.state.project_id = project_id
+            set_current_project_id(project_id)
             return user
 
     auth_mod._auth = _Auth()
@@ -120,25 +138,36 @@ async def client(app, owner):
 @pytest_asyncio.fixture
 async def portfolio(db, owner) -> Portfolio:
     """A portfolio plus one catalog entry the add-item action can reference."""
-    async with db.get_session() as session:
-        p = Portfolio.init(owner_id=owner.id, name="Danh mục chính")
-        session.add(p)
-        session.add(
-            SupportedAsset.init(
-                asset_type=str(AssetType.STOCK), code="FPT", name="FPT Corp"
+    # Create under the owner's project so the row is scoped like a real request.
+    set_current_project_id(owner._project_id)
+    try:
+        async with db.get_session() as session:
+            p = Portfolio.init(owner_id=owner.id, name="Danh mục chính")
+            session.add(p)
+            session.add(
+                SupportedAsset.init(
+                    asset_type=str(AssetType.STOCK), code="FPT", name="FPT Corp"
+                )
             )
-        )
-        await session.commit()
-        await session.refresh(p)
-        return p
+            await session.commit()
+            await session.refresh(p)
+            return p
+    finally:
+        set_current_project_id(None)
 
 
 async def _issue(db, user: User, action: ActionType, params: dict) -> str:
-    async with db.get_session() as session:
-        _, token = await ActionTokenService.issue(
-            session, user_id=user.id, action=action, params=params
-        )
-        return token
+    # Issue under the user's project so the token carries the same project_id a
+    # real (project-scoped) request would stamp on it.
+    set_current_project_id(getattr(user, "_project_id", None))
+    try:
+        async with db.get_session() as session:
+            _, token = await ActionTokenService.issue(
+                session, user_id=user.id, action=action, params=params
+            )
+            return token
+    finally:
+        set_current_project_id(None)
 
 
 # --------------------------------------------------------------------------- #

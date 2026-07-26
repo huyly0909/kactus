@@ -6,6 +6,7 @@ import secrets
 import string
 
 from fastapi import Request
+from kactus_common.audit import audit
 from kactus_common.authorization.casbin_service import get_casbin_service
 from kactus_common.exceptions import NotFoundError
 from kactus_common.project.schema import ProjectSchema
@@ -53,7 +54,11 @@ async def create_user(
     request: Request,
     session: AsyncSession,
 ) -> UserInfo:
-    """Create a new user (admin only)."""
+    """Create a new user (admin only).
+
+    Non-admin users are provisioned a personal project (they own it) so they can
+    use project-scoped features immediately. Admins are exempt.
+    """
     user = User.init(
         email=body.email,
         username=body.email,
@@ -64,6 +69,10 @@ async def create_user(
     session.add(user)
     await session.commit()
     await session.refresh(user)
+
+    await ProjectService.ensure_personal_project(session, user=user)
+
+    audit("user.create", "user", user.id, meta={"email": user.email})
     return UserInfo.model_validate(user)
 
 

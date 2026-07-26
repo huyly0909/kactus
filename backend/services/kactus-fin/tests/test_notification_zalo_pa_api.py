@@ -13,6 +13,7 @@ from httpx import ASGITransport, AsyncClient
 from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
+from kactus_common.project.service import ProjectService
 from kactus_common.user import auth as auth_mod
 from kactus_common.user.model import User
 from kactus_notification.schema import ZaloPAChannelConfig
@@ -81,6 +82,10 @@ async def seed_user(db) -> User:
         session.add(user)
         await session.commit()
         await session.refresh(user)
+        # A non-admin user gets a personal project on creation; the API is now
+        # project-scoped, so tests need one selected. Stash its id for the cookie.
+        project = await ProjectService.ensure_personal_project(session, user=user)
+        user._project_id = project.id
     return user
 
 
@@ -94,6 +99,8 @@ async def client(app, seed_user):
         )
         assert login.status_code == 200
         c.cookies.update(dict(login.cookies))
+        # Select the personal project (backend reads the kactus_project_id cookie).
+        c.cookies.set("kactus_project_id", str(seed_user._project_id))
         yield c
 
 

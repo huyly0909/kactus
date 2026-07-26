@@ -12,6 +12,10 @@ from __future__ import annotations
 import uuid
 
 from fastapi import Request
+from kactus_common.audit import audit
+from kactus_common.authorization.const import PermissionAct
+from kactus_common.authorization.decorator import permission
+from kactus_common.project.const import ProjectPermission
 from kactus_common.router import KactusAPIRouter
 from kactus_common.schemas import Pagination
 from kactus_fin.dependencies import provide_session
@@ -96,6 +100,7 @@ async def zalo_list_recipients(
 # Channel create / re-auth (writes the shared NotificationChannel)
 # --------------------------------------------------------------------------- #
 @zalo_pa_router.post("/channels")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def zalo_create_channel(
     body: ZaloPAChannelCreateRequest,
@@ -117,10 +122,17 @@ async def zalo_create_channel(
         channel_type=NotificationChannelType.ZALO_PA,
         config=config.model_dump(),
     )
+    audit(
+        "notification.channel.create",
+        "notification_channel",
+        channel.id,
+        meta={"channel_type": "zalo_pa"},
+    )
     return _to_schema(channel)
 
 
 @zalo_pa_router.put("/channels/{channel_id}/reauth")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def zalo_reauth_channel(
     channel_id: int,
@@ -129,10 +141,7 @@ async def zalo_reauth_channel(
     session: AsyncSession,
 ) -> NotificationChannelSchema:
     """Refresh a channel's login session after a re-scan (recipient kept)."""
-    user = request.state.user
-    channel = await NotificationChannelService.get_owned_or_404(
-        session, channel_id=channel_id, owner_id=user.id
-    )
+    channel = await NotificationChannelService.get_or_404(session, channel_id)
     creds = await session_credentials(body.session_id)
     # Keep the existing recipient + display; swap only the session-credential fields.
     new_config = {

@@ -7,7 +7,7 @@ export type {
   LoginRequest,
   LoginResponse,
 } from './auth';
-export type { Project, ProjectMember, PermissionsResponse } from './project';
+export type { Project, ProjectMember, ProjectMemberDetail, PermissionsResponse } from './project';
 export type {
   AdminUser,
   AuthorizationMap,

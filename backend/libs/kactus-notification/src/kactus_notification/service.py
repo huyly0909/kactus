@@ -1,7 +1,9 @@
-"""Notification channel service — DB CRUD with owner scoping.
+"""Notification channel service — DB CRUD with project scoping.
 
 Stateless static methods, mirroring :class:`kactus_common.portfolio.service`.
-Channels are user-owned: reads assert ownership via :meth:`get_owned_or_404`.
+Channels are shared within a project: reads resolve via the project-scoped
+:meth:`get_or_404` (the global ``ProjectScopedMixin`` filter enforces the
+boundary). ``owner_id`` is retained only as an audit of who created the channel.
 Config is validated against its per-type schema on create/update.
 """
 
@@ -11,7 +13,7 @@ import datetime
 import time
 
 from kactus_common.database.oltp.models import utcnow
-from kactus_common.exceptions import NotFoundError, ValidationError
+from kactus_common.exceptions import ValidationError
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -58,25 +60,24 @@ class NotificationChannelService:
         return channel
 
     @staticmethod
-    async def get_owned_or_404(
-        session: AsyncSession, *, channel_id: int, owner_id: int
-    ) -> NotificationChannel:
-        """Fetch a channel and assert ``owner_id`` owns it.
+    async def get_or_404(session: AsyncSession, channel_id: int) -> NotificationChannel:
+        """Fetch a channel in the current project, or raise ``NotFoundError``.
 
-        Raises ``NotFoundError`` if missing or owned by someone else — we do not
-        leak existence of other users' channels.
+        Uses a ``SELECT`` (not ``session.get``) so the global project filter
+        applies — a channel in another project reads as missing, never leaking
+        its existence across projects.
         """
-        channel = await NotificationChannel.get(session, channel_id)
-        if channel is None or channel.owner_id != owner_id:
-            raise NotFoundError(f"NotificationChannel record, pk: {channel_id}")
-        return channel
+        return await NotificationChannel.first_or_404(session, id=channel_id)
 
     @staticmethod
-    async def list_for_owner(
-        session: AsyncSession, owner_id: int
+    async def list_for_project(
+        session: AsyncSession,
     ) -> list[NotificationChannel]:
-        """All non-deleted channels owned by ``owner_id``."""
-        return await NotificationChannel.all(session, owner_id=owner_id)
+        """All non-deleted channels in the current project.
+
+        Scoped transparently by the global ``ProjectScopedMixin`` SELECT filter.
+        """
+        return await NotificationChannel.all(session)
 
     @staticmethod
     async def update(
@@ -137,6 +138,9 @@ class NotificationLogService:
         log = NotificationLog.init(
             channel_id=channel.id,
             owner_id=channel.owner_id,
+            # Set from the parent channel: the queue consumer writes logs with no
+            # request context, so project_id cannot come from the ContextVar.
+            project_id=channel.project_id,
             channel_type=str(channel.channel_type),
             event_title=event.title,
             level=str(event.level),
@@ -152,15 +156,19 @@ class NotificationLogService:
         return log
 
     @staticmethod
-    async def list_for_owner(
+    async def list_for_project(
         session: AsyncSession,
-        owner_id: int,
+        project_id: int,
         *,
         channel_id: int | None = None,
         limit: int = 50,
     ) -> list[NotificationLog]:
-        """Most-recent-first logs for ``owner_id`` (optionally one channel)."""
-        stmt = NotificationLog.select().filter_by(owner_id=owner_id)
+        """Most-recent-first logs for a project (optionally one channel).
+
+        ``NotificationLog`` is not ``ProjectScopedMixin`` (the queue consumer
+        writes it context-free), so the project scope is applied explicitly here.
+        """
+        stmt = NotificationLog.select().filter_by(project_id=project_id)
         if channel_id is not None:
             stmt = stmt.filter_by(channel_id=channel_id)
         stmt = stmt.order_by(NotificationLog.create_time.desc()).limit(limit)

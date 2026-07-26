@@ -21,6 +21,10 @@ import html
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse
+from kactus_common.audit import audit
+from kactus_common.authorization.const import PermissionAct
+from kactus_common.authorization.decorator import permission
+from kactus_common.project.const import ProjectPermission
 from kactus_common.router import KactusAPIRouter
 from kactus_fin.dependencies import provide_session
 from loguru import logger
@@ -81,6 +85,7 @@ def _confirmation_page(token: str, row: ActionToken) -> HTMLResponse:
 
 
 @router.post("")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def issue_action(
     body: ActionIssueRequest, request: Request, session: AsyncSession
@@ -110,6 +115,7 @@ async def issue_action(
 
 
 @router.get("/{token}", response_class=HTMLResponse)
+@permission(ProjectPermission.project, PermissionAct.read)
 @provide_session
 async def show_action(
     token: str, request: Request, session: AsyncSession
@@ -125,6 +131,7 @@ async def show_action(
 
 
 @router.post("/{token}", response_class=HTMLResponse)
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def run_action(
     token: str, request: Request, session: AsyncSession
@@ -134,4 +141,5 @@ async def run_action(
     row = await ActionTokenService.resolve(session, token, user_id=user.id)
     message = await ActionTokenService.execute(session, row)
     logger.info(f"Action {row.action} executed by user {user.id} via token {row.id}")
+    audit("action.run", "action_token", row.id, meta={"action": str(row.action)})
     return _page("Done", f"<p>{html.escape(message)}</p>")

@@ -16,6 +16,16 @@ const DashboardPage = lazy(() =>
     default: m.DashboardPage,
   })),
 );
+const ProjectListPage = lazy(() =>
+  import('@modules/project/pages/ProjectListPage').then((m) => ({
+    default: m.ProjectListPage,
+  })),
+);
+const ProjectDetailPage = lazy(() =>
+  import('@modules/project/pages/ProjectDetailPage').then((m) => ({
+    default: m.ProjectDetailPage,
+  })),
+);
 const PortfolioListPage = lazy(() =>
   import('@modules/portfolio/pages/PortfolioListPage').then((m) => ({
     default: m.PortfolioListPage,
@@ -81,6 +91,8 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<DashboardLayout />}>
         <Route index element={<DashboardPage />} />
+        <Route path="projects" element={<ProjectListPage />} />
+        <Route path="projects/:id" element={<ProjectDetailPage />} />
         <Route path="portfolios" element={<PortfolioListPage />} />
         <Route path="portfolios/:id" element={<PortfolioDetailPage />} />
         <Route path="notifications" element={<NotificationListPage />} />

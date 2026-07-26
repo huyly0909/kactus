@@ -102,6 +102,7 @@ def _model():
     return types.SimpleNamespace(
         id=1,
         owner_id=7,
+        project_id=None,
         channel_type="telegram",
         config={"bot_token": "T", "chat_id": "1"},
     )
@@ -116,7 +117,8 @@ def _patch_channel(monkeypatch, fake: FakeSession) -> TelegramChannel:
 
 
 async def _logs(session):
-    return await NotificationLogService.list_for_owner(session, 7)
+    # The fake channel is unscoped (project_id=None), so logs land unscoped too.
+    return await NotificationLogService.list_for_project(session, None)
 
 
 @pytest.mark.asyncio
