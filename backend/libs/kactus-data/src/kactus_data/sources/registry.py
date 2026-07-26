@@ -7,6 +7,13 @@ rebuild the ones that have drifted.
 
 Add new tables here as they are defined, or they will be invisible to the
 drift check.
+
+Timezone convention: ``event_dt`` is a reserved column name — on every table
+that has it, it is the canonical UTC instant (naive UTC wall-clock) derived from
+that row's native timestamp, and the single axis all time filtering / sync
+compares against. Every other datetime/date column holds the source value
+verbatim (Vietnam local, or a calendar day). See ``kactus_common.datetimes`` and
+``kactus_data.util.time``.
 """
 
 from kactus_common.database.duckdb.schema import Table

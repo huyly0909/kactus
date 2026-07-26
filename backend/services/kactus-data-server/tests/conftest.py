@@ -35,6 +35,7 @@ from kactus_data.sources.stock.portfolio_tables import (
 )
 from kactus_data.sources.stock.tables import STOCK_LISTING_TABLE, STOCK_OHLCV_TABLE
 from kactus_data.storage.duckdb import DuckDBStorage
+from kactus_data.util.time import to_event_dt
 
 TEST_DB_URL = "sqlite+aiosqlite://"
 SERVICE_TOKEN = "test-service-token"
@@ -213,6 +214,7 @@ def storage(tmp_path) -> DuckDBStorage:
                     "close": 101.0 + day,
                     "volume": 1000.0 * day,
                     "source": "KBS",
+                    "event_dt": to_event_dt(datetime(2026, 7, day, 15, 0)),
                 }
                 for day in (20, 21, 22)
             ]
@@ -231,6 +233,7 @@ def storage(tmp_path) -> DuckDBStorage:
                     "source": "KBS",
                     "crawled_at": now,
                     "raw_json": "{}",
+                    "event_dt": to_event_dt("2026-07-23"),
                 }
             ]
         ),

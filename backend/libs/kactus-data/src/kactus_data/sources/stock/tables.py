@@ -32,6 +32,9 @@ STOCK_OHLCV_TABLE = Table(
         # exact below 2^24 (~16.7M); VN30 daily volumes clear that routinely.
         Column(name="volume", data_type=DataType.DOUBLE),
         Column(name="source", data_type=DataType.STRING),
+        # Canonical UTC instant derived from the native ``time`` (Vietnam local).
+        # The one axis every time filter / cross-source sync compares against.
+        Column(name="event_dt", data_type=DataType.TIMESTAMP),
     ],
     update_strategy=UpdateStrategy.UPSERT,
 )

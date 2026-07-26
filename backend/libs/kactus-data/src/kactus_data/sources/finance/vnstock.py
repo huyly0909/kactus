@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date
 
 import pandas as pd
+from kactus_common.datetimes import utcnow_naive
 from kactus_data.config import get_settings
 from kactus_data.schemas import SyncDataResponse
 from kactus_data.sources.stock.base import VnstockSource
@@ -63,7 +64,7 @@ class VnstockFinanceSource(VnstockSource):
                     start_date=start_date.isoformat(),
                     end_date=end_date.isoformat(),
                     data=[],
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=utcnow_naive().isoformat(),
                 )
 
             records = []
@@ -83,7 +84,7 @@ class VnstockFinanceSource(VnstockSource):
                             row_dict, default=str, ensure_ascii=False
                         ),
                         "source": self.source,
-                        "synced_at": datetime.now().isoformat(),
+                        "synced_at": utcnow_naive().isoformat(),
                     }
                 )
 
@@ -102,7 +103,7 @@ class VnstockFinanceSource(VnstockSource):
                 start_date=start_date.isoformat(),
                 end_date=end_date.isoformat(),
                 data=records,
-                timestamp=datetime.now().isoformat(),
+                timestamp=utcnow_naive().isoformat(),
             )
 
         except Exception as ex:
@@ -117,5 +118,5 @@ class VnstockFinanceSource(VnstockSource):
                 end_date=end_date.isoformat(),
                 data={},
                 error={"message": str(ex)},
-                timestamp=datetime.now().isoformat(),
+                timestamp=utcnow_naive().isoformat(),
             )

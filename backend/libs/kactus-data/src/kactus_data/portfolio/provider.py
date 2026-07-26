@@ -16,6 +16,7 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime
 
 from kactus_common.database.duckdb.schema import Table
+from kactus_common.datetimes import utcnow_naive
 from kactus_common.portfolio.const import AssetType, CrawlKind
 from kactus_data.sources.gold.mihong import CHI_TO_LUONG as MIHONG_CHI_TO_LUONG
 from kactus_data.sources.gold.mihong import SUPPORTED_CODES as MIHONG_CODES
@@ -195,7 +196,7 @@ class GoldAssetProvider(AssetProvider):
 
         wanted = [str(c).upper() for c in codes]
         today = date.today()
-        now = datetime.now()
+        now = utcnow_naive()
 
         # Only reach for the domestic sources if a domestic code was asked for;
         # one SJC request prices every code SJC publishes.

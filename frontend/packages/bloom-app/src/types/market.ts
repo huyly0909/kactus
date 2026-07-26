@@ -99,7 +99,8 @@ export interface StockDetail {
 
 export interface OHLCV {
   symbol: string;
-  time: string;
+  /** Canonical UTC instant (`+00:00`), derived from the native VN-local bar time. */
+  event_dt?: string | null;
   interval: string;
   open?: string | null;
   high?: string | null;

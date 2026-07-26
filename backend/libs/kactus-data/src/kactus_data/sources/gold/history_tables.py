@@ -43,6 +43,9 @@ GOLD_PRICE_HISTORY_TABLE = Table(
         Column(name="gold_type", data_type=DataType.STRING),
         Column(name="updated_at", data_type=DataType.TIMESTAMP),
         Column(name="imported_at", data_type=DataType.TIMESTAMP),
+        # Canonical UTC instant derived from the native ``date`` (midnight in
+        # Vietnam) — the unified UTC axis for cross-source time filtering.
+        Column(name="event_dt", data_type=DataType.TIMESTAMP),
     ],
     update_strategy=UpdateStrategy.UPSERT,
 )

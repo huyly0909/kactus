@@ -19,6 +19,7 @@ import datetime
 import json
 
 import pandas as pd
+from kactus_common.datetimes import to_utc_naive
 from kactus_common.market.const import (
     DEFAULT_GOLD_HISTORY_LIMIT,
     GOLD_HISTORY_MAX_LIMIT,
@@ -278,14 +279,21 @@ class MarketService:
         def _read() -> list[dict]:
             sql = f"SELECT * FROM {STOCK_OHLCV_TABLE} WHERE symbol = ? AND interval = ?"  # noqa: S608
             params: list = [code, interval]
+            # ``event_dt`` is the canonical UTC axis. ``start``/``end`` are
+            # Vietnam calendar days, so bound them by the Vietnam day expressed
+            # in UTC — same convention ingest uses when deriving ``event_dt``.
             if start is not None:
-                sql += " AND time >= ?"
-                params.append(datetime.datetime.combine(start, datetime.time.min))
+                sql += " AND event_dt >= ?"
+                params.append(
+                    to_utc_naive(datetime.datetime.combine(start, datetime.time.min))
+                )
             if end is not None:
-                sql += " AND time <= ?"
-                params.append(datetime.datetime.combine(end, datetime.time.max))
+                sql += " AND event_dt <= ?"
+                params.append(
+                    to_utc_naive(datetime.datetime.combine(end, datetime.time.max))
+                )
             # Newest first so the cap keeps the *recent* window, then re-sorted below.
-            sql += f" ORDER BY time DESC LIMIT {capped}"
+            sql += f" ORDER BY event_dt DESC LIMIT {capped}"
             return _rows(storage, sql, params)
 
         rows = await asyncio.to_thread(_read)
@@ -302,9 +310,12 @@ class MarketService:
         code = symbol.upper()
 
         def _read() -> list[dict]:
+            # Order by the canonical UTC ``event_dt`` (real chronology) rather
+            # than the free-form native ``published_at`` string; unparseable
+            # rows (event_dt NULL) sort last.
             sql = (
                 f"SELECT * FROM {STOCK_NEWS_TABLE} WHERE symbol = ? "  # noqa: S608
-                f"ORDER BY published_at DESC LIMIT {capped}"
+                f"ORDER BY event_dt DESC NULLS LAST LIMIT {capped}"
             )
             return _rows(storage, sql, [code])
 

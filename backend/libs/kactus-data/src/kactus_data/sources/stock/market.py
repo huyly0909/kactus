@@ -19,6 +19,8 @@ from datetime import datetime
 
 import pandas as pd
 from kactus_common.database.duckdb.schema import Table
+from kactus_common.datetimes import VN_TZ, utcnow_naive
+from kactus_data.util.time import to_event_dt
 from loguru import logger
 
 from .portfolio_tables import (
@@ -137,7 +139,7 @@ class StockMarketSource:
     # --------------------------------------------------------- normalized API
     def price_board(self, codes: list[str]) -> pd.DataFrame:
         """Latest quote snapshot for ``codes`` (batched, chunked)."""
-        now = datetime.now()
+        now = utcnow_naive()
         rows: list[dict] = []
         for chunk in _chunks(codes, self.chunk_size):
             try:
@@ -176,7 +178,7 @@ class StockMarketSource:
         self, codes: list[str], raw_fn, map_fn, table: Table
     ) -> pd.DataFrame:
         """Loop ``codes`` resiliently; collect normalized rows into ``table``."""
-        now = datetime.now()
+        now = utcnow_naive()
         rows: list[dict] = []
         for code in codes:
             try:
@@ -198,16 +200,18 @@ class StockMarketSource:
             news_id = _pick(r, "id", "news_id", "rsi") or _pick(
                 r, "title", "news_title"
             )
+            published_at = _pick(r, "public_date", "published_at", "date")
             return {
                 "symbol": symbol,
                 "news_id": str(news_id) if news_id is not None else "",
                 "title": _pick(r, "title", "news_title", "news_short_content"),
-                "published_at": str(
-                    _pick(r, "public_date", "published_at", "date") or ""
-                ),
+                "published_at": str(published_at or ""),
                 "url": _pick(r, "url", "news_source_link", "link"),
                 "source": self.source,
                 "crawled_at": now,
+                # Native ``published_at`` is Vietnam-local; ``event_dt`` is its
+                # canonical UTC instant (NULL when unparseable).
+                "event_dt": to_event_dt(published_at),
                 "raw_json": json.dumps(r, default=str, ensure_ascii=False),
             }
 
@@ -218,13 +222,15 @@ class StockMarketSource:
             event_id = _pick(r, "id", "event_id", "rsi") or _pick(
                 r, "event_title", "title"
             )
+            event_date = _pick(r, "event_date", "public_date", "date")
             return {
                 "symbol": symbol,
                 "event_id": str(event_id) if event_id is not None else "",
                 "title": _pick(r, "event_title", "title", "event_name"),
-                "event_date": str(_pick(r, "event_date", "public_date", "date") or ""),
+                "event_date": str(event_date or ""),
                 "source": self.source,
                 "crawled_at": now,
+                "event_dt": to_event_dt(event_date),
                 "raw_json": json.dumps(r, default=str, ensure_ascii=False),
             }
 
@@ -233,9 +239,12 @@ class StockMarketSource:
     def foreign_trade(self, codes: list[str]) -> pd.DataFrame:
         def _map(symbol, r, now):
             trade_date = _pick(r, "trade_date", "date", "time")
+            # Fallback label is the Vietnam trading day, not the UTC ``now`` —
+            # between 00:00–07:00 VN those disagree by a calendar day.
+            native_date = str(trade_date or datetime.now(VN_TZ).date().isoformat())
             return {
                 "symbol": symbol,
-                "trade_date": str(trade_date or now.date().isoformat()),
+                "trade_date": native_date,
                 "buy_value": _to_float(
                     _pick(r, "buy_value", "foreign_buy_value", "buy")
                 ),
@@ -245,6 +254,7 @@ class StockMarketSource:
                 "net_value": _to_float(_pick(r, "net_value", "net_val", "net")),
                 "source": self.source,
                 "crawled_at": now,
+                "event_dt": to_event_dt(native_date),
                 "raw_json": json.dumps(r, default=str, ensure_ascii=False),
             }
 
@@ -263,7 +273,7 @@ class StockMarketSource:
         the UPSERT.  A tidy frame (period already in a cell) falls back to
         one-row-per-record.
         """
-        now = datetime.now()
+        now = utcnow_naive()
         rows: list[dict] = []
         for code in codes:
             try:

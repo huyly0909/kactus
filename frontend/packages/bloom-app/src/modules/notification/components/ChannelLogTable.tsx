@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
+import { useFormatDateTime } from '@/hooks/useFormatDateTime';
 import { useNotificationLogs } from '@/hooks/useNotificationQuery';
 import type { NotificationLog } from '@/types/notification';
 
@@ -12,6 +13,7 @@ interface Props {
 export function ChannelLogTable({ channelId }: Props) {
   const { t } = useTranslation();
   const { data: logs, isLoading } = useNotificationLogs(channelId);
+  const fmtDateTime = useFormatDateTime();
 
   const columns: DataTableColumn<NotificationLog>[] = [
     {
@@ -46,7 +48,7 @@ export function ChannelLogTable({ channelId }: Props) {
       key: 'started_at',
       title: t('notification.log.time'),
       className: 'text-xs text-muted-foreground',
-      render: (log) => (log.started_at ? new Date(log.started_at).toLocaleString() : '—'),
+      render: (log) => fmtDateTime(log.started_at),
     },
   ];
 

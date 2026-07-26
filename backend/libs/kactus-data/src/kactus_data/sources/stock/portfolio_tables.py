@@ -54,6 +54,10 @@ STOCK_NEWS_TABLE = Table(
         Column(name="source", data_type=DataType.STRING),
         Column(name="crawled_at", data_type=DataType.TIMESTAMP),
         Column(name="raw_json", data_type=DataType.STRING),
+        # Canonical UTC instant derived from the native ``published_at`` (Vietnam
+        # local) — the unified UTC axis for time filtering. Kept last so an
+        # ``ALTER TABLE ADD COLUMN`` on an existing DB matches this order.
+        Column(name="event_dt", data_type=DataType.TIMESTAMP),
     ],
     update_strategy=UpdateStrategy.UPSERT,
 )
@@ -79,6 +83,10 @@ STOCK_FOREIGN_TRADE_TABLE = Table(
         Column(name="source", data_type=DataType.STRING),
         Column(name="crawled_at", data_type=DataType.TIMESTAMP),
         Column(name="raw_json", data_type=DataType.STRING),
+        # Canonical UTC instant derived from the native ``trade_date`` (Vietnam
+        # trading day) — the unified UTC axis for time filtering. Kept last so an
+        # ``ALTER TABLE ADD COLUMN`` on an existing DB matches this order.
+        Column(name="event_dt", data_type=DataType.TIMESTAMP),
     ],
     update_strategy=UpdateStrategy.UPSERT,
 )
@@ -125,6 +133,10 @@ STOCK_EVENTS_TABLE = Table(
         Column(name="source", data_type=DataType.STRING),
         Column(name="crawled_at", data_type=DataType.TIMESTAMP),
         Column(name="raw_json", data_type=DataType.STRING),
+        # Canonical UTC instant derived from the native ``event_date`` (Vietnam
+        # local) — the unified UTC axis for time filtering. Kept last so an
+        # ``ALTER TABLE ADD COLUMN`` on an existing DB matches this order.
+        Column(name="event_dt", data_type=DataType.TIMESTAMP),
     ],
     update_strategy=UpdateStrategy.UPSERT,
 )

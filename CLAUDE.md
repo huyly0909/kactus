@@ -273,3 +273,4 @@ proxied to kactus-fin, so cookies stay first-party.
 - ❌ Use `import logging` — use `from loguru import logger`
 - ❌ Skip tests — every feature needs tests, run `uv run pytest` before committing
 - ❌ Manually set `created_by` / `updated_by` — `AuditMixin` auto-populates from ContextVar
+- ❌ Store server-local time or overwrite a native VN column — DB is UTC; keep native VN verbatim + derive the reserved `event_dt` (UTC) at ingest; filter/sync on `event_dt`; display converts to `user.timezone`. See [.claude/rules/timezone.md](.claude/rules/timezone.md)

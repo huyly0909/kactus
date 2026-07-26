@@ -5,8 +5,9 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
 import { useAuth } from '@/hooks/useAuth';
+import { useFormatDateTime } from '@/hooks/useFormatDateTime';
 import { useGoldPrices } from '@/hooks/useMarketQuery';
-import { fmtGold, fmtDateTime } from '@/lib/format';
+import { fmtGold } from '@/lib/format';
 import { UNIT_USD_PER_OZ, type GoldPrice } from '@/types/market';
 import { GoldHistoryCard } from '@modules/market/components/GoldHistoryCard';
 import { GoldImportDialog } from '@modules/market/components/GoldImportDialog';
@@ -22,6 +23,7 @@ export function GoldPricesPage() {
   const { t } = useTranslation();
   const { data, isLoading } = useGoldPrices();
   const { user } = useAuth();
+  const fmtDateTime = useFormatDateTime();
   const [importOpen, setImportOpen] = useState(false);
 
   const columns: DataTableColumn<GoldPrice>[] = [

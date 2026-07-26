@@ -15,6 +15,7 @@ import datetime
 
 from kactus_common.market.const import ReportPeriod, ReportType
 from kactus_common.schemas import (
+    AwareUTCDatetime,
     BaseSchema,
     FancyDecimal,
     FancyFloat,
@@ -36,7 +37,7 @@ class GoldPriceSchema(BaseSchema):
     spread: FancyDecimal | None = None
     unit: str | None = None
     source: str | None = None
-    crawled_at: datetime.datetime | None = None
+    crawled_at: AwareUTCDatetime | None = None
 
 
 class GoldHistoryPointSchema(BaseSchema):
@@ -91,7 +92,7 @@ class StockListingSchema(BaseSchema):
     symbol: str
     organ_name: str | None = None
     source: str | None = None
-    synced_at: datetime.datetime | None = None
+    synced_at: AwareUTCDatetime | None = None
 
 
 class StockQuoteSchema(BaseSchema):
@@ -106,7 +107,7 @@ class StockQuoteSchema(BaseSchema):
     change: FancyDecimal | None = None
     change_pct: FancyFloat | None = None
     source: str | None = None
-    crawled_at: datetime.datetime | None = None
+    crawled_at: AwareUTCDatetime | None = None
 
 
 class CompanySchema(BaseSchema):
@@ -120,7 +121,7 @@ class CompanySchema(BaseSchema):
     market_cap: FancyDecimal | None = None
     outstanding_shares: FancyFloat | None = None
     source: str | None = None
-    synced_at: datetime.datetime | None = None
+    synced_at: AwareUTCDatetime | None = None
 
 
 class StockDetailSchema(BaseSchema):
@@ -133,10 +134,15 @@ class StockDetailSchema(BaseSchema):
 
 
 class OHLCVSchema(BaseSchema):
-    """One candle."""
+    """One candle.
+
+    ``event_dt`` is the candle's canonical UTC instant (tz-aware, ``+00:00``),
+    derived from the native Vietnam-local candle time at ingest. The client
+    localises it to the user's timezone; NULL only for rows not yet backfilled.
+    """
 
     symbol: str
-    time: datetime.datetime
+    event_dt: AwareUTCDatetime | None = None
     interval: str
     open: FancyDecimal | None = None
     high: FancyDecimal | None = None
@@ -172,4 +178,4 @@ class FinanceReportSchema(BaseSchema):
     quarter: FancyInt | None = None
     data: OpaqueDict = {}
     source: str | None = None
-    synced_at: datetime.datetime | None = None
+    synced_at: AwareUTCDatetime | None = None

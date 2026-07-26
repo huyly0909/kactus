@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime
+from datetime import date
 
 import pandas as pd
+from kactus_common.datetimes import utcnow_naive
 from kactus_data.schemas import SyncDataResponse
 from kactus_data.sources.stock.base import VnstockSource
 from loguru import logger
@@ -38,7 +39,7 @@ class VnstockCompanySource(VnstockSource):
                     start_date=start_date.isoformat(),
                     end_date=end_date.isoformat(),
                     data=[],
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=utcnow_naive().isoformat(),
                 )
 
             row = overview_df.iloc[0] if len(overview_df) > 0 else {}
@@ -58,7 +59,7 @@ class VnstockCompanySource(VnstockSource):
                 "outstanding_shares": row_dict.get("outstanding_share", None),
                 "overview_json": json.dumps(row_dict, default=str, ensure_ascii=False),
                 "source": self.source,
-                "synced_at": datetime.now().isoformat(),
+                "synced_at": utcnow_naive().isoformat(),
             }
 
             logger.info("Fetched company overview for %s", code)
@@ -70,7 +71,7 @@ class VnstockCompanySource(VnstockSource):
                 start_date=start_date.isoformat(),
                 end_date=end_date.isoformat(),
                 data=[record],
-                timestamp=datetime.now().isoformat(),
+                timestamp=utcnow_naive().isoformat(),
             )
 
         except Exception as ex:
@@ -83,5 +84,5 @@ class VnstockCompanySource(VnstockSource):
                 end_date=end_date.isoformat(),
                 data={},
                 error={"message": str(ex)},
-                timestamp=datetime.now().isoformat(),
+                timestamp=utcnow_naive().isoformat(),
             )

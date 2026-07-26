@@ -13,8 +13,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useFormatDateTime } from '@/hooks/useFormatDateTime';
 import { useOHLCV, useStock, useStockNews } from '@/hooks/useMarketQuery';
-import { fmt, fmtChange, fmtCompact, fmtDateTime, toneOf } from '@/lib/format';
+import { fmt, fmtChange, fmtCompact, toneOf } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { PriceChart } from '@modules/market/components/PriceChart';
 import type { OHLCVInterval } from '@/types/market';
@@ -40,6 +41,7 @@ function Stat({ label, value, className }: StatProps) {
 export function StockDetailPage() {
   const { t } = useTranslation();
   const { symbol = '' } = useParams<{ symbol: string }>();
+  const fmtDateTime = useFormatDateTime();
   const [interval, setInterval] = useState<OHLCVInterval>('1D');
 
   const { data: detail, isLoading, isError } = useStock(symbol);

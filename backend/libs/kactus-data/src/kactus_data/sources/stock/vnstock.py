@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date
 
 import pandas as pd
+from kactus_common.datetimes import utcnow_naive
 from kactus_data.schemas import SyncDataResponse
 from kactus_data.sources.stock.base import VnstockSource
+from kactus_data.util.time import to_event_dt_series
 from loguru import logger
 
 
@@ -48,13 +50,17 @@ class VnstockOHLCVSource(VnstockSource):
                     start_date=start_date.isoformat(),
                     end_date=end_date.isoformat(),
                     data=[],
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=utcnow_naive().isoformat(),
                 )
 
             df = df.copy()
             df["symbol"] = code
             df["interval"] = self.interval
             df["source"] = self.source
+            # ``time`` from vnstock is naive Vietnam-local (a date for daily
+            # intervals, a datetime for intraday). Keep it verbatim and derive
+            # the canonical UTC axis into ``event_dt``.
+            df["event_dt"] = to_event_dt_series(df["time"])
 
             records = df.to_dict(orient="records")
             logger.info("Fetched %d OHLCV rows for %s", len(records), code)
@@ -66,7 +72,7 @@ class VnstockOHLCVSource(VnstockSource):
                 start_date=start_date.isoformat(),
                 end_date=end_date.isoformat(),
                 data=records,
-                timestamp=datetime.now().isoformat(),
+                timestamp=utcnow_naive().isoformat(),
             )
 
         except Exception as ex:
@@ -79,7 +85,7 @@ class VnstockOHLCVSource(VnstockSource):
                 end_date=end_date.isoformat(),
                 data={},
                 error={"message": str(ex)},
-                timestamp=datetime.now().isoformat(),
+                timestamp=utcnow_naive().isoformat(),
             )
 
 
@@ -110,12 +116,12 @@ class VnstockListingSource(VnstockSource):
                     start_date=start_date.isoformat(),
                     end_date=end_date.isoformat(),
                     data=[],
-                    timestamp=datetime.now().isoformat(),
+                    timestamp=utcnow_naive().isoformat(),
                 )
 
             df = df.copy()
             df["source"] = self.source
-            df["synced_at"] = datetime.now().isoformat()
+            df["synced_at"] = utcnow_naive().isoformat()
 
             records = df.to_dict(orient="records")
             logger.info("Fetched %d listed symbols from %s", len(records), self.source)
@@ -127,7 +133,7 @@ class VnstockListingSource(VnstockSource):
                 start_date=start_date.isoformat(),
                 end_date=end_date.isoformat(),
                 data=records,
-                timestamp=datetime.now().isoformat(),
+                timestamp=utcnow_naive().isoformat(),
             )
 
         except Exception as ex:
@@ -140,5 +146,5 @@ class VnstockListingSource(VnstockSource):
                 end_date=end_date.isoformat(),
                 data={},
                 error={"message": str(ex)},
-                timestamp=datetime.now().isoformat(),
+                timestamp=utcnow_naive().isoformat(),
             )

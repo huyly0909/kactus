@@ -122,11 +122,17 @@ async def test_ohlcv_is_ascending_and_capped(client):
     resp = await client.get("/internal/market/stocks/FPT/ohlcv")
     assert resp.status_code == 200
     rows = resp.json()["data"]
-    assert [r["time"][:10] for r in rows] == ["2026-07-20", "2026-07-21", "2026-07-22"]
+    # API returns only the canonical UTC ``event_dt``; the seeded 15:00 VN bars
+    # are 08:00 UTC, so the calendar day is unchanged by the conversion.
+    assert [r["event_dt"][:10] for r in rows] == [
+        "2026-07-20",
+        "2026-07-21",
+        "2026-07-22",
+    ]
 
     # limit keeps the *newest* rows, still returned oldest → newest
     capped = await client.get("/internal/market/stocks/FPT/ohlcv", params={"limit": 2})
-    assert [r["time"][:10] for r in capped.json()["data"]] == [
+    assert [r["event_dt"][:10] for r in capped.json()["data"]] == [
         "2026-07-21",
         "2026-07-22",
     ]
@@ -138,7 +144,7 @@ async def test_ohlcv_date_range_and_unknown_interval(client):
         "/internal/market/stocks/FPT/ohlcv",
         params={"start": "2026-07-21", "end": "2026-07-21"},
     )
-    assert [r["time"][:10] for r in ranged.json()["data"]] == ["2026-07-21"]
+    assert [r["event_dt"][:10] for r in ranged.json()["data"]] == ["2026-07-21"]
 
     # an interval that was never crawled is empty, not an error
     empty = await client.get(

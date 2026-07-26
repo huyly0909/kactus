@@ -14,10 +14,12 @@ def _add_subcommands():
         schema,
         stock,
         sync,
+        tz,
     )
 
     cli.add_typer(backup.cli, name="backup", help="DuckDB backup / export")
     cli.add_typer(schema.cli, name="schema", help="DuckDB schema drift check / rebuild")
+    cli.add_typer(tz.cli, name="tz", help="DuckDB timezone (event_dt) backfill")
     cli.add_typer(stock.cli, name="stock", help="Stock price data (OHLCV, listings)")
     cli.add_typer(company.cli, name="company", help="Company overview data")
     cli.add_typer(finance.cli, name="finance", help="Financial statements & ratios")
