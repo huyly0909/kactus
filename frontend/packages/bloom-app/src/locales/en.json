@@ -27,7 +27,10 @@
     "total": "Total",
     "page": "Page",
     "rows_per_page": "Rows per page",
-    "showing": "Showing"
+    "showing": "Showing",
+    "remove": "Remove",
+    "debug_mode": "Debug mode",
+    "debug_mode_on": "On"
   },
   "auth": {
     "login": "Log in",
@@ -47,11 +50,61 @@
     "projects": "Projects",
     "authorization": "Authorization",
     "select_project": "Select project",
+    "market": "Market",
     "gold": "Gold Prices",
     "stock": "Stock Market",
     "finance": "Finance",
     "portfolios": "Portfolios",
-    "notifications": "Notifications"
+    "notifications": "Notifications",
+    "route_not_found": "Page not found",
+    "no_route_permission": "You don't have access to that page"
+  },
+  "layout": {
+    "go_back": "Go back",
+    "open_menu": "Open menu",
+    "navigation": "Navigation",
+    "overview": "Overview",
+    "toggle_theme": "Toggle theme",
+    "account": "Account",
+    "no_email": "No email"
+  },
+  "settings": {
+    "title": "Settings",
+    "profile": "Profile",
+    "appearance": "Appearance",
+    "language": "Language",
+    "theme": {
+      "mode": "Mode",
+      "mode_light": "Light",
+      "mode_dark": "Dark",
+      "color": "Accent",
+      "radius": "Corners",
+      "radius_sharp": "Sharp",
+      "radius_classic": "Classic",
+      "radius_smooth": "Smooth",
+      "scale": "Display size",
+      "scale_compact": "Compact",
+      "scale_normal": "Normal",
+      "scale_large": "Large",
+      "scale_xl": "Extra large",
+      "color_default": "Indigo",
+      "color_zinc": "Zinc",
+      "color_blue": "Blue",
+      "color_emerald": "Emerald",
+      "color_violet": "Violet",
+      "color_orange": "Orange",
+      "color_navy": "Navy",
+      "color_plum": "Plum",
+      "color_copper": "Copper"
+    },
+    "profile_section": {
+      "name": "Name",
+      "email": "Email",
+      "username": "Username",
+      "role": "Role",
+      "role_superuser": "Superuser",
+      "role_member": "Member"
+    }
   },
   "dashboard": {
     "title": "Dashboard",

@@ -1,6 +1,11 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 @import 'tailwindcss';
 
+/* Class-based dark mode. kactus is dark by default; `.light` on <html> opts out.
+   So a `dark:` utility applies whenever the element is NOT inside `.light`
+   (the inverse of shadcn's usual `.dark`-added convention). */
+@custom-variant dark (&:where(:not(.light *)));
+
 /*
  * Design System — Kactus Bloom
  * Ported from Builtiful's design tokens, adapted for fintech.
@@ -40,6 +45,7 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  --color-debug: var(--debug);
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -50,6 +56,7 @@
 /* ── CSS Variables — Dark theme (default) ──────────────────────────────── */
 :root {
   --radius: 0.625rem;
+  --font-scale: 1;
 
   /* Dark mode — fintech-optimized palette */
   --background: oklch(0.145 0 0);
@@ -129,11 +136,261 @@
   --gain: oklch(0.55 0.2 150);
   --loss: oklch(0.55 0.2 25);
   --warning: oklch(0.65 0.15 70);
+  --debug: oklch(0.68 0.16 70);
+}
+
+/* ── Theme presets — set by useThemeStore on <html> ────────────────────────
+ * Ported from Builtiful's presets, adapted to kactus's model: dark is the base
+ * (:root), so each `.theme-*` carries the DARK values and `.light.theme-*` the
+ * LIGHT ones — the inverse of Builtiful. HSL triplets are wrapped in hsl() to
+ * match kactus's full-color token convention. Accent presets (zinc/blue/…)
+ * recolor --primary/--ring only; tinted-chrome presets (navy/plum/copper)
+ * re-skin surfaces and set kactus's first-class --sidebar* tokens directly
+ * (no `.sidebar-surface` scope — kactus's sidebar reads those tokens already).
+ */
+
+/* Corner radius atoms → drive --radius */
+.radius-sharp {
+  --radius: 0rem;
+}
+.radius-classic {
+  --radius: 0.3rem;
+}
+.radius-smooth {
+  --radius: 0.5rem;
+}
+
+/* Display-size atoms → multiplied onto the html clamp via --font-scale */
+.scale-compact {
+  --font-scale: 0.9;
+}
+.scale-normal {
+  --font-scale: 1;
+}
+.scale-large {
+  --font-scale: 1.13;
+}
+.scale-xl {
+  --font-scale: 1.25;
+}
+
+/* ── Accent-only presets (base = DARK, .light.* = LIGHT) ── */
+.theme-zinc {
+  --primary: hsl(0 0% 85%);
+  --primary-foreground: hsl(240 5.9% 10%);
+  --ring: hsl(240 4.9% 60%);
+}
+.light.theme-zinc {
+  --primary: hsl(240 5.9% 10%);
+  --primary-foreground: hsl(0 0% 98%);
+  --ring: hsl(240 5.9% 10%);
+}
+
+.theme-blue {
+  --primary: hsl(217.2 91.2% 59.8%);
+  --primary-foreground: hsl(210 40% 98%);
+  --ring: hsl(217.2 91.2% 59.8%);
+}
+.light.theme-blue {
+  --primary: hsl(221.2 83.2% 53.3%);
+  --primary-foreground: hsl(210 40% 98%);
+  --ring: hsl(221.2 83.2% 53.3%);
+}
+
+.theme-emerald {
+  --primary: hsl(142.1 70.6% 45.3%);
+  --primary-foreground: hsl(144.9 80.4% 10%);
+  --ring: hsl(142.1 70.6% 45.3%);
+}
+.light.theme-emerald {
+  --primary: hsl(142.1 76.2% 36.3%);
+  --primary-foreground: hsl(355.7 100% 97.3%);
+  --ring: hsl(142.1 76.2% 36.3%);
+}
+
+.theme-violet {
+  --primary: hsl(263.4 70% 50.4%);
+  --primary-foreground: hsl(210 20% 98%);
+  --ring: hsl(263.4 70% 50.4%);
+}
+.light.theme-violet {
+  --primary: hsl(262.1 83.3% 57.8%);
+  --primary-foreground: hsl(210 20% 98%);
+  --ring: hsl(262.1 83.3% 57.8%);
+}
+
+.theme-orange {
+  --primary: hsl(20.5 90.2% 48.2%);
+  --primary-foreground: hsl(60 9.1% 97.8%);
+  --ring: hsl(20.5 90.2% 48.2%);
+}
+.light.theme-orange {
+  --primary: hsl(24.6 95% 53.1%);
+  --primary-foreground: hsl(60 9.1% 97.8%);
+  --ring: hsl(24.6 95% 53.1%);
+}
+
+/* ── Tinted-chrome NAVY (base = DARK, .light.* = LIGHT) ── */
+.theme-navy {
+  --background: hsl(215 30% 11%);
+  --foreground: hsl(213 20% 88%);
+  --card: hsl(215 28% 13%);
+  --card-foreground: hsl(213 20% 88%);
+  --popover: hsl(215 28% 13%);
+  --popover-foreground: hsl(213 20% 88%);
+  --primary: hsl(142 60% 45%);
+  --primary-foreground: hsl(142 60% 8%);
+  --secondary: hsl(215 25% 18%);
+  --secondary-foreground: hsl(213 20% 88%);
+  --muted: hsl(215 25% 18%);
+  --muted-foreground: hsl(214 15% 62%);
+  --accent: hsl(215 25% 21%);
+  --accent-foreground: hsl(213 20% 88%);
+  --border: hsl(215 22% 22%);
+  --input: hsl(215 22% 22%);
+  --ring: hsl(142 60% 45%);
+  --sidebar: hsl(216 45% 9%);
+  --sidebar-foreground: hsl(213 20% 90%);
+  --sidebar-accent: hsl(215 30% 18%);
+  --sidebar-accent-foreground: hsl(213 20% 90%);
+  --sidebar-border: hsl(215 25% 20%);
+}
+.light.theme-navy {
+  --background: hsl(210 33% 96%);
+  --foreground: hsl(217 33% 14%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(217 33% 14%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(217 33% 14%);
+  --primary: hsl(142 72% 29%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(214 32% 91%);
+  --secondary-foreground: hsl(217 33% 17%);
+  --muted: hsl(214 32% 91%);
+  --muted-foreground: hsl(215 19% 35%);
+  --accent: hsl(213 36% 88%);
+  --accent-foreground: hsl(217 33% 14%);
+  --border: hsl(214 25% 84%);
+  --input: hsl(214 25% 84%);
+  --ring: hsl(142 72% 29%);
+  --sidebar: hsl(212 63% 19%);
+  --sidebar-foreground: hsl(210 40% 97%);
+  --sidebar-accent: hsl(213 45% 27%);
+  --sidebar-accent-foreground: hsl(210 40% 97%);
+  --sidebar-border: hsl(213 45% 30%);
+}
+
+/* ── Tinted-chrome PLUM ── */
+.theme-plum {
+  --background: hsl(270 18% 11%);
+  --foreground: hsl(270 12% 88%);
+  --card: hsl(270 16% 13%);
+  --card-foreground: hsl(270 12% 88%);
+  --popover: hsl(270 16% 13%);
+  --popover-foreground: hsl(270 12% 88%);
+  --primary: hsl(24 90% 55%);
+  --primary-foreground: hsl(24 90% 8%);
+  --secondary: hsl(270 14% 18%);
+  --secondary-foreground: hsl(270 12% 88%);
+  --muted: hsl(270 14% 18%);
+  --muted-foreground: hsl(270 8% 62%);
+  --accent: hsl(270 14% 21%);
+  --accent-foreground: hsl(270 12% 88%);
+  --border: hsl(270 12% 22%);
+  --input: hsl(270 12% 22%);
+  --ring: hsl(24 90% 55%);
+  --sidebar: hsl(269 35% 9%);
+  --sidebar-foreground: hsl(270 12% 90%);
+  --sidebar-accent: hsl(269 22% 18%);
+  --sidebar-accent-foreground: hsl(270 12% 90%);
+  --sidebar-border: hsl(269 18% 20%);
+}
+.light.theme-plum {
+  --background: hsl(270 25% 96%);
+  --foreground: hsl(270 25% 14%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(270 25% 14%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(270 25% 14%);
+  --primary: hsl(24 90% 44%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(270 20% 91%);
+  --secondary-foreground: hsl(270 25% 17%);
+  --muted: hsl(270 20% 91%);
+  --muted-foreground: hsl(270 10% 35%);
+  --accent: hsl(270 22% 88%);
+  --accent-foreground: hsl(270 25% 14%);
+  --border: hsl(270 15% 84%);
+  --input: hsl(270 15% 84%);
+  --ring: hsl(24 90% 44%);
+  --sidebar: hsl(268 45% 20%);
+  --sidebar-foreground: hsl(270 30% 97%);
+  --sidebar-accent: hsl(268 35% 29%);
+  --sidebar-accent-foreground: hsl(270 30% 97%);
+  --sidebar-border: hsl(268 35% 32%);
+}
+
+/* ── Tinted-chrome COPPER ── */
+.theme-copper {
+  --background: hsl(22 15% 11%);
+  --foreground: hsl(24 12% 88%);
+  --card: hsl(22 14% 13%);
+  --card-foreground: hsl(24 12% 88%);
+  --popover: hsl(22 14% 13%);
+  --popover-foreground: hsl(24 12% 88%);
+  --primary: hsl(263 70% 58%);
+  --primary-foreground: hsl(210 40% 98%);
+  --secondary: hsl(22 12% 18%);
+  --secondary-foreground: hsl(24 12% 88%);
+  --muted: hsl(22 12% 18%);
+  --muted-foreground: hsl(24 8% 62%);
+  --accent: hsl(22 12% 21%);
+  --accent-foreground: hsl(24 12% 88%);
+  --border: hsl(22 10% 22%);
+  --input: hsl(22 10% 22%);
+  --ring: hsl(263 70% 58%);
+  --sidebar: hsl(19 55% 12%);
+  --sidebar-foreground: hsl(24 20% 90%);
+  --sidebar-accent: hsl(22 25% 18%);
+  --sidebar-accent-foreground: hsl(24 20% 90%);
+  --sidebar-border: hsl(22 20% 20%);
+}
+.light.theme-copper {
+  --background: hsl(24 30% 96%);
+  --foreground: hsl(24 25% 14%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(24 25% 14%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(24 25% 14%);
+  --primary: hsl(262 70% 45%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(24 25% 91%);
+  --secondary-foreground: hsl(24 25% 17%);
+  --muted: hsl(24 25% 91%);
+  --muted-foreground: hsl(24 10% 35%);
+  --accent: hsl(24 28% 88%);
+  --accent-foreground: hsl(24 25% 14%);
+  --border: hsl(24 20% 84%);
+  --input: hsl(24 20% 84%);
+  --ring: hsl(262 70% 45%);
+  --sidebar: hsl(19 72% 36%);
+  --sidebar-foreground: hsl(24 60% 98%);
+  --sidebar-accent: hsl(18 68% 29%);
+  --sidebar-accent-foreground: hsl(24 60% 98%);
+  --sidebar-border: hsl(18 60% 31%);
 }
 
 /* ── Base styles ───────────────────────────────────────────────────────── */
 * {
   border-color: var(--border);
+}
+
+/* Root font-size drives the whole rem-based UI (text, spacing, sidebar and
+   header all zoom together): an auto clamp keyed to the viewport, multiplied by
+   the manual --font-scale from the .scale-* atoms. Uses px+vw (not rem) because
+   on the root element rem resolves against the initial 16px, not this rule. */
+html {
+  font-size: calc(var(--font-scale) * clamp(14px, 13px + 0.25vw, 19px));
 }
 
 body {

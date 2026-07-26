@@ -8,3 +8,13 @@ import { twMerge } from 'tailwind-merge';
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
 }
+
+/**
+ * Extract the root path segment from a URL pathname — the active top-level
+ * section, without deep route matching. E.g. "/portfolios/123" -> "portfolios".
+ * kactus home is `/`, so the fallback is empty (the dashboard's base path).
+ */
+export function getRootPathSegment(pathname: string, fallback = ''): string {
+  const segments = pathname.split('/').filter(Boolean);
+  return segments[0] || fallback;
+}

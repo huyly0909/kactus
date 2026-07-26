@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, within } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { DataTable, type DataTableColumn } from './data-table';
 
 interface Row {
@@ -58,5 +58,82 @@ describe('DataTable', () => {
     ];
     render(<DataTable columns={withRender} data={makeRows(1)} searchable={false} />);
     expect(screen.getByTestId('rendered')).toHaveTextContent('C0!');
+  });
+
+  it('sorts rows when a sortable header is clicked', () => {
+    const sortCols: DataTableColumn<Row>[] = [
+      { key: 'code', title: 'Code' },
+      { key: 'name', title: 'Name', sortable: true },
+    ];
+    const data: Row[] = [
+      { id: '1', code: 'C1', name: 'Zeta' },
+      { id: '2', code: 'C2', name: 'Alpha' },
+    ];
+    render(<DataTable columns={sortCols} data={data} searchable={false} />);
+    const table = screen.getByRole('table');
+    const firstNameCell = () => within(table).getAllByRole('row')[1].querySelectorAll('td')[1];
+    expect(firstNameCell()).toHaveTextContent('Zeta'); // original order
+
+    fireEvent.click(screen.getByRole('button', { name: /Name/ })); // asc
+    expect(firstNameCell()).toHaveTextContent('Alpha');
+  });
+
+  it('hides a column marked defaultHidden and keeps the rest', () => {
+    const cols: DataTableColumn<Row>[] = [
+      { key: 'code', title: 'Code' },
+      { key: 'name', title: 'Name', defaultHidden: true },
+    ];
+    render(
+      <DataTable columns={cols} data={makeRows(1)} searchable={false} enableColumnVisibility />,
+    );
+    expect(screen.getByText('Code')).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Name' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Alpha')).not.toBeInTheDocument();
+  });
+
+  it('renders a server pagination range and pages via the callback', () => {
+    const onPageChange = vi.fn();
+    render(
+      <DataTable
+        columns={columns}
+        data={makeRows(10)}
+        searchable={false}
+        pagination={{ mode: 'server', page: 1, pageSize: 10, total: 25, onPageChange }}
+      />,
+    );
+    expect(screen.getByText('1-10 / 25')).toBeInTheDocument();
+    const buttons = screen.getAllByRole('button');
+    const next = buttons.find((b) => !(b as HTMLButtonElement).disabled)!;
+    fireEvent.click(next);
+    expect(onPageChange).toHaveBeenCalledWith(2);
+  });
+
+  it('renders filter chips and removes them via the callback', () => {
+    const onRemove = vi.fn();
+    render(
+      <DataTable
+        columns={columns}
+        data={makeRows(2)}
+        searchable={false}
+        filterChips={[{ id: 'f1', label: 'Type: Gold', onRemove }]}
+      />,
+    );
+    expect(screen.getByText('Type: Gold')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'remove' }));
+    expect(onRemove).toHaveBeenCalled();
+  });
+
+  it('renders rows as cards below the desktop breakpoint', () => {
+    // setup.ts stubs matchMedia → matches:false → mobile tier → cards.
+    render(
+      <DataTable
+        columns={columns}
+        data={makeRows(2)}
+        searchable={false}
+        renderCard={(r) => <div data-testid="card">{r.name}</div>}
+      />,
+    );
+    expect(screen.getAllByTestId('card')).toHaveLength(2);
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
   });
 });

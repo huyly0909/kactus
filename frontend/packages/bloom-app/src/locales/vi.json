@@ -27,7 +27,10 @@
     "total": "Tổng",
     "page": "Trang",
     "rows_per_page": "Dòng mỗi trang",
-    "showing": "Hiển thị"
+    "showing": "Hiển thị",
+    "remove": "Xoá",
+    "debug_mode": "Chế độ gỡ lỗi",
+    "debug_mode_on": "Bật"
   },
   "auth": {
     "login": "Đăng nhập",
@@ -47,11 +50,61 @@
     "projects": "Dự án",
     "authorization": "Phân quyền",
     "select_project": "Chọn dự án",
+    "market": "Thị trường",
     "gold": "Giá vàng",
     "stock": "Chứng khoán",
     "finance": "Tài chính",
     "portfolios": "Danh mục",
-    "notifications": "Thông báo"
+    "notifications": "Thông báo",
+    "route_not_found": "Không tìm thấy trang",
+    "no_route_permission": "Bạn không có quyền truy cập trang đó"
+  },
+  "layout": {
+    "go_back": "Quay lại",
+    "open_menu": "Mở menu",
+    "navigation": "Điều hướng",
+    "overview": "Tổng quan",
+    "toggle_theme": "Đổi giao diện sáng/tối",
+    "account": "Tài khoản",
+    "no_email": "Không có email"
+  },
+  "settings": {
+    "title": "Cài đặt",
+    "profile": "Hồ sơ",
+    "appearance": "Giao diện",
+    "language": "Ngôn ngữ",
+    "theme": {
+      "mode": "Chế độ",
+      "mode_light": "Sáng",
+      "mode_dark": "Tối",
+      "color": "Màu nhấn",
+      "radius": "Bo góc",
+      "radius_sharp": "Vuông",
+      "radius_classic": "Cổ điển",
+      "radius_smooth": "Bo tròn",
+      "scale": "Cỡ hiển thị",
+      "scale_compact": "Gọn",
+      "scale_normal": "Bình thường",
+      "scale_large": "Lớn",
+      "scale_xl": "Rất lớn",
+      "color_default": "Chàm",
+      "color_zinc": "Xám",
+      "color_blue": "Xanh dương",
+      "color_emerald": "Ngọc lục",
+      "color_violet": "Tím",
+      "color_orange": "Cam",
+      "color_navy": "Xanh navy",
+      "color_plum": "Mận",
+      "color_copper": "Đồng"
+    },
+    "profile_section": {
+      "name": "Tên",
+      "email": "Email",
+      "username": "Tên đăng nhập",
+      "role": "Vai trò",
+      "role_superuser": "Quản trị viên",
+      "role_member": "Thành viên"
+    }
   },
   "dashboard": {
     "title": "Tổng quan",
