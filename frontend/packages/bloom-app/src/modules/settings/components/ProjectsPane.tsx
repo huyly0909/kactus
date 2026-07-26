@@ -5,7 +5,7 @@ import { useAdminProjects } from '@/hooks/useAdminQuery';
 import type { Project } from '@/types/project';
 
 /** Read-only list of every project in the system (superuser only). */
-export function AdminProjectsPage() {
+export function ProjectsPane() {
   const { t } = useTranslation();
   const { data, isLoading } = useAdminProjects();
 
@@ -31,9 +31,8 @@ export function AdminProjectsPage() {
   ];
 
   return (
-    <div className="p-6 md:p-8">
+    <div className="animate-in fade-in slide-in-from-bottom-2 p-6 duration-300 md:p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">{t('admin.projects.title')}</h1>
         <p className="text-sm text-muted-foreground">{t('admin.projects.subtitle')}</p>
       </div>
 

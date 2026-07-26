@@ -114,3 +114,19 @@ class UserService:
         """Update the user's last_login timestamp."""
         user.last_login = utcnow()
         await user.save(session)
+
+    @staticmethod
+    async def update_preferences(
+        session: AsyncSession,
+        user: User,
+        *,
+        language: str | None = None,
+        timezone: str | None = None,
+    ) -> User:
+        """Update the user's UI preferences (partial — only provided keys)."""
+        if language is not None:
+            user.language = language
+        if timezone is not None:
+            user.timezone = timezone
+        await user.save(session)
+        return user

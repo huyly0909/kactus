@@ -89,9 +89,21 @@
   },
   "settings": {
     "title": "Cài đặt",
-    "profile": "Hồ sơ",
+    "profile": "Hồ sơ cá nhân",
+    "users": "Người dùng",
+    "projects": "Dự án",
+    "preferences": "Tùy chọn giao diện",
     "appearance": "Giao diện",
     "language": "Ngôn ngữ",
+    "profile_desc": "Quản lý thông tin bảo mật và tài khoản.",
+    "preferences_desc": "Tùy biến màn hình và trải nghiệm cá nhân.",
+    "localization": "Bản địa hóa",
+    "localization_desc": "Ngôn ngữ, múi giờ và định dạng hiển thị.",
+    "timezone": "Múi giờ",
+    "formats": "Định dạng",
+    "date_format": "Ngày",
+    "time_format": "Giờ",
+    "number_format": "Số",
     "theme": {
       "mode": "Chế độ",
       "mode_light": "Sáng",
@@ -106,6 +118,7 @@
       "scale_normal": "Bình thường",
       "scale_large": "Lớn",
       "scale_xl": "Rất lớn",
+      "color_jira": "Jira",
       "color_default": "Chàm",
       "color_zinc": "Xám",
       "color_blue": "Xanh dương",
@@ -117,12 +130,13 @@
       "color_copper": "Đồng"
     },
     "profile_section": {
-      "name": "Tên",
-      "email": "Email",
+      "name": "Họ và Tên",
+      "email": "Địa chỉ Email",
       "username": "Tên đăng nhập",
-      "role": "Vai trò",
+      "role": "Vai trò & Quyền hạn",
       "role_superuser": "Quản trị viên",
-      "role_member": "Thành viên"
+      "role_member": "Người dùng tiêu chuẩn",
+      "account_active": "Tài khoản đang hoạt động"
     }
   },
   "dashboard": {

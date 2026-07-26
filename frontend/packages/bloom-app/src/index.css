@@ -144,7 +144,7 @@
  * (:root), so each `.theme-*` carries the DARK values and `.light.theme-*` the
  * LIGHT ones — the inverse of Builtiful. HSL triplets are wrapped in hsl() to
  * match kactus's full-color token convention. Accent presets (zinc/blue/…)
- * recolor --primary/--ring only; tinted-chrome presets (navy/plum/copper)
+ * recolor --primary/--ring only; tinted-chrome presets (jira/navy/plum/copper)
  * re-skin surfaces and set kactus's first-class --sidebar* tokens directly
  * (no `.sidebar-surface` scope — kactus's sidebar reads those tokens already).
  */
@@ -378,6 +378,59 @@
   --sidebar-accent: hsl(18 68% 29%);
   --sidebar-accent-foreground: hsl(24 60% 98%);
   --sidebar-border: hsl(18 60% 31%);
+}
+
+/* ── Tinted-chrome JIRA (Atlassian) — the kactus default. Atlassian blue
+ *    (#0C66E4 ≈ hsl(214 90% 47%)) primary + neutral cool-grey chrome. Light is
+ *    the iconic Jira look (near-white bg, navy ink, white nav with a blue-tinted
+ *    selection); dark is a deep slate variant. ── */
+.theme-jira {
+  --background: hsl(220 24% 10%);
+  --foreground: hsl(213 20% 88%);
+  --card: hsl(220 22% 13%);
+  --card-foreground: hsl(213 20% 88%);
+  --popover: hsl(220 22% 13%);
+  --popover-foreground: hsl(213 20% 88%);
+  --primary: hsl(214 90% 56%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(220 20% 18%);
+  --secondary-foreground: hsl(213 20% 88%);
+  --muted: hsl(220 20% 18%);
+  --muted-foreground: hsl(214 15% 62%);
+  --accent: hsl(220 20% 21%);
+  --accent-foreground: hsl(213 20% 88%);
+  --border: hsl(220 18% 22%);
+  --input: hsl(220 18% 22%);
+  --ring: hsl(214 90% 56%);
+  --sidebar: hsl(221 40% 8%);
+  --sidebar-foreground: hsl(213 20% 90%);
+  --sidebar-accent: hsl(220 28% 17%);
+  --sidebar-accent-foreground: hsl(213 20% 90%);
+  --sidebar-border: hsl(220 22% 19%);
+}
+.light.theme-jira {
+  --background: hsl(210 20% 98%);
+  --foreground: hsl(218 44% 20%);
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(218 44% 20%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(218 44% 20%);
+  --primary: hsl(214 90% 47%);
+  --primary-foreground: hsl(0 0% 100%);
+  --secondary: hsl(214 30% 94%);
+  --secondary-foreground: hsl(218 44% 22%);
+  --muted: hsl(214 30% 94%);
+  --muted-foreground: hsl(218 20% 42%);
+  --accent: hsl(214 46% 92%);
+  --accent-foreground: hsl(214 90% 30%);
+  --border: hsl(220 16% 88%);
+  --input: hsl(220 16% 88%);
+  --ring: hsl(214 90% 47%);
+  --sidebar: hsl(0 0% 100%);
+  --sidebar-foreground: hsl(218 25% 30%);
+  --sidebar-accent: hsl(214 46% 94%);
+  --sidebar-accent-foreground: hsl(214 90% 40%);
+  --sidebar-border: hsl(220 16% 90%);
 }
 
 /* ── Base styles ───────────────────────────────────────────────────────── */

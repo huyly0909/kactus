@@ -5,11 +5,17 @@ from __future__ import annotations
 from fastapi import Request, Response
 from kactus_common.crypto import verify_password
 from kactus_common.database.oltp.session import get_db
-from kactus_common.exceptions import AuthenticationError
+from kactus_common.exceptions import AuthenticationError, NotFoundError
 from kactus_common.router import KactusAPIRouter
-from kactus_common.user.schema import LoginRequest, LoginResponse, UserInfo
+from kactus_common.user.schema import (
+    LoginRequest,
+    LoginResponse,
+    UserInfo,
+    UserPreferencesUpdate,
+)
 from kactus_common.user.service import UserService
-from kactus_fin.dependencies import get_auth
+from kactus_fin.dependencies import get_auth, provide_session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = KactusAPIRouter(prefix="/api/auth", tags=["auth"])
 session_router = KactusAPIRouter(prefix="/api/auth", tags=["auth"])
@@ -54,4 +60,26 @@ async def logout(request: Request, response: Response) -> dict:
 async def me(request: Request) -> UserInfo:
     """Get current authenticated user info from session cookie."""
     user = request.state.user
+    return UserInfo.model_validate(user)
+
+
+@session_router.patch("/me")
+@provide_session
+async def update_me(
+    body: UserPreferencesUpdate,
+    request: Request,
+    session: AsyncSession,
+) -> UserInfo:
+    """Update the current user's own UI preferences (language, timezone).
+
+    Re-fetches the user on the live session — ``request.state.user`` was loaded
+    by the auth dependency on a session that is already closed, so mutating and
+    saving it there would fail.
+    """
+    user = await UserService.get_by_id(session, request.state.user.id)
+    if user is None:
+        raise NotFoundError("User not found")
+    user = await UserService.update_preferences(
+        session, user, language=body.language, timezone=body.timezone
+    )
     return UserInfo.model_validate(user)

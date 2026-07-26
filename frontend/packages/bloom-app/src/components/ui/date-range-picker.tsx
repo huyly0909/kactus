@@ -112,7 +112,11 @@ const REGISTRY: Record<string, DateRangePreset> = {
     labelKey: 'common.range_month',
     range: () => {
       const now = new Date();
-      return { from: fmt(new Date(now.getFullYear(), now.getMonth(), 1)), to: fmt(now) };
+      // Full calendar month: 1st → last day (new Date(y, m+1, 0) = last day of month m).
+      return {
+        from: fmt(new Date(now.getFullYear(), now.getMonth(), 1)),
+        to: fmt(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+      };
     },
   },
   last_month: {
@@ -132,7 +136,11 @@ const REGISTRY: Record<string, DateRangePreset> = {
     range: () => {
       const now = new Date();
       const q = Math.floor(now.getMonth() / 3) * 3;
-      return { from: fmt(new Date(now.getFullYear(), q, 1)), to: fmt(now) };
+      // Full quarter: 1st of its first month → last day of its third month.
+      return {
+        from: fmt(new Date(now.getFullYear(), q, 1)),
+        to: fmt(new Date(now.getFullYear(), q + 3, 0)),
+      };
     },
   },
   year: {

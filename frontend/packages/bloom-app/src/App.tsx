@@ -7,7 +7,6 @@ import { useDebugUrlSync } from '@/hooks/useDebugMode';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { NotFoundRedirect } from '@/layouts/components/NotFoundRedirect';
 import { LoginPage } from '@/modules/core/auth/pages/LoginPage';
-import { AdminGuard } from '@modules/admin/components/AdminGuard';
 
 // Route-level code splitting — each page becomes its own async chunk, loaded on
 // demand behind the DashboardLayout's <Suspense> boundary (named → default).
@@ -63,17 +62,6 @@ const FinanceReportPage = lazy(() =>
     default: m.FinanceReportPage,
   })),
 );
-const AdminUsersPage = lazy(() =>
-  import('@modules/admin/pages/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })),
-);
-const AdminProjectsPage = lazy(() =>
-  import('@modules/admin/pages/AdminProjectsPage').then((m) => ({ default: m.AdminProjectsPage })),
-);
-const AdminAuthorizationPage = lazy(() =>
-  import('@modules/admin/pages/AdminAuthorizationPage').then((m) => ({
-    default: m.AdminAuthorizationPage,
-  })),
-);
 const SettingsPage = lazy(() =>
   import('@modules/settings/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })),
 );
@@ -105,14 +93,17 @@ function AppRoutes() {
         <Route path="market/finance" element={<FinancePage />} />
         {/* POC — the finance pivot rebuilt on the ReportView primitive. */}
         <Route path="market/finance-report" element={<FinanceReportPage />} />
-        <Route path="admin" element={<AdminGuard />}>
-          <Route index element={<AdminUsersPage />} />
-          <Route path="users" element={<AdminUsersPage />} />
-          <Route path="projects" element={<AdminProjectsPage />} />
-          <Route path="authorization" element={<AdminAuthorizationPage />} />
-        </Route>
+        {/* Admin (Users/Projects) folded into Settings. Old links redirect. */}
+        <Route path="admin" element={<Navigate to="/settings/users" replace />} />
+        <Route path="admin/users" element={<Navigate to="/settings/users" replace />} />
+        <Route path="admin/authorization" element={<Navigate to="/settings/users" replace />} />
+        <Route path="admin/projects" element={<Navigate to="/settings/projects" replace />} />
         {/* Settings — not a registry module; reached from the sidebar/header. */}
         <Route path="settings" element={<Navigate to="/settings/profile" replace />} />
+        <Route
+          path="settings/appearance"
+          element={<Navigate to="/settings/preferences" replace />}
+        />
         <Route path="settings/:tab" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundRedirect />} />
       </Route>

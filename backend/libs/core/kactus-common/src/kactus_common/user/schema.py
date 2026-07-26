@@ -22,6 +22,18 @@ class UserInfo(BaseSchema):
     name: str
     status: str
     is_superuser: bool = False
+    language: str | None = None
+    timezone: str | None = None
+
+
+class UserPreferencesUpdate(BaseSchema):
+    """Partial update of the current user's UI preferences.
+
+    Both fields optional — only provided keys are applied.
+    """
+
+    language: str | None = None
+    timezone: str | None = None
 
 
 class LoginResponse(BaseSchema):

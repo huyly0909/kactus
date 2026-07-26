@@ -90,8 +90,20 @@
   "settings": {
     "title": "Settings",
     "profile": "Profile",
+    "users": "Users",
+    "projects": "Projects",
+    "preferences": "Preferences",
     "appearance": "Appearance",
     "language": "Language",
+    "profile_desc": "Manage your security and account information.",
+    "preferences_desc": "Customize the interface and your personal experience.",
+    "localization": "Localization",
+    "localization_desc": "Language, timezone and display formats.",
+    "timezone": "Timezone",
+    "formats": "Formats",
+    "date_format": "Date",
+    "time_format": "Time",
+    "number_format": "Number",
     "theme": {
       "mode": "Mode",
       "mode_light": "Light",
@@ -106,6 +118,7 @@
       "scale_normal": "Normal",
       "scale_large": "Large",
       "scale_xl": "Extra large",
+      "color_jira": "Jira",
       "color_default": "Indigo",
       "color_zinc": "Zinc",
       "color_blue": "Blue",
@@ -117,12 +130,13 @@
       "color_copper": "Copper"
     },
     "profile_section": {
-      "name": "Name",
-      "email": "Email",
+      "name": "Full name",
+      "email": "Email address",
       "username": "Username",
-      "role": "Role",
+      "role": "Role & Permissions",
       "role_superuser": "Superuser",
-      "role_member": "Member"
+      "role_member": "Standard user",
+      "account_active": "Account is active"
     }
   },
   "dashboard": {

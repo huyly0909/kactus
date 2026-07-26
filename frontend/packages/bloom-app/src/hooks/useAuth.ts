@@ -2,6 +2,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useProjectStore } from '@/store/projectStore';
 import { authService } from '@/services/authService';
 import { projectService } from '@/services/projectService';
+import { setLanguage } from '@/i18n';
 
 interface LoginPayload {
   email: string;
@@ -16,6 +17,8 @@ interface AuthUser {
   name: string;
   status: string;
   is_superuser: boolean;
+  language?: string | null;
+  timezone?: string | null;
 }
 
 interface AuthResult {
@@ -44,6 +47,15 @@ interface UseAuthReturn {
  * no personal project and bypass scoping, so they are skipped. Best-effort:
  * failure just leaves the pages to prompt for a selection.
  */
+/**
+ * Apply the user's saved UI language. Preferences are user-scoped (persisted on
+ * the account via PATCH /api/auth/me), so the account — not localStorage — is the
+ * source of truth. No-op when the user has no language set (keeps the i18n default).
+ */
+const applyUserLanguage = (authUser: AuthUser): void => {
+  if (authUser.language) void setLanguage(authUser.language);
+};
+
 const hydrateActiveProject = async (authUser: AuthUser): Promise<void> => {
   if (authUser.is_superuser) return;
   try {
@@ -67,6 +79,7 @@ export const useAuth = (): UseAuthReturn => {
   const login = async (payload: LoginPayload): Promise<AuthResult> => {
     const result = await authService.login(payload);
     setUser(result.user);
+    applyUserLanguage(result.user);
     await hydrateActiveProject(result.user);
     return result;
   };
@@ -83,6 +96,7 @@ export const useAuth = (): UseAuthReturn => {
     try {
       const userData = await authService.me();
       setUser(userData);
+      applyUserLanguage(userData);
       await hydrateActiveProject(userData);
     } catch {
       clearAuth();

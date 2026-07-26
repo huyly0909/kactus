@@ -194,3 +194,73 @@ async def test_login_with_remember(client, seed_user):
     )
     assert resp.status_code == 200
     assert "kactus_session_id" in resp.cookies
+
+
+@pytest.mark.asyncio
+async def test_me_defaults_prefs_null(client, seed_user):
+    """A fresh user exposes language/timezone as null on /me."""
+    login_resp = await client.post(
+        "/api/auth/login",
+        json={"email": "test@kactus.io", "password": "Test123!"},
+    )
+    client.cookies.update(dict(login_resp.cookies))
+    resp = await client.get("/api/auth/me")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["language"] is None
+    assert data["timezone"] is None
+    client.cookies.clear()
+
+
+@pytest.mark.asyncio
+async def test_update_me_persists_preferences(client, seed_user):
+    """PATCH /me updates language + timezone and /me reflects them."""
+    login_resp = await client.post(
+        "/api/auth/login",
+        json={"email": "test@kactus.io", "password": "Test123!"},
+    )
+    client.cookies.update(dict(login_resp.cookies))
+
+    resp = await client.patch(
+        "/api/auth/me",
+        json={"language": "en", "timezone": "Asia/Ho_Chi_Minh"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["language"] == "en"
+    assert data["timezone"] == "Asia/Ho_Chi_Minh"
+
+    # Persisted — a fresh /me returns the same values.
+    me_resp = await client.get("/api/auth/me")
+    me_data = me_resp.json()["data"]
+    assert me_data["language"] == "en"
+    assert me_data["timezone"] == "Asia/Ho_Chi_Minh"
+    client.cookies.clear()
+
+
+@pytest.mark.asyncio
+async def test_update_me_partial(client, seed_user):
+    """A partial PATCH only touches the provided key."""
+    login_resp = await client.post(
+        "/api/auth/login",
+        json={"email": "test@kactus.io", "password": "Test123!"},
+    )
+    client.cookies.update(dict(login_resp.cookies))
+
+    await client.patch(
+        "/api/auth/me",
+        json={"language": "vi", "timezone": "UTC"},
+    )
+    # Only update language; timezone must stay UTC.
+    resp = await client.patch("/api/auth/me", json={"language": "en"})
+    data = resp.json()["data"]
+    assert data["language"] == "en"
+    assert data["timezone"] == "UTC"
+    client.cookies.clear()
+
+
+@pytest.mark.asyncio
+async def test_update_me_without_session(client):
+    """PATCH /me without a session cookie returns 401."""
+    resp = await client.patch("/api/auth/me", json={"language": "en"})
+    assert resp.status_code == 401

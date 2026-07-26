@@ -18,8 +18,8 @@ import type { AdminUser } from '@/types/admin';
 
 type PendingAction = { kind: 'role' | 'reset' | 'deactivate'; user: AdminUser };
 
-/** User management (superuser only) — list, create, role, reset password, deactivate. */
-export function AdminUsersPage() {
+/** User management pane (superuser only) — list, create, role, reset, deactivate. */
+export function UsersPane() {
   const { t } = useTranslation();
   const { user: currentUser } = useAuth();
   const { data, isLoading } = useAdminUsers();
@@ -155,12 +155,9 @@ export function AdminUsersPage() {
   const copy = pending ? confirmCopy(pending) : null;
 
   return (
-    <div className="p-6 md:p-8">
-      <div className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">{t('admin.users.title')}</h1>
-          <p className="text-sm text-muted-foreground">{t('admin.users.subtitle')}</p>
-        </div>
+    <div className="animate-in fade-in slide-in-from-bottom-2 p-6 duration-300 md:p-8">
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <p className="text-sm text-muted-foreground">{t('admin.users.subtitle')}</p>
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="mr-1 h-4 w-4" />
           {t('admin.users.create_title')}

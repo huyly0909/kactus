@@ -5,6 +5,8 @@ export interface User {
   name: string;
   status: string;
   is_superuser: boolean;
+  language?: string | null;
+  timezone?: string | null;
   avatarUrl?: string;
 }
 
