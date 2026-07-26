@@ -183,3 +183,16 @@ node_modules/
 *.tsbuildinfo
 .env.local
 .env.*.local
+
+# DuckDB (OLAP) — local database files + WAL + temp dir. This is DATA, never
+# source: db_path defaults to a relative `kactus.duckdb` (created in backend/
+# when a manage.py command runs), and prod keeps it in a Docker volume. Commit
+# a fixture with `git add -f` if one is ever genuinely needed.
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp/
+
+# Data exports / backups — `python manage.py data backup` writes here
+# (parquet/csv), and ad-hoc `COPY … TO '*.parquet'` dumps are data too.
+backups/
+*.parquet
