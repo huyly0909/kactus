@@ -49,6 +49,7 @@
     "range_7d": "7 ngày",
     "range_30d": "30 ngày",
     "range_90d": "90 ngày",
+    "range_3d": "3 ngày",
     "range_all": "Toàn bộ"
   },
   "auth": {
@@ -294,6 +295,52 @@
         "group_main": "Chính",
         "close": "Giá đóng cửa",
         "empty": "Chưa có dữ liệu lịch sử — nhập file CSV backfill để xem biểu đồ."
+      },
+      "tabs": {
+        "overview": "Tổng quan",
+        "data": "Dữ liệu"
+      }
+    },
+    "sync": {
+      "backfill": "Nạp lịch sử",
+      "backfill_all": "Nạp tất cả",
+      "sync_now": "Đồng bộ ngay",
+      "sync_all": "Đồng bộ tất cả",
+      "run": "Chạy",
+      "queued": "Đã thêm vào hàng đợi",
+      "already_queued": "Đã có trong hàng đợi",
+      "enqueue_failed": "Không thể thêm công việc",
+      "backfill_all_queued": "Đã thêm {{count}} công việc nạp dữ liệu",
+      "data_hint": "Nạp lịch sử hoặc đồng bộ giá mới nhất theo từng nguồn. Mỗi lần chỉ chạy một công việc — một tiến trình duy nhất ghi DuckDB.",
+      "view_queue": "Hàng đợi",
+      "backfill_title": "Nạp lịch sử {{source}}",
+      "backfill_desc": "Chọn khoảng thời gian (từ {{min}}).",
+      "mihong_note": "Khoảng trên ~1 tháng trả về điểm theo tháng.",
+      "series_empty": "Chưa có lịch sử — chạy nạp dữ liệu để có dữ liệu cho chuỗi này.",
+      "queue_title": "Hàng đợi đồng bộ",
+      "queue_subtitle": "Hàng đợi FIFO dùng chung cho các công việc đồng bộ — mỗi lần chạy một.",
+      "back_to_gold": "Về trang vàng",
+      "active": "Đang chạy",
+      "recent": "Gần đây",
+      "no_active": "Không có công việc nào đang chạy.",
+      "no_jobs": "Chưa có công việc nào.",
+      "cancel": "Hủy",
+      "source": {
+        "sjc": "SJC",
+        "yahoo": "XAU (thế giới)",
+        "mihong": "Mihong",
+        "all": "Tất cả nguồn"
+      },
+      "status": {
+        "pending": "Chờ",
+        "running": "Đang chạy",
+        "success": "Xong",
+        "failed": "Thất bại",
+        "cancelled": "Đã hủy"
+      },
+      "job_type": {
+        "gold_backfill": "Nạp vàng",
+        "gold_sync": "Đồng bộ vàng"
       }
     },
     "stock": {

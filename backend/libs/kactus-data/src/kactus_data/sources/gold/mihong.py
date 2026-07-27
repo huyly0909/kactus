@@ -1,6 +1,7 @@
 """Mihong.vn gold price data source (api.mihong.vn)."""
 
 from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
 
 import requests
 from kactus_data.schemas import SyncDataResponse
@@ -14,6 +15,10 @@ SUPPORTED_CODES = frozenset(
 
 # mihong quotes domestic gold per *chỉ*; the price board stores VND per lượng.
 CHI_TO_LUONG = 10
+
+# Response ``dateTime`` shape, e.g. ``"30/06/2025 00:00"``.
+_DATETIME_FORMAT = "%d/%m/%Y %H:%M"
+_QUANT = Decimal("0.0001")
 
 
 class MihongGoldSource(HttpDataSource):
@@ -94,6 +99,41 @@ class MihongGoldSource(HttpDataSource):
                 timestamp=datetime.now().isoformat(),
             )
 
+    def history(
+        self,
+        start_date: date,
+        end_date: date,
+        code: str,
+    ) -> list[dict]:
+        """Mihong series for *code* over ``start..end`` (VND/lượng), oldest first.
+
+        Reuses :meth:`sync` (the trailing ``last=`` window) but parses the
+        **full** flat array, not just the newest tick. Granularity is inherent
+        in the returned dates: ``15d``/``1M`` give one point per day, ``6M``/
+        ``1y`` give end-of-month points only — we store each at its actual date.
+        Points are clipped to the requested ``[start, end]`` (the ``last=``
+        window can be wider) and scaled VND/chỉ → VND/lượng as ``Decimal``.
+
+        Returns ``[{date, buy_price, sell_price}]``; ``[]`` on a failed fetch.
+        """
+        response = self.sync(start_date, end_date, code)
+        if not response.success or not isinstance(response.data, list):
+            return []
+
+        by_day: dict[date, tuple[Decimal | None, Decimal | None]] = {}
+        for point in response.data:
+            parsed = _parse_point(point)
+            if parsed is None:
+                continue
+            day, buy, sell = parsed
+            if day < start_date or day > end_date:
+                continue
+            by_day[day] = (buy, sell)  # a repeated day keeps the latest point
+        return [
+            {"date": day, "buy_price": by_day[day][0], "sell_price": by_day[day][1]}
+            for day in sorted(by_day)
+        ]
+
     @staticmethod
     def _window_for(start_date: date, end_date: date) -> str:
         """Smallest supported ``last`` window covering ``start_date..end_date``."""
@@ -120,3 +160,34 @@ class MihongGoldSource(HttpDataSource):
 
     def _get_cookies(self) -> dict[str, str]:
         return {}
+
+
+def _mihong_decimal(value) -> Decimal | None:
+    """VND/chỉ → VND/lượng ``Decimal`` (×10, 4dp); blank/0/garbage → ``None``.
+
+    Goes via ``str`` and stays ``Decimal`` throughout (``Decimal * int`` is
+    safe; ``Decimal * float`` would raise) so VND gold keeps full precision.
+    """
+    if value is None or value == "":
+        return None
+    try:
+        result = (Decimal(str(value)) * CHI_TO_LUONG).quantize(_QUANT)
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return None if result == 0 else result
+
+
+def _parse_point(point: dict) -> tuple[date, Decimal | None, Decimal | None] | None:
+    """``(day, buy, sell)`` from one series point, or ``None`` to skip it."""
+    raw_dt = point.get("dateTime")
+    if not raw_dt:
+        return None
+    try:
+        day = datetime.strptime(raw_dt, _DATETIME_FORMAT).date()
+    except (ValueError, TypeError):
+        return None
+    buy = _mihong_decimal(point.get("buyingPrice"))
+    sell = _mihong_decimal(point.get("sellingPrice"))
+    if buy is None and sell is None:
+        return None
+    return day, buy, sell

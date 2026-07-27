@@ -9,6 +9,7 @@ with no handler attached).
 
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 from contextlib import asynccontextmanager
@@ -20,6 +21,7 @@ from kactus_common.redis.client import close_redis
 from kactus_common.sse.broker import get_sse_broker, reset_sse_broker
 from kactus_common.sse.market import register_sse_handler
 from kactus_data.jobs.scheduler import build_scheduler
+from kactus_data.jobs.sync_queue import SyncJobDeps, run_dispatcher
 from kactus_data.portfolio.provider import build_providers
 from kactus_data.sources.stock.auth import init_vnstock_auth
 from kactus_data.storage.duckdb import DuckDBStorage
@@ -132,6 +134,40 @@ def shutdown_runtime(runtime: DataRuntime | None) -> None:
     set_runtime(None)
 
 
+def start_dispatcher(runtime: DataRuntime) -> asyncio.Event:
+    """Launch the single sync-job dispatcher on the running loop.
+
+    Runs unconditionally (independent of the crawl scheduler): this process is
+    the sole DuckDB writer, so it is the only place a queued write can execute.
+    Gold handlers register themselves on import of ``kactus_data.jobs.gold_sync``.
+    """
+    import kactus_data.jobs.gold_sync  # noqa: F401 — registers GOLD_* handlers
+
+    stop_event = asyncio.Event()
+    deps = SyncJobDeps(
+        db=runtime.db, storage=runtime.storage, providers=runtime.providers
+    )
+    runtime.sync_dispatcher = asyncio.create_task(
+        run_dispatcher(deps, stop_event=stop_event)
+    )
+    runtime._extra["sync_stop_event"] = stop_event
+    return stop_event
+
+
+async def stop_dispatcher(runtime: DataRuntime, stop_event: asyncio.Event) -> None:
+    stop_event.set()
+    task = runtime.sync_dispatcher
+    if task is None:
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+    except Exception as ex:  # pragma: no cover - defensive
+        logger.warning(f"Sync dispatcher shutdown error: {ex}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -139,7 +175,9 @@ async def lifespan(app: FastAPI):
     _warn_if_misconfigured(settings)
 
     runtime = build_runtime(settings)
+    stop_event = start_dispatcher(runtime)
     yield
+    await stop_dispatcher(runtime, stop_event)
     shutdown_runtime(runtime)
 
     # Stop the SSE broker before the pool it publishes through: on the Redis

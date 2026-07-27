@@ -2,6 +2,7 @@
 """Tests for the MihongGoldSource implementation."""
 
 from datetime import date
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 import requests
@@ -98,3 +99,97 @@ class TestMihongGoldSource:
 
         assert result.success is False
         assert "boom" in str(result.error)
+
+
+# Real api.mihong.vn 6M response for goldCode=999 (end-of-month points), VND/chỉ.
+MIHONG_6M_999 = [
+    {
+        "buyingPrice": 18033469,
+        "sellingPrice": 18247959,
+        "code": "999",
+        "dateTime": "31/12/2025 00:00",
+    },
+    {
+        "buyingPrice": 17699836,
+        "sellingPrice": 17941311,
+        "code": "999",
+        "dateTime": "31/01/2026 00:00",
+    },
+    {
+        "buyingPrice": 17459019,
+        "sellingPrice": 17694183,
+        "code": "999",
+        "dateTime": "28/02/2026 00:00",
+    },
+    {
+        "buyingPrice": 16980050,
+        "sellingPrice": 17160304,
+        "code": "999",
+        "dateTime": "31/03/2026 00:00",
+    },
+]
+
+
+def _mock_request(mock_request, payload):
+    response = MagicMock()
+    response.json.return_value = payload
+    mock_request.return_value = response
+
+
+class TestMihongGoldHistory:
+    @patch("kactus_data.sources.gold.mihong.HttpDataSource._make_request")
+    def test_parses_full_array_and_scales_to_luong(self, mock_request):
+        """Every point is parsed (not just the last), VND/chỉ ×10 → VND/lượng."""
+        _mock_request(mock_request, MIHONG_6M_999)
+
+        rows = MihongGoldSource().history(date(2025, 12, 1), date(2026, 3, 31), "999")
+
+        assert [r["date"] for r in rows] == [
+            date(2025, 12, 31),
+            date(2026, 1, 31),
+            date(2026, 2, 28),
+            date(2026, 3, 31),
+        ]
+        # 18_033_469 chỉ × 10 = 180_334_690 lượng, as an exact Decimal.
+        assert rows[0]["buy_price"] == Decimal("180334690.0000")
+        assert rows[0]["sell_price"] == Decimal("182479590.0000")
+        assert all(isinstance(r["buy_price"], Decimal) for r in rows)
+
+    @patch("kactus_data.sources.gold.mihong.HttpDataSource._make_request")
+    def test_monthly_points_beyond_a_month(self, mock_request):
+        """A >1-month range yields the API's end-of-month granularity, kept verbatim."""
+        _mock_request(mock_request, MIHONG_6M_999)
+        rows = MihongGoldSource().history(date(2025, 12, 1), date(2026, 3, 31), "999")
+        # Consecutive points are ~a month apart — not daily.
+        gaps = [(b["date"] - a["date"]).days for a, b in zip(rows, rows[1:])]
+        assert all(gap >= 28 for gap in gaps)
+
+    @patch("kactus_data.sources.gold.mihong.HttpDataSource._make_request")
+    def test_clips_to_requested_range(self, mock_request):
+        """The trailing last= window can be wider than asked — points are clipped."""
+        _mock_request(mock_request, MIHONG_6M_999)
+        rows = MihongGoldSource().history(date(2026, 1, 1), date(2026, 2, 28), "999")
+        assert [r["date"] for r in rows] == [date(2026, 1, 31), date(2026, 2, 28)]
+
+    @patch("kactus_data.sources.gold.mihong.HttpDataSource._make_request")
+    def test_daily_points_within_a_month(self, mock_request):
+        """15d/1M windows return consecutive daily points; all are kept."""
+        payload = [
+            {
+                "buyingPrice": 1_000_000 + i,
+                "sellingPrice": 1_100_000 + i,
+                "code": "999",
+                "dateTime": f"{day:02d}/03/2026 09:00",
+            }
+            for i, day in enumerate(range(1, 6))
+        ]
+        _mock_request(mock_request, payload)
+        rows = MihongGoldSource().history(date(2026, 3, 1), date(2026, 3, 5), "999")
+        assert [r["date"] for r in rows] == [date(2026, 3, d) for d in range(1, 6)]
+
+    @patch("kactus_data.sources.gold.mihong.HttpDataSource._make_request")
+    def test_failed_fetch_returns_empty(self, mock_request):
+        mock_request.side_effect = requests.RequestException("boom")
+        assert (
+            MihongGoldSource().history(date(2026, 1, 1), date(2026, 3, 1), "999") == []
+        )

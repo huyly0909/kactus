@@ -341,26 +341,19 @@ def test_gold_provider_survives_yahoo_outage(monkeypatch, storage):
     ]
 
 
-def test_gold_catalog_flags_sourceless_codes_disabled(monkeypatch, storage):
-    """DOJI/PNJ stay listed so the UI can show them greyed out, not hidden."""
+def test_gold_catalog_lists_enabled_codes(monkeypatch, storage):
+    """The catalog is exactly the three wired codes — DOJI/PNJ were dropped."""
     _patch_gold(monkeypatch, LiveSjc)
     catalog = {e["code"]: e for e in GoldAssetProvider(storage).fetch_catalog()}
 
-    assert set(catalog) == {"SJC", "999", "XAU", "DOJI", "PNJ"}
+    assert set(catalog) == {"SJC", "999", "XAU"}
     for code in ("SJC", "999", "XAU"):
         assert catalog[code]["meta_json"]["enabled"] is True
         assert "disabled" not in catalog[code]["tags"]
-    for code in ("DOJI", "PNJ"):
-        assert catalog[code]["meta_json"]["enabled"] is False
-        assert catalog[code]["tags"] == ["disabled"]
-        assert catalog[code]["meta_json"]["disabled_reason"]
+        assert catalog[code]["is_crawlable"] is True
 
     assert catalog["XAU"]["meta_json"]["unit"] == "USD/oz"
     assert catalog["SJC"]["meta_json"]["unit"] == "VND/luong"
-
-    # is_crawlable is the flag the asset picker reads to grey a row out.
-    assert catalog["SJC"]["is_crawlable"] is True
-    assert catalog["DOJI"]["is_crawlable"] is False
 
 
 def test_build_providers_registry(storage):

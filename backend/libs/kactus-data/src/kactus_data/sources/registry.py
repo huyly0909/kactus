@@ -20,7 +20,10 @@ from kactus_common.database.duckdb.schema import Table
 from kactus_data.sources.company.tables import COMPANY_TABLE
 from kactus_data.sources.finance.tables import FINANCE_TABLE
 from kactus_data.sources.gold.history_tables import GOLD_PRICE_HISTORY_TABLE
-from kactus_data.sources.gold.portfolio_tables import GOLD_PRICE_BOARD_TABLE
+from kactus_data.sources.gold.portfolio_tables import (
+    GOLD_PRICE_BOARD_TABLE,
+    GOLD_PRICE_TICK_TABLE,
+)
 from kactus_data.sources.stock.portfolio_tables import (
     STOCK_EVENTS_TABLE,
     STOCK_FOREIGN_TRADE_TABLE,
@@ -35,6 +38,7 @@ ALL_TABLES: list[Table] = [
     FINANCE_TABLE,
     GOLD_PRICE_BOARD_TABLE,
     GOLD_PRICE_HISTORY_TABLE,
+    GOLD_PRICE_TICK_TABLE,
     STOCK_EVENTS_TABLE,
     STOCK_FOREIGN_TRADE_TABLE,
     STOCK_LISTING_TABLE,

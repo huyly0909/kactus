@@ -6,6 +6,7 @@ MODELS: list[str] = [
     "kactus_common.project.model",
     "kactus_common.portfolio.model",
     "kactus_common.audit.model",
+    "kactus_common.sync.model",
 ]
 
 # DuckDB

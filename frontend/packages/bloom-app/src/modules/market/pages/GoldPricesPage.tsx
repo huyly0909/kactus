@@ -1,79 +1,53 @@
-import { useState } from 'react';
+import { type FC } from 'react';
+import { Link, Navigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Coins, Upload } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
+import { Coins, Database, LineChart, type LucideIcon } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/useAuth';
-import { useFormatDateTime } from '@/hooks/useFormatDateTime';
-import { useGoldPrices } from '@/hooks/useMarketQuery';
-import { fmtGold } from '@/lib/format';
-import { UNIT_USD_PER_OZ, type GoldPrice } from '@/types/market';
-import { GoldHistoryCard } from '@modules/market/components/GoldHistoryCard';
-import { GoldImportDialog } from '@modules/market/components/GoldImportDialog';
+import { GoldOverviewPane } from '@modules/market/components/GoldOverviewPane';
+import { GoldDataPane } from '@modules/market/components/GoldDataPane';
+
+type TabId = 'overview' | 'data';
+
+interface TabDef {
+  id: TabId;
+  icon: LucideIcon;
+  labelKey: string;
+  /** Superuser-only (backfill / sync-now write the single DuckDB handle). */
+  superuser?: boolean;
+  Pane: FC;
+}
+
+const TABS: TabDef[] = [
+  {
+    id: 'overview',
+    icon: LineChart,
+    labelKey: 'market.gold.tabs.overview',
+    Pane: GoldOverviewPane,
+  },
+  {
+    id: 'data',
+    icon: Database,
+    labelKey: 'market.gold.tabs.data',
+    superuser: true,
+    Pane: GoldDataPane,
+  },
+];
 
 /**
- * Gold board — latest buy/sell quote per gold code.
- *
- * Rows are NOT all in the same unit: domestic codes (SJC, 999) are VND per
- * lượng while XAU is USD per troy ounce, so every row shows its unit and is
- * formatted accordingly.
+ * Gold page shell — routes `market/gold/:tab` to the Overview board or the
+ * superuser Data tab (backfill + sync-now), mirroring the settings `:tab`
+ * idiom. An unknown or unauthorised tab falls back to Overview.
  */
-export function GoldPricesPage() {
+export const GoldPricesPage: FC = () => {
   const { t } = useTranslation();
-  const { data, isLoading } = useGoldPrices();
+  const { tab } = useParams<{ tab: string }>();
   const { user } = useAuth();
-  const fmtDateTime = useFormatDateTime();
-  const [importOpen, setImportOpen] = useState(false);
 
-  const columns: DataTableColumn<GoldPrice>[] = [
-    {
-      key: 'code',
-      title: t('market.gold.code'),
-      className: 'font-semibold',
-    },
-    {
-      key: 'buy_price',
-      title: t('market.gold.buy'),
-      className: 'text-right',
-      render: (g) => <span className="tabular-nums">{fmtGold(g.buy_price, g.unit)}</span>,
-    },
-    {
-      key: 'sell_price',
-      title: t('market.gold.sell'),
-      className: 'text-right',
-      render: (g) => <span className="tabular-nums">{fmtGold(g.sell_price, g.unit)}</span>,
-    },
-    {
-      key: 'spread',
-      title: t('market.gold.spread'),
-      className: 'text-right',
-      render: (g) => (
-        <span className="tabular-nums text-muted-foreground">{fmtGold(g.spread, g.unit)}</span>
-      ),
-    },
-    {
-      key: 'unit',
-      title: t('market.gold.unit'),
-      render: (g) => (
-        <span className="text-xs text-muted-foreground">
-          {g.unit === UNIT_USD_PER_OZ
-            ? t('market.gold.unit_usd_oz')
-            : t('market.gold.unit_vnd_luong')}
-        </span>
-      ),
-    },
-    {
-      key: 'source',
-      title: t('market.source'),
-      render: (g) => <Badge variant="outline">{g.source ?? '—'}</Badge>,
-    },
-    {
-      key: 'crawled_at',
-      title: t('market.updated_at'),
-      render: (g) => <span className="text-muted-foreground">{fmtDateTime(g.crawled_at)}</span>,
-    },
-  ];
+  const visibleTabs = TABS.filter((x) => !x.superuser || user?.is_superuser);
+  const active = visibleTabs.find((x) => x.id === tab);
+  if (!active) return <Navigate to="/market/gold/overview" replace />;
+  const ActivePane = active.Pane;
 
   return (
     <div className="p-6 md:p-8">
@@ -85,27 +59,31 @@ export function GoldPricesPage() {
           <h1 className="text-2xl font-bold tracking-tight">{t('market.gold.title')}</h1>
           <p className="text-sm text-muted-foreground">{t('market.gold.subtitle')}</p>
         </div>
-        {user?.is_superuser && (
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="h-4 w-4" />
-            {t('market.gold.import.button')}
-          </Button>
-        )}
       </div>
 
-      <GoldHistoryCard />
+      <div className="mb-6 flex gap-1 border-b border-border">
+        {visibleTabs.map((x) => {
+          const Icon = x.icon;
+          const isActive = active.id === x.id;
+          return (
+            <Link
+              key={x.id}
+              to={`/market/gold/${x.id}`}
+              className={cn(
+                'flex items-center gap-2 border-b-2 px-4 py-2 text-sm font-medium transition-colors',
+                isActive
+                  ? 'border-primary text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              <Icon className="h-4 w-4" />
+              {t(x.labelKey)}
+            </Link>
+          );
+        })}
+      </div>
 
-      <DataTable
-        columns={columns}
-        data={data ?? []}
-        loading={isLoading}
-        searchable
-        searchPlaceholder={t('common.search')}
-        emptyMessage={t('market.empty')}
-        getRowKey={(g) => g.code}
-      />
-
-      <GoldImportDialog open={importOpen} onOpenChange={setImportOpen} />
+      <ActivePane />
     </div>
   );
-}
+};

@@ -10,6 +10,7 @@ def _add_subcommands():
         backup,
         company,
         finance,
+        gold,
         portfolio,
         schema,
         stock,
@@ -24,6 +25,7 @@ def _add_subcommands():
     cli.add_typer(company.cli, name="company", help="Company overview data")
     cli.add_typer(finance.cli, name="finance", help="Financial statements & ratios")
     cli.add_typer(portfolio.cli, name="portfolio", help="Portfolio crawl & catalog ops")
+    cli.add_typer(gold.cli, name="gold", help="Gold backfill & sync-now")
 
 
 _add_subcommands()

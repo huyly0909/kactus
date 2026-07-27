@@ -154,7 +154,8 @@ const REGISTRY: Record<string, DateRangePreset> = {
   '1y': { key: '1y', labelKey: 'common.range_1y', divider: true, range: () => trailingYears(1) },
   '3y': { key: '3y', labelKey: 'common.range_3y', range: () => trailingYears(3) },
   '5y': { key: '5y', labelKey: 'common.range_5y', range: () => trailingYears(5) },
-  '7d': { key: '7d', labelKey: 'common.range_7d', divider: true, range: () => trailingDays(7) },
+  '3d': { key: '3d', labelKey: 'common.range_3d', divider: true, range: () => trailingDays(3) },
+  '7d': { key: '7d', labelKey: 'common.range_7d', range: () => trailingDays(7) },
   '30d': { key: '30d', labelKey: 'common.range_30d', range: () => trailingDays(30) },
   '90d': { key: '90d', labelKey: 'common.range_90d', range: () => trailingDays(90) },
   all: {
@@ -184,13 +185,21 @@ interface DateRangeCalendarProps {
   onChange: (r: DateRange) => void;
   /** Quick-select presets shown as a left column. Omit for calendar-only. */
   presets?: DateRangePreset[];
+  /** Earliest selectable day ("YYYY-MM-DD") — days before it are disabled. */
+  minDate?: string;
 }
 
 /** Optional preset column + calendar + custom from/to inputs. No popover chrome. */
-export const DateRangeCalendar: FC<DateRangeCalendarProps> = ({ value, onChange, presets }) => {
+export const DateRangeCalendar: FC<DateRangeCalendarProps> = ({
+  value,
+  onChange,
+  presets,
+  minDate,
+}) => {
   const { t } = useTranslation();
   const selected: RdpRange | undefined =
     value.from || value.to ? { from: parse(value.from), to: parse(value.to) } : undefined;
+  const min = parse(minDate ?? '');
 
   return (
     // Below sm the preset column stacks above the calendar as a wrap row —
@@ -220,7 +229,9 @@ export const DateRangeCalendar: FC<DateRangeCalendarProps> = ({ value, onChange,
         <Calendar
           mode="range"
           selected={selected}
-          defaultMonth={parse(value.from) ?? parse(value.to)}
+          defaultMonth={parse(value.from) ?? parse(value.to) ?? min}
+          startMonth={min}
+          disabled={min ? { before: min } : undefined}
           onSelect={(r) =>
             onChange({ from: r?.from ? fmt(r.from) : '', to: r?.to ? fmt(r.to) : '' })
           }
@@ -229,6 +240,7 @@ export const DateRangeCalendar: FC<DateRangeCalendarProps> = ({ value, onChange,
           <Input
             type="date"
             value={value.from}
+            min={minDate || undefined}
             max={value.to || undefined}
             onChange={(e) => onChange({ ...value, from: e.target.value })}
             className="h-8 w-auto px-2 text-xs"
@@ -237,7 +249,7 @@ export const DateRangeCalendar: FC<DateRangeCalendarProps> = ({ value, onChange,
           <Input
             type="date"
             value={value.to}
-            min={value.from || undefined}
+            min={value.from || minDate || undefined}
             onChange={(e) => onChange({ ...value, to: e.target.value })}
             className="h-8 w-auto px-2 text-xs"
           />
@@ -256,6 +268,8 @@ interface DateRangePickerProps {
   placeholder?: string;
   /** Highlight the trigger — e.g. when a custom range is the active selection. */
   active?: boolean;
+  /** Earliest selectable day ("YYYY-MM-DD"). */
+  minDate?: string;
   align?: 'start' | 'center' | 'end';
   className?: string;
 }
@@ -267,6 +281,7 @@ export const DateRangePicker: FC<DateRangePickerProps> = ({
   presets,
   placeholder,
   active = false,
+  minDate,
   align = 'end',
   className,
 }) => {
@@ -292,7 +307,7 @@ export const DateRangePicker: FC<DateRangePickerProps> = ({
         </Button>
       </PopoverTrigger>
       <PopoverContent align={align} className="w-auto p-3">
-        <DateRangeCalendar value={value} onChange={onChange} presets={presets} />
+        <DateRangeCalendar value={value} onChange={onChange} presets={presets} minDate={minDate} />
       </PopoverContent>
     </Popover>
   );
@@ -307,6 +322,8 @@ interface DateRangeControlProps {
   quickKeys?: string[];
   /** Trigger label for the popover when no range is set. */
   placeholder?: string;
+  /** Earliest selectable day ("YYYY-MM-DD"). */
+  minDate?: string;
   className?: string;
 }
 
@@ -321,6 +338,7 @@ export const DateRangeControl: FC<DateRangeControlProps> = ({
   presets,
   quickKeys,
   placeholder,
+  minDate,
   className,
 }) => {
   const { t } = useTranslation();
@@ -352,6 +370,7 @@ export const DateRangeControl: FC<DateRangeControlProps> = ({
         presets={presets}
         active={custom}
         placeholder={placeholder}
+        minDate={minDate}
       />
     </div>
   );

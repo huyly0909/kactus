@@ -48,6 +48,9 @@ const NotificationDetailPage = lazy(() =>
 const GoldPricesPage = lazy(() =>
   import('@modules/market/pages/GoldPricesPage').then((m) => ({ default: m.GoldPricesPage })),
 );
+const SyncQueuePage = lazy(() =>
+  import('@modules/market/pages/SyncQueuePage').then((m) => ({ default: m.SyncQueuePage })),
+);
 const StockMarketPage = lazy(() =>
   import('@modules/market/pages/StockMarketPage').then((m) => ({ default: m.StockMarketPage })),
 );
@@ -86,8 +89,12 @@ function AppRoutes() {
         <Route path="notifications" element={<NotificationListPage />} />
         <Route path="notifications/:id" element={<NotificationDetailPage />} />
         {/* Market module root → its first sub-page (the sidebar trigger links here). */}
-        <Route path="market" element={<Navigate to="/market/gold" replace />} />
-        <Route path="market/gold" element={<GoldPricesPage />} />
+        <Route path="market" element={<Navigate to="/market/gold/overview" replace />} />
+        {/* Gold: Overview (board) + Data (superuser backfill/sync), tab in the URL. */}
+        <Route path="market/gold" element={<Navigate to="/market/gold/overview" replace />} />
+        <Route path="market/gold/:tab" element={<GoldPricesPage />} />
+        {/* Shared sync-job queue (superuser) — gold's backfill/sync jobs run here. */}
+        <Route path="market/sync" element={<SyncQueuePage />} />
         <Route path="market/stocks" element={<StockMarketPage />} />
         <Route path="market/stocks/:symbol" element={<StockDetailPage />} />
         <Route path="market/finance" element={<FinancePage />} />

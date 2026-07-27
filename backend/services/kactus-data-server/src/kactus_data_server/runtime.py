@@ -24,6 +24,8 @@ from kactus_data.portfolio.provider import AssetProvider
 from kactus_data.storage.duckdb import DuckDBStorage
 
 if TYPE_CHECKING:
+    import asyncio
+
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 
@@ -34,6 +36,8 @@ class DataRuntime:
     storage: DuckDBStorage
     symbol_provider: SymbolProvider
     scheduler: "AsyncIOScheduler | None" = None
+    #: The single FIFO sync-job dispatcher for this process (the DuckDB writer).
+    sync_dispatcher: "asyncio.Task | None" = None
     _extra: dict = field(default_factory=dict)
 
 

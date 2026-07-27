@@ -23,6 +23,7 @@ from kactus_data.sources.gold.mihong import SUPPORTED_CODES as MIHONG_CODES
 from kactus_data.sources.gold.mihong import MihongGoldSource
 from kactus_data.sources.gold.portfolio_tables import (
     GOLD_PRICE_BOARD_TABLE,
+    GOLD_PRICE_TICK_TABLE,
     UNIT_USD_PER_OZ,
     UNIT_VND_PER_LUONG,
 )
@@ -140,8 +141,9 @@ class GoldAssetProvider(AssetProvider):
     ``gold_price_board`` is **VND per lượng** — mihong quotes per chỉ and is
     scaled on the way in, so rows stay comparable across sources.
 
-    DOJI/PNJ remain in the seeded catalog but have no free daily feed wired yet,
-    so they are skipped rather than crawled.
+    The catalog is the three codes with a wired feed — SJC bar, 999 ring, and
+    world gold (XAU). DOJI/PNJ were dropped: no free daily feed, and the SJC
+    board already publishes the authoritative domestic reference.
     """
 
     asset_type = AssetType.GOLD
@@ -150,13 +152,11 @@ class GoldAssetProvider(AssetProvider):
         "SJC": "Vàng miếng SJC",
         "999": "Vàng nhẫn 99,99%",
         XAU_CODE: "Vàng thế giới (XAU/USD)",
-        "DOJI": "DOJI",
-        "PNJ": "PNJ",
     }
-    #: Codes with a working daily feed.  DOJI/PNJ stay in the catalog so the UI
-    #: can list them, but are flagged disabled until a source is wired.
+    #: Codes with a working daily feed — every seeded code is crawlable now that
+    #: DOJI/PNJ are gone; ``_ENABLED`` still gates ``fetch_catalog`` for clarity.
     _ENABLED = frozenset({"SJC", "999", XAU_CODE})
-    _SEED = ["SJC", "999", XAU_CODE, "DOJI", "PNJ"]
+    _SEED = ["SJC", "999", XAU_CODE]
 
     def __init__(self, storage: DuckDBStorage, xsrf_token: str | None = None) -> None:
         self.storage = storage
@@ -221,7 +221,15 @@ class GoldAssetProvider(AssetProvider):
         df = _to_table_df(rows, GOLD_PRICE_BOARD_TABLE)
         if df.empty:
             return 0
-        return self.storage.store(GOLD_PRICE_BOARD_TABLE, df)
+        stored = self.storage.store(GOLD_PRICE_BOARD_TABLE, df)
+        # Every crawl also logs a tick (decision #6): the board rows already
+        # carry every tick column, so the hourly scheduler accumulates an
+        # intraday trail with no extra fetch. PK (code, source, crawled_at)
+        # keeps each crawl distinct; the board keeps only the latest.
+        self.storage.store(
+            GOLD_PRICE_TICK_TABLE, _to_table_df(rows, GOLD_PRICE_TICK_TABLE)
+        )
+        return stored
 
     @staticmethod
     def _sjc_row(

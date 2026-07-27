@@ -1,15 +1,17 @@
-"""DuckDB table for historical gold price series (one row per code per day).
+"""DuckDB table for historical gold price series (one row per source+code+day).
 
 Unlike ``gold_price_board`` (latest snapshot, PK ``code``), this is a dated
-series: PK ``(code, date)`` + UPSERT makes re-importing the same file
-idempotent and lets a corrected file overwrite in place.
+series: PK ``(source, code, date)`` + UPSERT makes re-importing / re-backfilling
+the same day idempotent and lets a corrected value overwrite in place.
 
-Series identity is the single ``code`` column — ``SJC``, ``XAU`` or
-``PNJ:{location}:{gold_type}`` — with ``location``/``gold_type`` also kept as
-their own nullable columns so nothing ever has to parse the composite code.
-Domestic series carry ``buy_price``/``sell_price``; world gold (XAU) carries
-OHLC. The unused side stays NULL — cheap in columnar storage, and one table
-means one read path and one import path.
+``source`` is part of the identity because the same ``code`` can come from more
+than one feed and they must coexist rather than clobber each other: SJC-999 (the
+issuer's official ring) and Mihong-999 (a dealer quote) are different series of
+the same code. Series identity is therefore ``(source, code)`` — with
+``location``/``gold_type`` kept as their own nullable columns so nothing ever has
+to parse a composite code. Domestic series carry ``buy_price``/``sell_price``;
+world gold (XAU) carries OHLC. The unused side stays NULL — cheap in columnar
+storage, and one table means one read path and one import path.
 """
 
 from kactus_common.database.duckdb.consts import DataType, UpdateStrategy
@@ -38,7 +40,14 @@ GOLD_PRICE_HISTORY_TABLE = Table(
         Column(name="low", data_type=DataType.DECIMAL),
         Column(name="close", data_type=DataType.DECIMAL),
         Column(name="unit", data_type=DataType.STRING, is_nullable=False),
-        Column(name="source", data_type=DataType.STRING),
+        # Part of the PK: (source, code) is the series identity — SJC-999 and
+        # Mihong-999 are distinct series of the same code.
+        Column(
+            name="source",
+            data_type=DataType.STRING,
+            is_primary_key=True,
+            is_nullable=False,
+        ),
         Column(name="location", data_type=DataType.STRING),
         Column(name="gold_type", data_type=DataType.STRING),
         Column(name="updated_at", data_type=DataType.TIMESTAMP),
