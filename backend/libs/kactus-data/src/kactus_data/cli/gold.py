@@ -1,7 +1,7 @@
 """Gold backfill / sync CLI — run the sync-job handlers inline (local debug).
 
 These commands execute the same ``GOLD_BACKFILL`` / ``GOLD_SYNC`` handlers the
-data-server dispatcher runs, but **inline** against a local DuckDB handle, with
+data-plane dispatcher runs, but **inline** against a local DuckDB handle, with
 progress printed to stdout. Handlers only touch DuckDB + the progress callback
 (never Postgres), so this needs no database or running server — the in-app path
 (superuser → queue) is where jobs are enqueued for real.
@@ -22,15 +22,15 @@ from datetime import date
 
 import typer
 from kactus_common.cli import AsyncTyper
-from kactus_common.sync.gold import (
-    gold_backfill_dedup_key,
-    gold_backfill_min,
-    gold_sync_dedup_key,
-)
 from kactus_data.config import get_settings
 from kactus_data.jobs.gold_sync import gold_backfill, gold_sync
 from kactus_data.jobs.sync_queue import SyncJobDeps, SyncJobView
 from kactus_data.storage.duckdb import DuckDBStorage
+from kactus_gold.sync import (
+    gold_backfill_dedup_key,
+    gold_backfill_min,
+    gold_sync_dedup_key,
+)
 
 cli = AsyncTyper(help="Gold backfill & sync-now operations")
 

@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.portfolio.const import AssetType
 from kactus_common.sse.broker import get_sse_broker
-from kactus_common.sync.const import SyncJobStatus, SyncJobType
+from kactus_common.sync.const import SyncJobStatus
 from kactus_common.sync.model import SyncJob
 from kactus_common.sync.service import SyncJobService
 from kactus_data.portfolio.provider import AssetProvider
@@ -65,12 +65,14 @@ class SyncJobDeps:
 ProgressFn = Callable[..., Awaitable[None]]
 Handler = Callable[[SyncJobView, "SyncJobDeps", ProgressFn], Awaitable[dict]]
 
-#: Registered job handlers, keyed by ``SyncJobType`` value.
+#: Registered job handlers, keyed by ``job_type`` wire string. The dispatcher
+#: is generic infrastructure — each domain's handler module (e.g. ``gold_sync``)
+#: registers its own job-type strings; no domain enum is imported here.
 SYNC_HANDLERS: dict[str, Handler] = {}
 
 
-def register_handler(job_type: SyncJobType) -> Callable[[Handler], Handler]:
-    """Decorator: bind a handler to a ``SyncJobType`` in :data:`SYNC_HANDLERS`."""
+def register_handler(job_type: str) -> Callable[[Handler], Handler]:
+    """Decorator: bind a handler to a ``job_type`` in :data:`SYNC_HANDLERS`."""
 
     def _decorate(fn: Handler) -> Handler:
         SYNC_HANDLERS[str(job_type)] = fn

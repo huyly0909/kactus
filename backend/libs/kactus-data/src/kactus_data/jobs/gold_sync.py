@@ -30,7 +30,6 @@ from decimal import Decimal, InvalidOperation
 
 from kactus_common.datetimes import utcnow_naive
 from kactus_common.portfolio.const import AssetType, CrawlKind
-from kactus_common.sync.const import SyncJobType
 from kactus_data.jobs.crawl import _emit_refreshed
 from kactus_data.jobs.sync_queue import (
     ProgressFn,
@@ -57,6 +56,7 @@ from kactus_data.sources.gold.yahoo import YahooGoldSource
 from kactus_data.sources.stock.market import _to_table_df
 from kactus_data.storage.duckdb import DuckDBStorage
 from kactus_data.util.time import to_event_dt
+from kactus_gold.const import GoldJobType
 from loguru import logger
 
 _QUANT = Decimal("0.0001")
@@ -254,7 +254,7 @@ async def _run_windowed_backfill(
     return {"total": total, "rows": written, "source": source, "code": code}
 
 
-@register_handler(SyncJobType.GOLD_BACKFILL)
+@register_handler(GoldJobType.GOLD_BACKFILL)
 async def gold_backfill(
     view: SyncJobView, deps: SyncJobDeps, on_progress: ProgressFn
 ) -> dict:
@@ -363,7 +363,7 @@ def _store_sync_rows(storage: DuckDBStorage, rows: list[dict]) -> int:
     return ticks
 
 
-@register_handler(SyncJobType.GOLD_SYNC)
+@register_handler(GoldJobType.GOLD_SYNC)
 async def gold_sync(
     view: SyncJobView, deps: SyncJobDeps, on_progress: ProgressFn
 ) -> dict:

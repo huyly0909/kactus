@@ -11,7 +11,7 @@ import type {
 /** Sync-job queue — superuser gold backfill / sync-now + queue management.
  *
  * Enqueue is a plain Postgres insert on the control plane (not a data-plane
- * forward); the single data-server dispatcher later claims and runs the row. */
+ * forward); the single data-plane dispatcher later claims and runs the row. */
 export const syncService = {
   enqueueGoldBackfill: async (body: GoldBackfillRequest): Promise<EnqueueSyncJobResponse> => {
     const { data } = await apiClient.post<ApiResponse<EnqueueSyncJobResponse>>(

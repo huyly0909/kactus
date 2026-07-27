@@ -16,6 +16,7 @@ from __future__ import annotations
 import datetime
 
 from kactus_common.schemas import BaseSchema, FancyInt
+from pydantic import Field, model_validator
 
 from .const import (
     NotificationChannelType,
@@ -49,13 +50,39 @@ class SlackChannelConfig(BaseChannelConfig):
     webhook_url: str
 
 
-class ZaloPAChannelConfig(BaseChannelConfig):
-    """Zalo Personal Account config — login session **and** chosen recipient.
+class ZaloRecipientTarget(BaseSchema):
+    """One saved conversation (send target) on a Zalo PA channel.
 
-    Everything here is filled by the QR-login onboarding + recipient picker,
+    ``thread_type`` follows zlapi: 0 = user (friend), 1 = group. ``name`` and
+    ``avatar`` are display snapshots taken at pick time — the live values come
+    from the recipients endpoints, so staleness here is cosmetic only.
+    """
+
+    thread_id: str
+    thread_type: int = 0  # 0 = user, 1 = group
+    name: str | None = None
+    avatar: str | None = None
+
+    @classmethod
+    def from_recipient(cls, recipient: Recipient) -> ZaloRecipientTarget:
+        """Map a picker ``Recipient`` (id / is_group) to the stored target shape."""
+        return cls(
+            thread_id=recipient.id,
+            thread_type=1 if recipient.is_group else 0,
+            name=recipient.name or None,
+            avatar=recipient.avatar,
+        )
+
+
+class ZaloPAChannelConfig(BaseChannelConfig):
+    """Zalo Personal Account config — login session **and** chosen conversations.
+
+    Everything here is filled by the QR-login onboarding + conversation picker,
     never typed by hand. The session fields are secrets (encrypted at rest via
-    the ``EncryptedJSON`` column, masked in API responses). ``thread_type``
-    follows zlapi: 0 = user (friend), 1 = group.
+    the ``EncryptedJSON`` column, masked in API responses). Legacy single-target
+    configs (scalar ``thread_id``/``thread_type``/``recipient_name``) are lifted
+    into ``recipients`` on validation — pre-existing rows keep working with no
+    migration (the config lives in a JSON column).
     """
 
     # --- login session (captured by QR login; secret) ---
@@ -66,14 +93,32 @@ class ZaloPAChannelConfig(BaseChannelConfig):
     secret_key: str = ""
     user_agent: str
 
-    # --- recipient (picked from friends/groups) ---
-    thread_id: str
-    thread_type: int = 0  # 0 = user, 1 = group
-    recipient_name: str | None = None
+    # --- conversations (picked from friends/groups) ---
+    recipients: list[ZaloRecipientTarget] = []
 
     # --- display metadata (the logged-in account) ---
     zalo_user_id: str | None = None
     account_name: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _lift_legacy_recipient(cls, data: object) -> object:
+        """Fold a pre-multi-recipient scalar target into ``recipients``."""
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        thread_id = data.pop("thread_id", None)
+        thread_type = data.pop("thread_type", 0)
+        recipient_name = data.pop("recipient_name", None)
+        if thread_id and not data.get("recipients"):
+            data["recipients"] = [
+                {
+                    "thread_id": thread_id,
+                    "thread_type": thread_type,
+                    "name": recipient_name,
+                }
+            ]
+        return data
 
 
 CHANNEL_CONFIG_SCHEMAS: dict[NotificationChannelType, type[BaseChannelConfig]] = {
@@ -95,7 +140,7 @@ SECRET_FIELDS: dict[NotificationChannelType, set[str]] = {
     },
 }
 
-_MASK = "***"
+SECRET_MASK = "***"
 
 
 def parse_channel_config(
@@ -112,7 +157,7 @@ def parse_channel_config(
 def mask_config(channel_type: NotificationChannelType, config: dict) -> dict:
     """Replace secret values with ``***`` for safe display."""
     secret = SECRET_FIELDS.get(channel_type, set())
-    return {k: (_MASK if k in secret else v) for k, v in (config or {}).items()}
+    return {k: (SECRET_MASK if k in secret else v) for k, v in (config or {}).items()}
 
 
 # --------------------------------------------------------------------------- #
@@ -193,19 +238,40 @@ class ZaloPACompleteResponse(BaseSchema):
 
 
 class ZaloPAChannelCreateRequest(BaseSchema):
-    """Create a Zalo PA channel from a completed login session + recipient."""
+    """Create a Zalo PA channel from a completed login session + N conversations."""
 
     session_id: str
     name: str
-    thread_id: str
-    thread_type: int = 0  # 0 = user, 1 = group
-    recipient_name: str | None = None
+    recipients: list[Recipient] = Field(min_length=1)
 
 
 class ZaloPAReauthRequest(BaseSchema):
-    """Refresh a channel's login session after a re-scan (recipient kept)."""
+    """Refresh a channel's login session after a re-scan (recipients kept)."""
 
     session_id: str
+
+
+class ZaloPARecipientsUpdateRequest(BaseSchema):
+    """Replace a channel's saved conversations (credentials untouched)."""
+
+    recipients: list[Recipient] = Field(min_length=1)
+
+
+class ZaloPATestMessageResult(BaseSchema):
+    """Per-conversation outcome of a test-message send."""
+
+    thread_id: str
+    name: str | None = None
+    ok: bool
+    error: str | None = None
+
+
+class ZaloPATestMessageResponse(BaseSchema):
+    """Outcome of sending the test greeting to every saved conversation."""
+
+    sent: int
+    failed: int
+    results: list[ZaloPATestMessageResult] = []
 
 
 class NotificationChannelCreateRequest(BaseSchema):

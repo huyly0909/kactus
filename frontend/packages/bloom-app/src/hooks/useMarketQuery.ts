@@ -14,6 +14,8 @@ export const marketKeys = {
   goldHistory: (code: string, params: GoldHistoryParams) =>
     [...marketKeys.goldHistoryAll(), code, params] as const,
   goldHistoryCodes: () => [...marketKeys.goldHistoryAll(), 'codes'] as const,
+  goldSchedule: (source: string, code: string) =>
+    [...marketKeys.all, 'gold-schedule', source, code] as const,
   stocks: (q: string) => [...marketKeys.all, 'stocks', q] as const,
   quotes: (symbols: string[]) => [...marketKeys.all, 'quotes', symbols] as const,
   stock: (symbol: string) => [...marketKeys.all, 'stock', symbol] as const,
@@ -43,6 +45,17 @@ export function useGoldHistoryCodes() {
   return useQuery({
     queryKey: marketKeys.goldHistoryCodes(),
     queryFn: () => marketService.goldHistoryCodes(),
+  });
+}
+
+/** Data-availability schedule for a gold series — rarely changes (admin config),
+ * so it caches for an hour. Drives the gap / stale warning chips. */
+export function useGoldSchedule(source: string, code: string) {
+  return useQuery({
+    queryKey: marketKeys.goldSchedule(source, code),
+    queryFn: () => marketService.goldSchedule(source, code),
+    enabled: !!source && !!code,
+    staleTime: 60 * 60 * 1000,
   });
 }
 

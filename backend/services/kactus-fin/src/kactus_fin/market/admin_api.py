@@ -8,23 +8,14 @@ Two responsibilities, both superuser:
 - **Sync-job queue** — enqueues gold backfill / sync-now jobs and lists/cancels
   the shared FIFO queue. Enqueue is just a Postgres insert (``created_by`` auto
   from the request user), so it happens here rather than over HTTP to the data
-  plane; the single data-server dispatcher then claims and runs the row.
+  plane; the single data-plane dispatcher then claims and runs the row.
 """
 
 from __future__ import annotations
 
 from fastapi import File, Request, UploadFile
 from kactus_common.exceptions import NotFoundError, ValidationError
-from kactus_common.market.schema import GoldImportResultSchema
 from kactus_common.router import KactusAPIRouter, multipart_upload_openapi
-from kactus_common.sync.const import SyncJobType
-from kactus_common.sync.gold import (
-    GoldBackfillRequest,
-    GoldSyncRequest,
-    gold_backfill_dedup_key,
-    gold_backfill_min,
-    gold_sync_dedup_key,
-)
 from kactus_common.sync.schema import (
     EnqueueSyncJobResponse,
     SyncJobListSchema,
@@ -33,6 +24,15 @@ from kactus_common.sync.schema import (
 from kactus_common.sync.service import SyncJobService
 from kactus_fin import data_client
 from kactus_fin.dependencies import provide_session
+from kactus_gold.const import GoldJobType
+from kactus_gold.schema import GoldImportResultSchema
+from kactus_gold.sync import (
+    GoldBackfillRequest,
+    GoldSyncRequest,
+    gold_backfill_dedup_key,
+    gold_backfill_min,
+    gold_sync_dedup_key,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 #: Largest known backfill file is ~7.4 MB (PNJ, 92k rows); 25 MB leaves room
@@ -92,7 +92,7 @@ async def enqueue_gold_backfill(
         params["code"] = code
     job, created = await SyncJobService.enqueue(
         session,
-        job_type=SyncJobType.GOLD_BACKFILL,
+        job_type=GoldJobType.GOLD_BACKFILL,
         params=params,
         dedup_key=gold_backfill_dedup_key(source, code),
     )
@@ -110,7 +110,7 @@ async def enqueue_gold_sync(
     source = (body.source or "all").lower()
     job, created = await SyncJobService.enqueue(
         session,
-        job_type=SyncJobType.GOLD_SYNC,
+        job_type=GoldJobType.GOLD_SYNC,
         params={"source": source},
         dedup_key=gold_sync_dedup_key(source),
     )

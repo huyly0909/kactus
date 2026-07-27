@@ -8,17 +8,25 @@ Unified monorepo. Fintech platform for financial data (gold prices, stocks, fina
 - **`frontend/`** — the TypeScript **bun + turborepo workspace** (`packages/bloom-app` SPA + `packages/bloom-ui` shared lib). All `bun` commands run from here.
 - **`deploy/`** — Dockerfiles + per-env compose for the whole cluster (backend + frontend).
 
-Within `backend/`, directories express the layering: **`services/` sits above `libs/`, which sits above `libs/core/`.**
+Within `backend/`, directories express the layering: **`services/` sits above `libs/`, which sits above `libs/domain/`, which sits above `libs/core/`.**
 Deeper = lower layer, and a lower layer never imports upward.
+
+**`kactus-common` is pure infrastructure** — DB clients, schemas, auth, generic
+registries (settings, sync queue). Domain content (gold/stock/coin: their enums,
+schedules, request/read schemas) lives in **`libs/domain/*`** libs that both
+`kactus-fin` and `kactus-data` import downward. Never put a domain's settings,
+business logic, or scheduler knowledge into core.
 
 | Path | Package | Import As | Purpose | Port |
 |------|---------|-----------|---------|------|
 | `backend/libs/core/kactus-common` | `kactus-common` | `kactus_common` | Shared infrastructure (DB, schemas, auth, events) | - |
+| `backend/libs/domain/kactus-gold` | `kactus-gold` | `kactus_gold` | Gold domain (availability schedule, sync contract, read schemas) | - |
+| `backend/libs/domain/kactus-stock-vn` | `kactus-stock-vn` | `kactus_stock_vn` | VN stock domain (report/interval enums, read schemas) | - |
 | `backend/libs/kactus-data` | `kactus-data` | `kactus_data` | Data ETL (gold, stock, finance scraping) | - |
 | `backend/libs/kactus-notification` | `kactus-notification` | `kactus_notification` | Notification domain (channels, templates, delivery) | - |
 | `backend/services/kactus-fin` | `kactus-fin` | `kactus_fin` | Main API server — **control plane** (FastAPI) | 17600 |
 | `backend/services/kactus-fin-gateway` | `kactus-fin-gateway` | `kactus_fin_gateway` | Public API gateway (FastAPI) | 17601 |
-| `backend/services/kactus-data-server` | `kactus-data-server` | `kactus_data_server` | ETL + DuckDB + crawl scheduler — **data plane** (FastAPI) | 17602 |
+| `backend/services/kactus-data-plane` | `kactus-data-plane` | `kactus_data_plane` | ETL + DuckDB + crawl scheduler — **data plane** (FastAPI) | 17602 |
 | `frontend/packages/bloom-app` | `bloom-app` | - | React SPA (served by nginx in deploy) | 17630 |
 | `frontend/packages/bloom-ui` | `@kactus-bloom/ui` | - | Shared component library (source-only) | - |
 | `deploy/` | - | - | Dockerfiles + per-env compose (not a package) | - |
@@ -28,29 +36,38 @@ Deeper = lower layer, and a lower layer never imports upward.
 ### Dependency Flow (one-way)
 
 ```
-services/kactus-fin ────────┐
-services/kactus-fin-gateway ─┤──▶ libs/core/kactus-common
-services/kactus-data-server ─┤
-libs/kactus-data ───────────┤
-libs/kactus-notification ───┘
+services  (kactus-fin | kactus-fin-gateway | kactus-data-plane)
+   ▼
+libs      (kactus-data | kactus-notification)
+   ▼
+libs/domain  (kactus-gold | kactus-stock-vn | future kactus-coin)
+   ▼
+libs/core    (kactus-common)
 
-services/kactus-data-server ──▶ libs/kactus-data         ──▶ libs/core/kactus-common
-services/kactus-fin         ──▶ libs/kactus-notification ──▶ libs/core/kactus-common
+services/kactus-data-plane ──▶ libs/kactus-data         ──▶ domain libs ──▶ kactus-common
+services/kactus-fin         ──▶ libs/kactus-notification ──▶ kactus-common
+services/kactus-fin         ──▶ kactus-gold, kactus-stock-vn (contracts, no ETL)
 
-services/kactus-fin ──HTTP──▶ services/kactus-data-server   (no import, ever)
+services/kactus-fin ──HTTP──▶ services/kactus-data-plane   (no import, ever)
 ```
 
 `kactus-data` and `kactus-notification` are **siblings** — neither imports the
-other. `kactus-fin` **no longer imports `kactus-data` at all**: a second
-`forbidden` contract (`kactus_fin` ✗→ `kactus_data`, `duckdb`) fails the build if
-the dependency comes back, because the layered contract alone would allow it.
+other; likewise the domain libs never import each other. `kactus-fin` **does not
+import `kactus-data` at all**: a second `forbidden` contract (`kactus_fin` ✗→
+`kactus_data`, `duckdb`) fails the build if the dependency comes back, because
+the layered contract alone would allow it. The domain tier exists precisely for
+that split: gold/stock contracts must be importable by **both** kactus-fin and
+kactus-data, and neither core (no domain content) nor kactus-data (fin may not
+import it) can hold them.
 
 Never import from app packages into `kactus-common`.
 
-**This is enforced, not just documented.** The layer contract lives in
-`backend/pyproject.toml` (`[tool.importlinter]`); run `uv run lint-imports` from
-`backend/` — it fails the build on an upward import. Directory depth alone enforces nothing (Python import
-does not care), which is why the contract exists.
+**This is enforced, not just documented.** The 4-tier layer contract
+(`kactus_fin | kactus_fin_gateway | kactus_data_plane` → `kactus_data |
+kactus_notification` → `kactus_gold | kactus_stock_vn` → `kactus_common`) lives
+in `backend/pyproject.toml` (`[tool.importlinter]`); run `uv run lint-imports`
+from `backend/` — it fails the build on an upward import. Directory depth alone
+enforces nothing (Python import does not care), which is why the contract exists.
 
 ### Redis — coordination only
 
@@ -80,7 +97,7 @@ so an expired holder cannot delete the next holder's lock.
 
 ### Data plane / control plane split (✅ implemented)
 
-`services/kactus-data-server` (port 17602) owns the **DuckDB write handle**, the
+`services/kactus-data-plane` (port 17602) owns the **DuckDB write handle**, the
 `AssetProvider` registry, vnstock auth and the crawl `AsyncIOScheduler`.
 `kactus-fin` owns users, portfolios, authorization and the browser-facing API,
 and reaches market data over HTTP through `kactus_fin/data_client.py`.
@@ -109,12 +126,12 @@ Rules that hold the split together:
   an error is a product decision, and it stays with the user-facing message.
 - **The in-flight crawl guard stays in kactus-fin** — same Postgres, so a
   duplicate refresh costs no round trip.
-- `kactus-data-server` runs **1 worker, 1 replica, permanently** and ships **no
+- `kactus-data-plane` runs **1 worker, 1 replica, permanently** and ships **no
   Alembic** (no ORM models of its own; it shares kactus-fin's migration head).
 
 ### Portfolio feature (✅ implemented)
 
-Multi-asset watchlist (STOCK/GOLD; COIN deferred) + scheduled vnstock/mihong crawl + in-app SSE broadcast. Docs: [docs/04-portfolio-feature.md](docs/04-portfolio-feature.md) (see §16 As-built). ETL/cron/`AssetProvider` registry in `kactus-data`; API/SSE/scheduler wiring + admin in `kactus-fin` (`kactus_fin/portfolio/`); models + service + SSE broker + events in `kactus-common` (`kactus_common/portfolio/`, `kactus_common/sse/`); UI in `frontend/packages/bloom-app` (`modules/portfolio/`). Portfolios are **user-owned** (ownership in service, not Casbin `@permission`). SSE fan-out goes through the **Redis broker** (`coordination_backend=redis`) and the scheduler now lives in `kactus-data-server`, so **`kactus-fin` is multi-worker again** (4 in prod, 2 in stag); the single-worker constraint moved with the scheduler (cờ `enable_portfolio_scheduler` is now the data plane's). vnstock key via `vnai.setup_api_key()` reading `KACTUS_VNSTOCK_API_KEY` (no `validation_alias`). **Gold quotes need no credential**: `SjcGoldSource` (sjc.com.vn, authoritative SJC reference, Cloudflare → `curl_cffi impersonate=chrome`) is tried first and `MihongGoldSource` (api.mihong.vn, `last=` trailing window) is the fallback — `KACTUS_MIHONG_XSRF_TOKEN` is legacy/unused. World gold (`XAU`) comes from `YahooGoldSource` (`GC=F` — `XAUUSD=X` is delisted; explicit `period1`/`period2` + `interval=1d`, since `range=max` degrades to monthly). `gold_price_board` therefore mixes units and every row carries an explicit **`unit`** (`VND/luong` vs `USD/oz`) — never assume VND. `DOJI`/`PNJ` stay in the catalog flagged `enabled: false` + tag `disabled` (no free feed wired). Source research + one-off history backfill scripts live in `labenry-lab/gold/`. Blocking calls wrapped in `asyncio.to_thread`; DuckDB writes use `conn.register(df)`.
+Multi-asset watchlist (STOCK/GOLD; COIN deferred) + scheduled vnstock/mihong crawl + in-app SSE broadcast. Docs: [docs/04-portfolio-feature.md](docs/04-portfolio-feature.md) (see §16 As-built). ETL/cron/`AssetProvider` registry in `kactus-data`; API/SSE/scheduler wiring + admin in `kactus-fin` (`kactus_fin/portfolio/`); models + service + SSE broker + events in `kactus-common` (`kactus_common/portfolio/`, `kactus_common/sse/`); UI in `frontend/packages/bloom-app` (`modules/portfolio/`). Portfolios are **user-owned** (ownership in service, not Casbin `@permission`). SSE fan-out goes through the **Redis broker** (`coordination_backend=redis`) and the scheduler now lives in `kactus-data-plane`, so **`kactus-fin` is multi-worker again** (4 in prod, 2 in stag); the single-worker constraint moved with the scheduler (cờ `enable_portfolio_scheduler` is now the data plane's). vnstock key via `vnai.setup_api_key()` reading `KACTUS_VNSTOCK_API_KEY` (no `validation_alias`). **Gold quotes need no credential**: `SjcGoldSource` (sjc.com.vn, authoritative SJC reference, Cloudflare → `curl_cffi impersonate=chrome`) is tried first and `MihongGoldSource` (api.mihong.vn, `last=` trailing window) is the fallback — `KACTUS_MIHONG_XSRF_TOKEN` is legacy/unused. World gold (`XAU`) comes from `YahooGoldSource` (`GC=F` — `XAUUSD=X` is delisted; explicit `period1`/`period2` + `interval=1d`, since `range=max` degrades to monthly). `gold_price_board` therefore mixes units and every row carries an explicit **`unit`** (`VND/luong` vs `USD/oz`) — never assume VND. `DOJI`/`PNJ` stay in the catalog flagged `enabled: false` + tag `disabled` (no free feed wired). Source research + one-off history backfill scripts live in `labenry-lab/gold/`. Blocking calls wrapped in `asyncio.to_thread`; DuckDB writes use `conn.register(df)`.
 
 ### OLAP money columns & schema drift
 
@@ -131,7 +148,7 @@ python manage.py data schema recreate [table]   # DROP + rebuild (destroys rows;
 
 Multi-channel push (Telegram/Slack/**Zalo PA**) as its own library, `libs/kactus-notification` (`kactus_notification/`) — a **sibling of `kactus-data`, not part of `kactus-common`**: channel registry, template rendering, retry policy and QR login are domain logic, and keeping the unofficial `zlapi` down in the core layer forced it onto every consumer (the gateway included, which never sends anything). Settings come from `NotificationSettings`, a mixin merged in by `kactus_fin.config.Settings` — a service that does not send notifications simply does not mix it in. Docs: [docs/06-notification-feature.md](docs/06-notification-feature.md). **One shared `NotificationChannel` "connection" for every platform** — `channel_type` + a `config: dict` on an **`EncryptedJSON`** (Fernet) column, each platform coerced by a per-type Pydantic schema (`TelegramChannelConfig`/`SlackChannelConfig`/`ZaloPAChannelConfig`) via `CHANNEL_CONFIG_SCHEMAS`; secrets masked by `SECRET_FIELDS`+`mask_config`. **No separate Zalo table.** Channels are **user-owned** (ownership in service). Adding a channel type = +1 config schema, +1 `*Channel`, +1 `*EventTemplate`, +1 entry in each registry. `Notifier.send_event(session, channel, event, *, trigger=MANUAL)` renders (per-type template) + delivers via `asyncio.to_thread`, with **synchronous bounded retry** (`notification_max_send_attempts=3`, exp backoff) on `impl.retryable_exceptions` — deterministic `ExternalServiceError` is **not** retried — and writes a `NotificationLog` (append-only audit, mirror `CrawlRun`) on every outcome. **Push-only** (no inbound/webhook). HTTP in `kactus_fin/notification/` (`api.py` generic CRUD/test/send/`GET /{id}/logs`; `zalo_pa_api.py` QR + zalo channel create/reauth). **Zalo PA** = unofficial personal account via PyPI `zlapi` (sync→`to_thread`), 5-step QR login (`zalo_pa.py`, `curl_cffi impersonate=chrome`) held in a **TTL session store** — in-process, or in Redis (Fernet-encrypted, `KACTUS_ENCRYPTION_KEY` required) when `coordination_backend=redis`, which lets the 5 steps land on different workers; the store interface is **async** (`await get_session_store().load(...)`); session lives inside `ZaloPAChannelConfig` (encrypted); recipients from `fetchAllFriends`/`fetchAllGroups`; **residential proxy** (`KACTUS_ZALO_PA_PROXY_URL`) required non-dev; **account-suspension risk**; expired session → non-retryable. UI in `frontend/packages/bloom-app` (`modules/notification/`). Event-driven auto-fire is **deferred** (`trigger=EVENT` already threaded through the log).
 
-**Delivery queue (✅ implemented).** `POST /{channel_id}/send` no longer sends inline — it `XADD`s to a **Redis Stream** (`kactus_notification/queue.py`, key `namespaced("notify","stream")`, group `notifiers`) and returns **202**. **Streams, not pub/sub**: `PUBLISH` has no memory, so a consumer restarting in the same second loses the alert permanently. Ack semantics are the whole design — handler returns → `XACK`; handler *raises* → **no ack**, the entry stays pending and `reclaim_stale()` (XPENDING + XCLAIM) replays it; past `notification_queue_max_deliveries` → acked + logged, or a poison entry loops forever. So raising means *unhandled* (crash, DB down), **not** *the send failed*: a failure already written to `NotificationLog` is handled and must be swallowed (`kactus_fin/notification/consumer.py::deliver`). The consumer runs **one per kactus-fin worker**, not in the data plane as originally planned — a consumer group *distributes* entries, so N workers = N senders with failover, and kactus-data-server deliberately does not depend on kactus-notification (shipping it there would put `zlapi` back in the ETL image). `POST /{channel_id}/test` stays **synchronous** — the user is waiting on that answer. On `coordination_backend=memory` there is no Redis, so the API sends inline; still 202.
+**Delivery queue (✅ implemented).** `POST /{channel_id}/send` no longer sends inline — it `XADD`s to a **Redis Stream** (`kactus_notification/queue.py`, key `namespaced("notify","stream")`, group `notifiers`) and returns **202**. **Streams, not pub/sub**: `PUBLISH` has no memory, so a consumer restarting in the same second loses the alert permanently. Ack semantics are the whole design — handler returns → `XACK`; handler *raises* → **no ack**, the entry stays pending and `reclaim_stale()` (XPENDING + XCLAIM) replays it; past `notification_queue_max_deliveries` → acked + logged, or a poison entry loops forever. So raising means *unhandled* (crash, DB down), **not** *the send failed*: a failure already written to `NotificationLog` is handled and must be swallowed (`kactus_fin/notification/consumer.py::deliver`). The consumer runs **one per kactus-fin worker**, not in the data plane as originally planned — a consumer group *distributes* entries, so N workers = N senders with failover, and kactus-data-plane deliberately does not depend on kactus-notification (shipping it there would put `zlapi` back in the ETL image). `POST /{channel_id}/test` stays **synchronous** — the user is waiting on that answer. On `coordination_backend=memory` there is no Redis, so the API sends inline; still 202.
 
 ### Action links (✅ implemented)
 
@@ -139,7 +156,7 @@ Actionable notifications, in `kactus_fin/action/`. `NotificationEvent.url` alrea
 
 ### Market feature (✅ implemented)
 
-Read-only REST over the **OLAP (DuckDB)** tables the kactus-data ETL writes — no new ETL, no new tables. Lives in `kactus_fin/market/` (`api`/`app` only — `const`/`schema` moved up to `kactus_common/market/` so both planes share them, and `service.py` moved down to `kactus_data/market/`), registered as `KactusApp(name="market", session_routes=[router])` — session auth, no Casbin/ownership (market data is reference data). Endpoints: `GET /api/market/gold`, `/stocks` (search), `/stocks/quotes`, `/stocks/{symbol}`, `/stocks/{symbol}/ohlcv`, `/stocks/{symbol}/news`, `/stocks/{symbol}/finance`. After the data-plane split, `kactus_fin/market/api.py` is a thin forwarder: each endpoint awaits the matching `data_client` call. `MarketService` and the one process-wide `DuckDBStorage` now live in `kactus-data-server` (`DataRuntime.storage`) — never construct a second handle on the same file, in any process. Blocking DuckDB calls are wrapped in `asyncio.to_thread`; caller values are bound as **positional params** (`DuckDBStorage.query(sql, params)`), never interpolated; limits are capped (`MAX_LIMIT=2000`); a table the ETL has not created yet reads as `[]`, not a 500. UI in `frontend/packages/bloom-app` (`modules/market/`: gold board, stock list + detail with recharts price history + news, finance pivot). Market pages are **poll-on-navigate** (no SSE — that is portfolio-only).
+Read-only REST over the **OLAP (DuckDB)** tables the kactus-data ETL writes — no new ETL, no new tables. Lives in `kactus_fin/market/` (`api`/`app` only — the shared `const`/`schema` contracts live in the domain libs `kactus_gold`/`kactus_stock_vn` so both planes import one definition, and `service.py` sits in `kactus_data/market/`; the generic OLAP read cap `MAX_LIMIT` is in `kactus_common.database.duckdb.consts`), registered as `KactusApp(name="market", session_routes=[router])` — session auth, no Casbin/ownership (market data is reference data). Endpoints: `GET /api/market/gold`, `/stocks` (search), `/stocks/quotes`, `/stocks/{symbol}`, `/stocks/{symbol}/ohlcv`, `/stocks/{symbol}/news`, `/stocks/{symbol}/finance`. After the data-plane split, `kactus_fin/market/api.py` is a thin forwarder: each endpoint awaits the matching `data_client` call. `MarketService` and the one process-wide `DuckDBStorage` now live in `kactus-data-plane` (`DataRuntime.storage`) — never construct a second handle on the same file, in any process. Blocking DuckDB calls are wrapped in `asyncio.to_thread`; caller values are bound as **positional params** (`DuckDBStorage.query(sql, params)`), never interpolated; limits are capped (`MAX_LIMIT=2000`); a table the ETL has not created yet reads as `[]`, not a 500. UI in `frontend/packages/bloom-app` (`modules/market/`: gold board, stock list + detail with recharts price history + news, finance pivot). Market pages are **poll-on-navigate** (no SSE — that is portfolio-only).
 
 ## Tech Stack
 
@@ -167,7 +184,7 @@ Backend commands run from `backend/`, frontend commands from `frontend/`.
 cd backend
 python manage.py fin dev                # dev with hot-reload (port 17600)
 python manage.py fin-gw dev             # gateway dev (port 17601)
-python manage.py data-server dev        # data plane (port 17602) — needs the
+python manage.py data-plane dev        # data plane (port 17602) — needs the
                                         # same KACTUS_INTERNAL_SERVICE_TOKEN
 
 # Dependencies — plain `uv sync` only syncs the root project and PRUNES the
@@ -269,6 +286,7 @@ proxied to kactus-fin, so cookies stay first-party.
 - ❌ Import app-specific code into `kactus-common`
 - ❌ Create circular dependencies between packages
 - ❌ Put business logic in `kactus-common` (infrastructure only)
+- ❌ Put domain content (gold/stock/coin enums, schedules, schemas) in `kactus-common` — it goes in a `libs/domain/*` lib (`kactus-gold`, `kactus-stock-vn`)
 - ❌ Use `fastapi.APIRouter` — use `KactusAPIRouter`
 - ❌ Use `import logging` — use `from loguru import logger`
 - ❌ Skip tests — every feature needs tests, run `uv run pytest` before committing

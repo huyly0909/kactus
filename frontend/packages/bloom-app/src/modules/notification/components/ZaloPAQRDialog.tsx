@@ -4,8 +4,12 @@ import { Loader2, RefreshCw, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { notificationService } from '@/services/notificationService';
-import { useCreateZaloChannel, useReauthZaloChannel } from '@/hooks/useNotificationQuery';
-import { ZaloRecipientPicker } from './ZaloRecipientPicker';
+import {
+  useCreateZaloChannel,
+  useReauthZaloChannel,
+  useZaloRecipients,
+} from '@/hooks/useNotificationQuery';
+import { ZaloConversationPicker, zaloRecipientKey } from './ZaloConversationPicker';
 import type { ZaloRecipient } from '@/types/notification';
 
 type Step = 'loading' | 'scan' | 'confirm' | 'account' | 'pick' | 'error';
@@ -43,7 +47,15 @@ export function ZaloPAQRDialog({
   const [sessionId, setSessionId] = useState('');
   const [accountName, setAccountName] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState<Map<string, ZaloRecipient>>(new Map());
   const cancelled = useRef(false);
+
+  // Only fetch once the login session is usable (pick step).
+  const { data: recipients, isLoading: recipientsLoading } = useZaloRecipients(
+    step === 'pick' ? sessionId : '',
+    query,
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -64,6 +76,8 @@ export function ZaloPAQRDialog({
   async function runFlow() {
     try {
       setStep('loading');
+      setQuery('');
+      setSelected(new Map());
       const qr = await notificationService.zaloPa.generateQR();
       if (cancelled.current) return;
       setSessionId(qr.session_id);
@@ -110,13 +124,23 @@ export function ZaloPAQRDialog({
     onOpenChange(false);
   };
 
-  const handlePick = async (recipient: ZaloRecipient) => {
+  const toggleRecipient = (recipient: ZaloRecipient) => {
+    setSelected((prev) => {
+      const next = new Map(prev);
+      const key = zaloRecipientKey(recipient);
+      if (next.has(key)) next.delete(key);
+      else next.set(key, recipient);
+      return next;
+    });
+  };
+
+  const handleCreate = async () => {
+    const picked = [...selected.values()];
+    if (picked.length === 0) return;
     await createChannel.mutateAsync({
       session_id: sessionId,
-      name: channelName || recipient.name,
-      thread_id: recipient.id,
-      thread_type: recipient.is_group ? 1 : 0,
-      recipient_name: recipient.name,
+      name: channelName || accountName || picked[0].name,
+      recipients: picked,
     });
     finish();
   };
@@ -167,12 +191,27 @@ export function ZaloPAQRDialog({
               <CheckCircle2 className="h-4 w-4" />
               <span>{t('notification.zalo.logged_in_as', { name: accountName })}</span>
             </div>
-            <p className="text-sm text-muted-foreground">{t('notification.zalo.pick_hint')}</p>
-            <ZaloRecipientPicker
-              sessionId={sessionId}
-              onPick={handlePick}
+            <p className="text-sm text-muted-foreground">
+              {t('notification.zalo.pick_hint_multi')}
+            </p>
+            <ZaloConversationPicker
+              recipients={recipients}
+              isLoading={recipientsLoading}
+              query={query}
+              onQueryChange={setQuery}
+              selected={selected}
+              onToggle={toggleRecipient}
               disabled={createChannel.isPending}
             />
+            <div className="flex justify-end">
+              <Button
+                onClick={() => void handleCreate()}
+                disabled={selected.size === 0 || createChannel.isPending}
+              >
+                {createChannel.isPending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
+                {t('notification.zalo.create_channel')}
+              </Button>
+            </div>
           </div>
         )}
 

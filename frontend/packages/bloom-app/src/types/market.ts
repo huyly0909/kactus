@@ -48,6 +48,23 @@ export interface GoldHistoryCode {
   gold_type?: string | null;
 }
 
+/** Market operating timezone a schedule is interpreted in — only these two are
+ * supported for now (matches backend `ScheduleTimezone`). Distinct from the
+ * user's *display* timezone: this is when the source is expected to have data. */
+export type ScheduleTimezone = 'UTC' | 'Asia/Ho_Chi_Minh';
+
+/** Data-availability schedule for one gold series — drives the gap / stale
+ * chips. Weekdays are Python `weekday()`: Mon=0 … Sun=6. `holidays` are calendar
+ * dates ("YYYY-MM-DD") in the schedule's own `timezone`. */
+export interface GoldScheduleResponse {
+  source: string;
+  code: string;
+  expected_weekdays: number[];
+  holidays?: string[];
+  timezone: ScheduleTimezone;
+  enabled: boolean;
+}
+
 export interface GoldImportResult {
   dataset: string;
   filename?: string | null;

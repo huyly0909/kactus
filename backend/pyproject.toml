@@ -11,17 +11,20 @@ dependencies = [
 [tool.uv.workspace]
 # Layered layout: services/ are deployable, libs/ are imported downward only.
 # `deploy/` no longer needs an exclude — it sits outside the member globs.
-members = ["services/*", "libs/*", "libs/core/*"]
-# `libs/core` is a grouping directory, not a package — `libs/*` would match it.
-exclude = ["libs/core"]
+members = ["services/*", "libs/*", "libs/core/*", "libs/domain/*"]
+# `libs/core` / `libs/domain` are grouping directories, not packages — `libs/*`
+# would match them.
+exclude = ["libs/core", "libs/domain"]
 
 [tool.uv.sources]
 kactus-common = { workspace = true }
+kactus-gold = { workspace = true }
+kactus-stock-vn = { workspace = true }
 kactus-data = { workspace = true }
 kactus-notification = { workspace = true }
 kactus-fin = { workspace = true }
 kactus-fin-gateway = { workspace = true }
-kactus-data-server = { workspace = true }
+kactus-data-plane = { workspace = true }
 
 [dependency-groups]
 dev = [
@@ -51,25 +54,32 @@ dev = [
 include_external_packages = true
 root_packages = [
     "kactus_common",
+    "kactus_gold",
+    "kactus_stock_vn",
     "kactus_data",
     "kactus_notification",
     "kactus_fin",
     "kactus_fin_gateway",
-    "kactus_data_server",
+    "kactus_data_plane",
 ]
 
 [[tool.importlinter.contracts]]
-name = "Kactus layers: services -> libs -> core"
+name = "Kactus layers: services -> libs -> domain -> core"
 type = "layers"
 layers = [
     # Sibling services: independently deployable, they talk over HTTP only.
-    # kactus_fin importing kactus_data_server (or the reverse) would put the
+    # kactus_fin importing kactus_data_plane (or the reverse) would put the
     # data plane back inside the control-plane process, which is the exact thing
     # the split exists to prevent.
-    "kactus_fin | kactus_fin_gateway | kactus_data_server",
+    "kactus_fin | kactus_fin_gateway | kactus_data_plane",
     # Sibling libs: neither may import the other. kactus-data must not learn to
     # send notifications, and kactus-notification must not learn to crawl.
     "kactus_data | kactus_notification",
+    # Domain libs (libs/domain/*): shared per-asset contracts, siblings that
+    # never import each other. Below the libs line because kactus-data imports
+    # them too; above kactus-common because the core layer holds infrastructure
+    # only — no gold/stock/coin content.
+    "kactus_gold | kactus_stock_vn",
     "kactus_common",
 ]
 
@@ -95,11 +105,13 @@ forbidden_modules = ["kactus_data", "duckdb"]
 branch = false
 source = [
     "libs/core/kactus-common/src/kactus_common",
+    "libs/domain/kactus-gold/src/kactus_gold",
+    "libs/domain/kactus-stock-vn/src/kactus_stock_vn",
     "libs/kactus-data/src/kactus_data",
     "libs/kactus-notification/src/kactus_notification",
     "services/kactus-fin/src/kactus_fin",
     "services/kactus-fin-gateway/src/kactus_fin_gateway",
-    "services/kactus-data-server/src/kactus_data_server",
+    "services/kactus-data-plane/src/kactus_data_plane",
 ]
 omit = [
     "*/tests/*",

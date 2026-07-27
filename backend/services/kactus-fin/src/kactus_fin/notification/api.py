@@ -14,7 +14,7 @@ from kactus_common.audit import audit
 from kactus_common.authorization.const import PermissionAct
 from kactus_common.authorization.decorator import permission
 from kactus_common.config import settings
-from kactus_common.exceptions import ExternalServiceError
+from kactus_common.exceptions import ConflictError, ExternalServiceError
 from kactus_common.project.const import ProjectPermission
 from kactus_common.router import KactusAPIRouter
 from kactus_common.schemas import MessageResponse, Pagination
@@ -207,6 +207,10 @@ async def send_to_channel(
     """
     user = request.state.user
     channel = await NotificationChannelService.get_or_404(session, channel_id)
+    if not channel.is_active:
+        # Fast-fail before enqueue; Notifier.send_event re-checks (the single
+        # authoritative gate), so a message already queued is dropped there too.
+        raise ConflictError("Channel is inactive — activate it before sending")
 
     if _queue_enabled():
         message_id = await enqueue(channel_id=channel.id, owner_id=user.id, event=body)

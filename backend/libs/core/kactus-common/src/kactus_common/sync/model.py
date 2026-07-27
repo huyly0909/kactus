@@ -3,7 +3,7 @@
 One row per queued sync (gold backfill / sync-now; stock later). The data plane
 runs a single dispatcher that claims the oldest PENDING row, executes it, and
 persists progress after each chunk so a restart resumes from the saved
-``cursor``. Postgres, not Redis: the queue must survive a data-server restart
+``cursor``. Postgres, not Redis: the queue must survive a data-plane restart
 and carry per-job audit (who enqueued it, what it produced).
 """
 

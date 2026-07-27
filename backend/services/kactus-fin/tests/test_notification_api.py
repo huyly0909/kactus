@@ -20,6 +20,7 @@ from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.project.service import ProjectService
 from kactus_common.redis import client as redis_client_mod
 from kactus_common.user import auth as auth_mod
+from kactus_common.user.context import set_current_project_id
 from kactus_common.user.model import User
 from kactus_fin.notification.consumer import deliver
 from kactus_notification import dispatcher
@@ -256,6 +257,42 @@ async def test_send_endpoint_inline_on_the_memory_backend(client, monkeypatch):
     assert resp.json()["data"]["message"] == "sent"
     assert captured["title"] == "Giá vàng"
     assert str(captured["channel_id"]) == str(cid)
+
+
+@pytest.mark.asyncio
+async def test_send_blocked_on_inactive_channel(client):
+    """Deactivate must mean silence — /send fast-fails with 409 before enqueue."""
+    cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
+        "id"
+    ]
+    await client.put(f"/api/notifications/{cid}", json={"is_active": False})
+    resp = await client.post(f"/api/notifications/{cid}/send", json={"title": "nope"})
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "CONFLICT"
+
+
+@pytest.mark.asyncio
+async def test_masked_config_update_keeps_stored_secrets(client, db, seed_user):
+    """PUT-ing back a fetched (masked) config must not clobber real secrets."""
+    created = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()[
+        "data"
+    ]
+    cid = created["id"]
+    masked = created["config"]  # bot_token is "***" here
+    assert masked["bot_token"] == "***"
+    masked["chat_id"] = "999"  # a legitimate non-secret edit
+    resp = await client.put(f"/api/notifications/{cid}", json={"config": masked})
+    assert resp.status_code == 200
+    assert resp.json()["data"]["config"]["chat_id"] == "999"
+
+    set_current_project_id(seed_user._project_id)
+    try:
+        async with db.get_session() as session:
+            channel = await NotificationChannelService.get_or_404(session, int(cid))
+            assert channel.config["bot_token"] == "secret-token"  # survived the mask
+            assert channel.config["chat_id"] == "999"
+    finally:
+        set_current_project_id(None)
 
 
 @pytest.mark.asyncio

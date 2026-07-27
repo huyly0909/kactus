@@ -19,26 +19,8 @@ import datetime
 import json
 
 import pandas as pd
+from kactus_common.database.duckdb.consts import MAX_LIMIT
 from kactus_common.datetimes import to_utc_naive
-from kactus_common.market.const import (
-    DEFAULT_GOLD_HISTORY_LIMIT,
-    GOLD_HISTORY_MAX_LIMIT,
-    MAX_LIMIT,
-    ReportPeriod,
-    ReportType,
-)
-from kactus_common.market.schema import (
-    CompanySchema,
-    FinanceReportSchema,
-    GoldHistoryCodeSchema,
-    GoldHistoryPointSchema,
-    GoldPriceSchema,
-    OHLCVSchema,
-    StockDetailSchema,
-    StockListingSchema,
-    StockNewsSchema,
-    StockQuoteSchema,
-)
 from kactus_data.market.const import (
     GOLD_BOARD_TABLE,
     GOLD_HISTORY_TABLE,
@@ -50,6 +32,22 @@ from kactus_data.market.const import (
     STOCK_PRICE_BOARD_TABLE,
 )
 from kactus_data.storage.duckdb import DuckDBStorage
+from kactus_gold.const import DEFAULT_GOLD_HISTORY_LIMIT, GOLD_HISTORY_MAX_LIMIT
+from kactus_gold.schema import (
+    GoldHistoryCodeSchema,
+    GoldHistoryPointSchema,
+    GoldPriceSchema,
+)
+from kactus_stock_vn.const import ReportPeriod, ReportType
+from kactus_stock_vn.schema import (
+    CompanySchema,
+    FinanceReportSchema,
+    OHLCVSchema,
+    StockDetailSchema,
+    StockListingSchema,
+    StockNewsSchema,
+    StockQuoteSchema,
+)
 from loguru import logger
 
 

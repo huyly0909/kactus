@@ -92,7 +92,7 @@ export const GoldDataPane: FC = () => {
             {t('market.sync.sync_all')}
           </Button>
           <Button size="sm" variant="ghost" asChild>
-            <Link to="/market/sync">
+            <Link to="/scheduler/queue">
               <ListChecks className="h-4 w-4" />
               {t('market.sync.view_queue')}
             </Link>

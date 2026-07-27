@@ -15,27 +15,37 @@ from fastapi import Request
 from kactus_common.audit import audit
 from kactus_common.authorization.const import PermissionAct
 from kactus_common.authorization.decorator import permission
+from kactus_common.exceptions import ConflictError, ValidationError
 from kactus_common.project.const import ProjectPermission
 from kactus_common.router import KactusAPIRouter
 from kactus_common.schemas import Pagination
 from kactus_fin.dependencies import provide_session
 from kactus_fin.notification.api import _to_schema
 from kactus_notification.const import NotificationChannelType
+from kactus_notification.model import NotificationChannel
 from kactus_notification.schema import (
     NotificationChannelSchema,
     Recipient,
+    ZaloPAChannelConfig,
     ZaloPAChannelCreateRequest,
     ZaloPACompleteResponse,
     ZaloPAQRGenerateResponse,
     ZaloPAQRStatusResponse,
     ZaloPAReauthRequest,
+    ZaloPARecipientsUpdateRequest,
+    ZaloPATestMessageResponse,
+    ZaloPATestMessageResult,
+    ZaloRecipientTarget,
 )
 from kactus_notification.service import NotificationChannelService
 from kactus_notification.zalo_pa import (
+    TEST_GREETING,
     build_channel_config,
     complete_login,
     generate_qr,
+    list_channel_recipients,
     list_session_recipients,
+    send_greeting_to_recipients,
     session_credentials,
     wait_for_confirm,
     wait_for_scan,
@@ -97,8 +107,22 @@ async def zalo_list_recipients(
 
 
 # --------------------------------------------------------------------------- #
-# Channel create / re-auth (writes the shared NotificationChannel)
+# Channel create / re-auth / conversations / test (writes NotificationChannel)
 # --------------------------------------------------------------------------- #
+_LEGACY_TARGET_KEYS = ("thread_id", "thread_type", "recipient_name")
+
+
+def _require_zalo(channel: NotificationChannel) -> None:
+    """These routes touch zalo-shaped config — reject any other channel type."""
+    if NotificationChannelType(channel.channel_type) != NotificationChannelType.ZALO_PA:
+        raise ValidationError("Not a Zalo PA channel")
+
+
+def _zalo_config(channel: NotificationChannel) -> ZaloPAChannelConfig:
+    """Parse the stored (already-decrypted) config; legacy scalars are lifted."""
+    return ZaloPAChannelConfig.model_validate(channel.config or {})
+
+
 @zalo_pa_router.post("/channels")
 @permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
@@ -107,13 +131,11 @@ async def zalo_create_channel(
     request: Request,
     session: AsyncSession,
 ) -> NotificationChannelSchema:
-    """Create a Zalo PA channel from a completed session + chosen recipient."""
+    """Create a Zalo PA channel from a completed session + chosen conversations."""
     user = request.state.user
     config = await build_channel_config(
         body.session_id,
-        thread_id=body.thread_id,
-        thread_type=body.thread_type,
-        recipient_name=body.recipient_name,
+        recipients=[ZaloRecipientTarget.from_recipient(r) for r in body.recipients],
     )
     channel = await NotificationChannelService.create(
         session,
@@ -126,9 +148,98 @@ async def zalo_create_channel(
         "notification.channel.create",
         "notification_channel",
         channel.id,
-        meta={"channel_type": "zalo_pa"},
+        meta={"channel_type": "zalo_pa", "recipients": len(body.recipients)},
     )
     return _to_schema(channel)
+
+
+@zalo_pa_router.get("/channels/{channel_id}/recipients")
+@permission(ProjectPermission.project, PermissionAct.read)
+@provide_session
+async def zalo_channel_recipients(
+    channel_id: int,
+    request: Request,
+    session: AsyncSession,
+    query: str = "",
+) -> Pagination[Recipient]:
+    """Friends + groups reachable with the channel's stored session (edit picker).
+
+    No QR session involved — a dead stored session surfaces as a 502 so the
+    client can offer "Reconnect" (re-auth) instead of restarting from scratch.
+    """
+    channel = await NotificationChannelService.get_or_404(session, channel_id)
+    _require_zalo(channel)
+    recipients = await list_channel_recipients(_zalo_config(channel), query)
+    return Pagination(total=len(recipients), items=recipients)
+
+
+@zalo_pa_router.put("/channels/{channel_id}/recipients")
+@permission(ProjectPermission.project, PermissionAct.write)
+@provide_session
+async def zalo_update_recipients(
+    channel_id: int,
+    body: ZaloPARecipientsUpdateRequest,
+    request: Request,
+    session: AsyncSession,
+) -> NotificationChannelSchema:
+    """Replace the saved conversations — server-side merge, credentials untouched.
+
+    The masked config from the API never round-trips here: only the recipient
+    list is accepted, everything else is carried over from the stored config
+    (which also normalizes away the legacy scalar target keys).
+    """
+    channel = await NotificationChannelService.get_or_404(session, channel_id)
+    _require_zalo(channel)
+    targets = [ZaloRecipientTarget.from_recipient(r) for r in body.recipients]
+    new_config = {
+        k: v for k, v in (channel.config or {}).items() if k not in _LEGACY_TARGET_KEYS
+    }
+    new_config["recipients"] = [t.model_dump() for t in targets]
+    channel = await NotificationChannelService.update(
+        session, channel, config=new_config
+    )
+    audit(
+        "notification.channel.update_recipients",
+        "notification_channel",
+        channel.id,
+        meta={"recipients": len(targets)},
+    )
+    return _to_schema(channel)
+
+
+@zalo_pa_router.post("/channels/{channel_id}/test-message")
+@permission(ProjectPermission.project, PermissionAct.write)
+@provide_session
+async def zalo_test_message(
+    channel_id: int,
+    request: Request,
+    session: AsyncSession,
+) -> ZaloPATestMessageResponse:
+    """Send the test greeting to every saved conversation (the ⚡ button).
+
+    Synchronous on purpose (mirror of the generic ``/test``): the user is
+    waiting at the UI for the outcome. Blocked on an inactive channel — the
+    greeting is a real message, and deactivate must mean silence.
+    """
+    channel = await NotificationChannelService.get_or_404(session, channel_id)
+    _require_zalo(channel)
+    if not channel.is_active:
+        raise ConflictError("Channel is inactive — activate it before testing")
+    results = await send_greeting_to_recipients(_zalo_config(channel), TEST_GREETING)
+    sent = sum(1 for r in results if r["ok"])
+    if sent:
+        await NotificationChannelService.mark_used(session, channel)
+    audit(
+        "notification.channel.test_message",
+        "notification_channel",
+        channel.id,
+        meta={"sent": sent, "failed": len(results) - sent},
+    )
+    return ZaloPATestMessageResponse(
+        sent=sent,
+        failed=len(results) - sent,
+        results=[ZaloPATestMessageResult(**r) for r in results],
+    )
 
 
 @zalo_pa_router.put("/channels/{channel_id}/reauth")
@@ -140,8 +251,9 @@ async def zalo_reauth_channel(
     request: Request,
     session: AsyncSession,
 ) -> NotificationChannelSchema:
-    """Refresh a channel's login session after a re-scan (recipient kept)."""
+    """Refresh a channel's login session after a re-scan (recipients kept)."""
     channel = await NotificationChannelService.get_or_404(session, channel_id)
+    _require_zalo(channel)
     creds = await session_credentials(body.session_id)
     # Keep the existing recipient + display; swap only the session-credential fields.
     new_config = {

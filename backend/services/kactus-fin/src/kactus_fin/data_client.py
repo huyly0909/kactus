@@ -1,7 +1,7 @@
 """HTTP client for the data plane — the replacement for direct DuckDB access.
 
 DuckDB permits one read-write process or several read-only ones, never both
-across processes. Once kactus-data-server owns the write handle, kactus-fin
+across processes. Once kactus-data-plane owns the write handle, kactus-fin
 cannot open the file at all, so every market read became a network call. There
 is no "read it directly, just for this one cheap query" option; that is the real
 cost of the split, and this module is where it is paid.
@@ -24,24 +24,26 @@ from typing import Any
 import httpx
 from kactus_common.config import settings
 from kactus_common.exceptions import ExternalServiceError, ValidationError
-from kactus_common.market.schema import (
-    FinanceReportSchema,
-    GoldHistoryCodeSchema,
-    GoldHistoryPointSchema,
-    GoldImportResultSchema,
-    GoldPriceSchema,
-    OHLCVSchema,
-    StockDetailSchema,
-    StockListingSchema,
-    StockNewsSchema,
-    StockQuoteSchema,
-)
 from kactus_common.portfolio.const import AssetType, CrawlKind, CrawlTrigger
 from kactus_common.portfolio.schema import (
     CrawlRequest,
     CrawlStatusSchema,
     CrawlTriggerResponse,
     MarketRowSchema,
+)
+from kactus_gold.schema import (
+    GoldHistoryCodeSchema,
+    GoldHistoryPointSchema,
+    GoldImportResultSchema,
+    GoldPriceSchema,
+)
+from kactus_stock_vn.schema import (
+    FinanceReportSchema,
+    OHLCVSchema,
+    StockDetailSchema,
+    StockListingSchema,
+    StockNewsSchema,
+    StockQuoteSchema,
 )
 from loguru import logger
 

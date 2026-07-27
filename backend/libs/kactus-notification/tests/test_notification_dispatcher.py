@@ -97,7 +97,7 @@ class FakeSession:
         self.closed = True
 
 
-def _model():
+def _model(*, is_active: bool = True):
     """Minimal stand-in for the ORM channel — Notifier reads only these attrs."""
     return types.SimpleNamespace(
         id=1,
@@ -105,6 +105,7 @@ def _model():
         project_id=None,
         channel_type="telegram",
         config={"bot_token": "T", "chat_id": "1"},
+        is_active=is_active,
     )
 
 
@@ -188,6 +189,20 @@ async def test_send_event_deterministic_error_not_retried(db, monkeypatch):
     assert len(logs) == 1
     assert logs[0].status == NotificationLogStatus.FAILED
     assert logs[0].attempts == 1  # deterministic → no retry
+
+
+@pytest.mark.asyncio
+async def test_send_event_skips_inactive_channel(db, monkeypatch):
+    """is_active is enforced here — the single gate for inline + queued sends."""
+    fake = FakeSession()
+    _patch_channel(monkeypatch, fake)
+    async with db.get_session() as session:
+        await dispatcher.Notifier.send_event(
+            session, _model(is_active=False), NotificationEvent(title="silence")
+        )
+        logs = await _logs(session)
+    assert fake.posts == []  # nothing delivered
+    assert logs == []  # and nothing logged — the channel is simply off
 
 
 @pytest.mark.asyncio

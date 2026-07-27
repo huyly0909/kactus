@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Plus, Bell, Send, Hash, MessageCircle, RefreshCw } from 'lucide-react';
+import { Plus, Bell, Send, Hash, MessageCircle, RefreshCw, Zap, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
-import { useNotificationChannels } from '@/hooks/useNotificationQuery';
+import { useNotificationChannels, useZaloTestMessage } from '@/hooks/useNotificationQuery';
 import { ChannelFormDialog } from '@modules/notification/components/ChannelFormDialog';
 import { ZaloPAQRDialog } from '@modules/notification/components/ZaloPAQRDialog';
 import type { NotificationChannel, NotificationChannelType } from '@/types/notification';
@@ -21,6 +21,7 @@ export function NotificationListPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: channels, isLoading } = useNotificationChannels();
+  const zaloTest = useZaloTestMessage();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [reauthChannel, setReauthChannel] = useState<NotificationChannel | null>(null);
 
@@ -56,20 +57,41 @@ export function NotificationListPage() {
       key: 'actions',
       title: '',
       className: 'text-right',
-      render: (ch) =>
-        ch.channel_type === 'zalo_pa' ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              setReauthChannel(ch);
-            }}
-          >
-            <RefreshCw className="mr-1 h-3.5 w-3.5" />
-            {t('notification.zalo.reconnect')}
-          </Button>
-        ) : null,
+      render: (ch) => {
+        if (ch.channel_type !== 'zalo_pa') return null;
+        const zapping = zaloTest.isPending && zaloTest.variables === ch.id;
+        return (
+          <div className="flex items-center justify-end gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!ch.is_active || zaloTest.isPending}
+              title={t('notification.zalo.test_message')}
+              onClick={(e) => {
+                e.stopPropagation();
+                zaloTest.mutate(ch.id);
+              }}
+            >
+              {zapping ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Zap className="h-3.5 w-3.5" />
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                setReauthChannel(ch);
+              }}
+            >
+              <RefreshCw className="mr-1 h-3.5 w-3.5" />
+              {t('notification.zalo.reconnect')}
+            </Button>
+          </div>
+        );
+      },
     },
   ];
 

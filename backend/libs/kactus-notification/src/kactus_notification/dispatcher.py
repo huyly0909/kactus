@@ -56,7 +56,18 @@ class Notifier:
         outcome (success or final failure) is written to :class:`NotificationLog`
         so callers — the API now, event-driven auto-fire later — get audit + retry
         for free. Raises ``ExternalServiceError`` when all attempts are exhausted.
+
+        An **inactive** channel is skipped silently (no send, no log) — this is
+        the single enforcement point for ``is_active``, covering both the inline
+        API path and the queue consumer.
         """
+        if not channel.is_active:
+            logger.warning(
+                "Skipping send to inactive {ctype} channel {cid}",
+                ctype=channel.channel_type,
+                cid=channel.id,
+            )
+            return
         ctype = NotificationChannelType(channel.channel_type)
         impl = build_channel(ctype, channel.config)  # config decrypted on ORM load
         rendered = get_template(ctype).render(event)

@@ -3,7 +3,7 @@ superuser-only sync-job queue surface owned by kactus-fin.
 
 Unlike the market *reads* (which forward to the data plane), enqueue is a plain
 Postgres insert here: ``created_by`` auto-populates from the request user, the
-partial unique index collapses duplicate clicks, and the single data-server
+partial unique index collapses duplicate clicks, and the single data-plane
 dispatcher — not exercised in this process — later claims the row. So these
 tests hit a real (SQLite) DB through ``SyncJobService`` and assert the queue
 rows, the min-date clamp, the dedup, and the superuser gate.
@@ -21,10 +21,10 @@ from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.sync.const import SyncJobStatus
-from kactus_common.sync.gold import GOLD_BACKFILL_MIN
 from kactus_common.sync.model import SyncJob  # noqa: F401 — register on Base.metadata
 from kactus_common.user import auth as auth_mod
 from kactus_common.user.model import User
+from kactus_gold.sync import GOLD_BACKFILL_MIN
 
 TEST_DB_URL = "sqlite+aiosqlite://"
 

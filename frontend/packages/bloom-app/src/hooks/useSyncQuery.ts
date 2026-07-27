@@ -65,7 +65,7 @@ export function useCancelSyncJob() {
 /**
  * Subscribe to `sync.progress` frames on the shared SSE stream and refresh the
  * queue (and, on completion, the gold board). Best-effort: on the `memory`
- * backend a data-server frame never reaches this process, so the poll in
+ * backend a data-plane frame never reaches this process, so the poll in
  * {@link useSyncJobs} remains the backbone — this just makes redis snappier.
  */
 export function useSyncStream() {

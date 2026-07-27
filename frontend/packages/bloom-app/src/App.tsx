@@ -48,8 +48,8 @@ const NotificationDetailPage = lazy(() =>
 const GoldPricesPage = lazy(() =>
   import('@modules/market/pages/GoldPricesPage').then((m) => ({ default: m.GoldPricesPage })),
 );
-const SyncQueuePage = lazy(() =>
-  import('@modules/market/pages/SyncQueuePage').then((m) => ({ default: m.SyncQueuePage })),
+const SchedulerPage = lazy(() =>
+  import('@modules/scheduler/pages/SchedulerPage').then((m) => ({ default: m.SchedulerPage })),
 );
 const StockMarketPage = lazy(() =>
   import('@modules/market/pages/StockMarketPage').then((m) => ({ default: m.StockMarketPage })),
@@ -93,13 +93,16 @@ function AppRoutes() {
         {/* Gold: Overview (board) + Data (superuser backfill/sync), tab in the URL. */}
         <Route path="market/gold" element={<Navigate to="/market/gold/overview" replace />} />
         <Route path="market/gold/:tab" element={<GoldPricesPage />} />
-        {/* Shared sync-job queue (superuser) — gold's backfill/sync jobs run here. */}
-        <Route path="market/sync" element={<SyncQueuePage />} />
+        {/* The sync queue moved into the shared Scheduler module. Old link redirects. */}
+        <Route path="market/sync" element={<Navigate to="/scheduler/queue" replace />} />
         <Route path="market/stocks" element={<StockMarketPage />} />
         <Route path="market/stocks/:symbol" element={<StockDetailPage />} />
         <Route path="market/finance" element={<FinancePage />} />
         {/* POC — the finance pivot rebuilt on the ReportView primitive. */}
         <Route path="market/finance-report" element={<FinanceReportPage />} />
+        {/* Scheduler (superuser): recurring cron jobs + the shared sync queue. */}
+        <Route path="scheduler" element={<Navigate to="/scheduler/jobs" replace />} />
+        <Route path="scheduler/:tab" element={<SchedulerPage />} />
         {/* Admin (Users/Projects) folded into Settings. Old links redirect. */}
         <Route path="admin" element={<Navigate to="/settings/users" replace />} />
         <Route path="admin/users" element={<Navigate to="/settings/users" replace />} />

@@ -15,10 +15,12 @@ members = [
     "kactus",
     "kactus-common",
     "kactus-data",
-    "kactus-data-server",
+    "kactus-data-plane",
     "kactus-fin",
     "kactus-fin-gateway",
+    "kactus-gold",
     "kactus-notification",
+    "kactus-stock-vn",
 ]
 
 [[package]]
@@ -1308,6 +1310,8 @@ dependencies = [
     { name = "apscheduler" },
     { name = "curl-cffi" },
     { name = "kactus-common" },
+    { name = "kactus-gold" },
+    { name = "kactus-stock-vn" },
     { name = "pandas" },
     { name = "pytz" },
     { name = "requests" },
@@ -1320,6 +1324,8 @@ requires-dist = [
     { name = "apscheduler", specifier = ">=3.11.2" },
     { name = "curl-cffi", specifier = ">=0.15.0" },
     { name = "kactus-common", editable = "libs/core/kactus-common" },
+    { name = "kactus-gold", editable = "libs/domain/kactus-gold" },
+    { name = "kactus-stock-vn", editable = "libs/domain/kactus-stock-vn" },
     { name = "pandas", specifier = ">=2.2,<3" },
     { name = "pytz", specifier = ">=2026.2" },
     { name = "requests", specifier = ">=2.32.5" },
@@ -1328,13 +1334,15 @@ requires-dist = [
 ]
 
 [[package]]
-name = "kactus-data-server"
+name = "kactus-data-plane"
 version = "0.1.0"
-source = { editable = "services/kactus-data-server" }
+source = { editable = "services/kactus-data-plane" }
 dependencies = [
     { name = "fastapi" },
     { name = "kactus-common" },
     { name = "kactus-data" },
+    { name = "kactus-gold" },
+    { name = "kactus-stock-vn" },
     { name = "psycopg2-binary" },
     { name = "pydantic-settings" },
     { name = "uvicorn", extra = ["standard"] },
@@ -1352,6 +1360,8 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "kactus-common", editable = "libs/core/kactus-common" },
     { name = "kactus-data", editable = "libs/kactus-data" },
+    { name = "kactus-gold", editable = "libs/domain/kactus-gold" },
+    { name = "kactus-stock-vn", editable = "libs/domain/kactus-stock-vn" },
     { name = "psycopg2-binary", specifier = ">=2.9.11" },
     { name = "pydantic-settings", specifier = ">=2.7.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
@@ -1373,7 +1383,9 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "kactus-common" },
+    { name = "kactus-gold" },
     { name = "kactus-notification" },
+    { name = "kactus-stock-vn" },
     { name = "psycopg2-binary" },
     { name = "pydantic-settings" },
     { name = "python-multipart" },
@@ -1394,7 +1406,9 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "kactus-common", editable = "libs/core/kactus-common" },
+    { name = "kactus-gold", editable = "libs/domain/kactus-gold" },
     { name = "kactus-notification", editable = "libs/kactus-notification" },
+    { name = "kactus-stock-vn", editable = "libs/domain/kactus-stock-vn" },
     { name = "psycopg2-binary", specifier = ">=2.9.11" },
     { name = "pydantic-settings", specifier = ">=2.7.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
@@ -1438,6 +1452,21 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [[package]]
+name = "kactus-gold"
+version = "0.1.0"
+source = { editable = "libs/domain/kactus-gold" }
+dependencies = [
+    { name = "kactus-common" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "kactus-common", editable = "libs/core/kactus-common" },
+    { name = "pydantic", specifier = ">=2.12.5" },
+]
+
+[[package]]
 name = "kactus-notification"
 version = "0.1.0"
 source = { editable = "libs/kactus-notification" }
@@ -1464,6 +1493,21 @@ requires-dist = [
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.0" },
     { name = "websocket-client", specifier = ">=1.9.0" },
     { name = "zlapi", specifier = ">=1.0.3" },
+]
+
+[[package]]
+name = "kactus-stock-vn"
+version = "0.1.0"
+source = { editable = "libs/domain/kactus-stock-vn" }
+dependencies = [
+    { name = "kactus-common" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "kactus-common", editable = "libs/core/kactus-common" },
+    { name = "pydantic", specifier = ">=2.12.5" },
 ]
 
 [[package]]

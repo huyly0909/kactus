@@ -60,6 +60,39 @@ export interface ZaloRecipient {
   is_group: boolean;
 }
 
+/** One saved conversation in a zalo_pa channel config (thread_type: 0=user, 1=group). */
+export interface ZaloRecipientTarget {
+  thread_id: string;
+  thread_type: number;
+  name?: string | null;
+  avatar?: string | null;
+}
+
+/** Non-secret part of a zalo_pa channel config (secrets come back masked).
+ * Legacy single-target rows still carry the scalar keys until re-saved. */
+export interface ZaloPAConfig {
+  recipients?: ZaloRecipientTarget[];
+  zalo_user_id?: string | null;
+  account_name?: string | null;
+  /** @deprecated legacy single-target shape */
+  thread_id?: string;
+  thread_type?: number;
+  recipient_name?: string | null;
+}
+
+export interface ZaloTestMessageResult {
+  thread_id: string;
+  name?: string | null;
+  ok: boolean;
+  error?: string | null;
+}
+
+export interface ZaloTestMessageResponse {
+  sent: number;
+  failed: number;
+  results: ZaloTestMessageResult[];
+}
+
 export interface ZaloQRGenerate {
   session_id: string;
   code: string;

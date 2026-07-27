@@ -18,7 +18,7 @@ import pytest
 import pytest_asyncio
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
-from kactus_common.sync.const import SyncJobStatus, SyncJobType
+from kactus_common.sync.const import SyncJobStatus
 from kactus_common.sync.model import SyncJob
 from kactus_common.sync.service import SyncJobService
 from kactus_data.jobs import sync_queue
@@ -53,7 +53,7 @@ def _isolate_handlers():
     SYNC_HANDLERS.update(saved)
 
 
-async def _enqueue_and_claim(db, *, job_type=SyncJobType.GOLD_BACKFILL, key="k"):
+async def _enqueue_and_claim(db, *, job_type="gold_backfill", key="k"):
     async with db.get_session() as session:
         await SyncJobService.enqueue(
             session, job_type=job_type, params={"source": "sjc"}, dedup_key=key
@@ -73,7 +73,7 @@ async def test_run_job_success_persists_full_progress(db):
         await on_progress(1, 3, cursor="w1")
         return {"total": 3, "rows": 10}
 
-    SYNC_HANDLERS[str(SyncJobType.GOLD_BACKFILL)] = handler
+    SYNC_HANDLERS["gold_backfill"] = handler
     view, job_id = await _enqueue_and_claim(db)
 
     deps = SyncJobDeps(db=db, storage=None, providers={})
@@ -94,7 +94,7 @@ async def test_run_job_handler_error_marks_failed(db):
     async def handler(view, deps, on_progress):
         raise RuntimeError("boom")
 
-    SYNC_HANDLERS[str(SyncJobType.GOLD_BACKFILL)] = handler
+    SYNC_HANDLERS["gold_backfill"] = handler
     view, job_id = await _enqueue_and_claim(db)
 
     deps = SyncJobDeps(db=db, storage=None, providers={})
@@ -131,7 +131,7 @@ async def test_cancel_stops_at_next_checkpoint(db):
         await on_progress(2, 3)  # must raise SyncJobCancelled
         chunks_done.append(2)  # unreachable
 
-    SYNC_HANDLERS[str(SyncJobType.GOLD_BACKFILL)] = handler
+    SYNC_HANDLERS["gold_backfill"] = handler
     view, job_id = await _enqueue_and_claim(db)
 
     deps = SyncJobDeps(db=db, storage=None, providers={})
@@ -165,11 +165,11 @@ async def test_dispatcher_loop_claims_and_finishes(db):
         ran.append(view.id)
         return {"total": 1}
 
-    SYNC_HANDLERS[str(SyncJobType.GOLD_SYNC)] = handler
+    SYNC_HANDLERS["gold_sync"] = handler
     async with db.get_session() as session:
         job, _ = await SyncJobService.enqueue(
             session,
-            job_type=SyncJobType.GOLD_SYNC,
+            job_type="gold_sync",
             params={},
             dedup_key="gold_sync:all",
         )
@@ -208,11 +208,11 @@ async def test_dispatcher_requeues_orphans_on_boot(db):
         ran.append((view.id, view.progress_done, view.cursor))
         return {"total": view.progress_total}
 
-    SYNC_HANDLERS[str(SyncJobType.GOLD_BACKFILL)] = handler
+    SYNC_HANDLERS["gold_backfill"] = handler
     # Simulate a crash: claim + progress, but never finish (status stays RUNNING).
     async with db.get_session() as session:
         await SyncJobService.enqueue(
-            session, job_type=SyncJobType.GOLD_BACKFILL, params={}, dedup_key="k"
+            session, job_type="gold_backfill", params={}, dedup_key="k"
         )
         job = await SyncJobService.claim_next(session)
         await SyncJobService.update_progress(

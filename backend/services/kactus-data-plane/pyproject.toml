@@ -1,0 +1,35 @@
+[project]
+name = "kactus-data-plane"
+version = "0.1.0"
+description = "Kactus data plane — owns DuckDB, the crawl scheduler and the vnstock session"
+requires-python = ">=3.12"
+dependencies = [
+    "kactus-common",
+    "kactus-gold",
+    "kactus-stock-vn",
+    "kactus-data",
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic-settings>=2.7.0",
+    "psycopg2-binary>=2.9.11",
+]
+
+[tool.uv.sources]
+kactus-common = { workspace = true }
+kactus-gold = { workspace = true }
+kactus-stock-vn = { workspace = true }
+kactus-data = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/kactus_data_plane"]

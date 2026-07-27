@@ -9,6 +9,7 @@ import type {
   ZaloQRGenerate,
   ZaloQRStatusResponse,
   ZaloRecipient,
+  ZaloTestMessageResponse,
 } from '@/types/notification';
 
 /** Backend pagination envelope (snake_case, matches kactus-common Pagination). */
@@ -115,13 +116,40 @@ export const notificationService = {
     createChannel: async (body: {
       session_id: string;
       name: string;
-      thread_id: string;
-      thread_type: number;
-      recipient_name?: string;
+      recipients: ZaloRecipient[];
     }): Promise<NotificationChannel> => {
       const { data } = await apiClient.post<ApiResponse<NotificationChannel>>(
         `${BASE}/zalo-pa/channels`,
         body,
+      );
+      return data.data;
+    },
+
+    /** Friends + groups reachable with the channel's stored session (edit picker). */
+    listChannelRecipients: async (channelId: string, query = ''): Promise<ZaloRecipient[]> => {
+      const { data } = await apiClient.get<ApiResponse<ListEnvelope<ZaloRecipient>>>(
+        `${BASE}/zalo-pa/channels/${channelId}/recipients`,
+        { params: { query } },
+      );
+      return data.data.items;
+    },
+
+    /** Replace the saved conversations (credentials stay server-side). */
+    updateRecipients: async (
+      channelId: string,
+      recipients: ZaloRecipient[],
+    ): Promise<NotificationChannel> => {
+      const { data } = await apiClient.put<ApiResponse<NotificationChannel>>(
+        `${BASE}/zalo-pa/channels/${channelId}/recipients`,
+        { recipients },
+      );
+      return data.data;
+    },
+
+    /** ⚡ Send the greeting to every saved conversation. */
+    testMessage: async (channelId: string): Promise<ZaloTestMessageResponse> => {
+      const { data } = await apiClient.post<ApiResponse<ZaloTestMessageResponse>>(
+        `${BASE}/zalo-pa/channels/${channelId}/test-message`,
       );
       return data.data;
     },

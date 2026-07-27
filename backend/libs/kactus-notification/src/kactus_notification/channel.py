@@ -13,12 +13,14 @@ module.
 
 from __future__ import annotations
 
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import ClassVar
 
 import requests
 from kactus_common.exceptions import ExternalServiceError
+from loguru import logger
 from zlapi.models import ZaloAPIException
 
 from .const import NotificationChannelType
@@ -203,36 +205,58 @@ class ZaloPAChannel(BaseNotificationChannel):
         self._bot = None
 
     def send(self, message: RenderedMessage) -> None:
-        from .zalo_pa import send_text_sync
+        """Deliver to every saved conversation, sequentially with an anti-spam gap.
+
+        Partial-failure rule: once **any** target got the message, never raise —
+        the dispatcher retries the *whole* ``send()``, which would double-send to
+        targets that already received it. With zero deliveries, a transient
+        transport error re-raises (safe to retry the batch); otherwise the
+        ``ZaloAPIException``s mean the session is dead → non-retryable.
+        """
+        from .zalo_pa import SEND_DELAY_SECS, send_text_sync
 
         cfg: ZaloPAChannelConfig = self.config  # type: ignore[assignment]
-        try:
-            send_text_sync(self._bot, message.text, cfg.thread_id, cfg.thread_type)
-        except ZaloAPIException as exc:  # expired session / API refusal → no retry
+        if not cfg.recipients:
             raise ExternalServiceError(
-                f"Zalo PA send failed (session may be expired — re-scan QR): {exc}"
-            ) from exc
+                "Zalo PA channel has no saved conversations — edit the channel"
+            )
+        delivered = 0
+        transient_err: Exception | None = None
+        session_err: Exception | None = None
+        for index, target in enumerate(cfg.recipients):
+            if index:
+                time.sleep(SEND_DELAY_SECS)
+            try:
+                send_text_sync(
+                    self._bot, message.text, target.thread_id, target.thread_type
+                )
+                delivered += 1
+            except ZaloAPIException as exc:  # expired session / API refusal
+                session_err = exc
+                logger.warning(
+                    "[zalo_pa] send to {tid} failed: {exc}",
+                    tid=target.thread_id,
+                    exc=exc,
+                )
+            except self.retryable_exceptions as exc:  # transient transport error
+                transient_err = exc
+                logger.warning(
+                    "[zalo_pa] send to {tid} hit transport error: {exc}",
+                    tid=target.thread_id,
+                    exc=exc,
+                )
+        if delivered:
+            return  # per-target failures already logged; never retry a partial send
+        if transient_err is not None and session_err is None:
+            raise transient_err  # nothing delivered → batch retry is safe
+        raise ExternalServiceError(
+            "Zalo PA send failed for all "
+            f"{len(cfg.recipients)} conversation(s) "
+            f"(session may be expired — re-scan QR): {session_err or transient_err}"
+        ) from (session_err or transient_err)
 
     def test_connection(self) -> bool:
         try:
             return bool(self._bot.fetchAccountInfo())
         except ZaloAPIException:
             return False
-
-    def list_recipients(self, query: str = "") -> list[Recipient]:
-        import asyncio
-
-        from .zalo_pa import ZlapiAsync
-
-        cfg: ZaloPAChannelConfig = self.config  # type: ignore[assignment]
-        creds = {
-            "cookies": cfg.cookies,
-            "imei": cfg.imei,
-            "user_agent": cfg.user_agent,
-        }
-
-        async def _run() -> list[Recipient]:
-            client = await ZlapiAsync.create(creds)
-            return await client.list_recipients(query)
-
-        return asyncio.run(_run())

@@ -7,6 +7,8 @@ dependencies = [
     "apscheduler>=3.11.2",
     "curl-cffi>=0.15.0",
     "kactus-common",
+    "kactus-gold",
+    "kactus-stock-vn",
     "pandas>=2.2,<3",
     "pytz>=2026.2",
     "requests>=2.32.5",
@@ -16,6 +18,8 @@ dependencies = [
 
 [tool.uv.sources]
 kactus-common = { workspace = true }
+kactus-gold = { workspace = true }
+kactus-stock-vn = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

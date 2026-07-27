@@ -1,19 +1,29 @@
 import { type FC, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { DownloadCloud, Loader2, RefreshCw } from 'lucide-react';
+import {
+  AlertTriangle,
+  DownloadCloud,
+  LineChart,
+  Loader2,
+  RefreshCw,
+  Table as TableIcon,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { DateRangeControl, datePresets, type DateRange } from '@/components/ui/date-range-picker';
-import { useGoldHistory } from '@/hooks/useMarketQuery';
+import { useGoldHistory, useGoldSchedule } from '@/hooks/useMarketQuery';
 import { useEnqueueGoldSync, useSyncJobs } from '@/hooks/useSyncQuery';
 import type { GoldHistoryParams } from '@/services/marketService';
 import { UNIT_USD_PER_OZ } from '@/types/market';
 import { dedupKeyTouchesSource, resolveGoldBackfillMin, type GoldSource } from '@/types/sync';
 import { GoldBackfillDialog } from './GoldBackfillDialog';
 import { GoldHistoryChart } from './GoldHistoryChart';
+import { GoldHistoryTable } from './GoldHistoryTable';
+import { detectGaps, todayInTz, todayMissing } from './goldGaps';
 import { SyncProgressBar, syncStatusBadge } from './SyncProgressBar';
 
 const PANEL_PRESETS = datePresets('30d', '90d', '1y', '3y', '5y', 'all');
@@ -47,6 +57,7 @@ interface GoldSeriesPanelProps {
 export const GoldSeriesPanel: FC<GoldSeriesPanelProps> = ({ code, source, backfillCode, unit }) => {
   const { t } = useTranslation();
   const [range, setRange] = useState<DateRange>(defaultRange);
+  const [view, setView] = useState<'chart' | 'table'>('chart');
   const [backfillOpen, setBackfillOpen] = useState(false);
   const enqueueSync = useEnqueueGoldSync();
   const { data: jobs } = useSyncJobs();
@@ -58,6 +69,25 @@ export const GoldSeriesPanel: FC<GoldSeriesPanelProps> = ({ code, source, backfi
     limit: rangeLimit(range),
   };
   const { data: points, isLoading } = useGoldHistory(code, params);
+
+  // One history endpoint can return two series sharing a code (SJC `999` vs
+  // Mihong `999`); keep only this panel's source so chart, table and the
+  // gap/today chips all agree on the same rows.
+  const rows = useMemo(() => (points ?? []).filter((p) => p.source === source), [points, source]);
+
+  // Data-availability schedule (expected weekdays + holidays + market timezone)
+  // drives the warning chips. `entity_id` is `source:code`; Mihong passes `999`.
+  const { data: schedule } = useGoldSchedule(source, backfillCode ?? code);
+  const gaps = useMemo(
+    () => (schedule?.enabled ? detectGaps(rows, range.from, range.to, schedule) : []),
+    [rows, range.from, range.to, schedule],
+  );
+  const showTodayMissing = useMemo(() => {
+    if (!schedule?.enabled) return false;
+    // Only meaningful when the window still reaches today.
+    if (range.to && range.to < todayInTz(schedule.timezone)) return false;
+    return todayMissing(rows, schedule);
+  }, [rows, schedule, range.to]);
 
   // The live job (if any) whose work touches this source — powers the bar + the
   // disabled state. An `all` sync counts, since it writes this source too.
@@ -120,7 +150,27 @@ export const GoldSeriesPanel: FC<GoldSeriesPanelProps> = ({ code, source, backfi
           </div>
         )}
 
-        <div className="flex justify-end">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="inline-flex rounded-md border border-border p-0.5">
+            <Button
+              size="sm"
+              variant={view === 'chart' ? 'secondary' : 'ghost'}
+              className="h-7 gap-1.5"
+              onClick={() => setView('chart')}
+            >
+              <LineChart className="h-4 w-4" />
+              {t('market.gold.view_chart')}
+            </Button>
+            <Button
+              size="sm"
+              variant={view === 'table' ? 'secondary' : 'ghost'}
+              className="h-7 gap-1.5"
+              onClick={() => setView('table')}
+            >
+              <TableIcon className="h-4 w-4" />
+              {t('market.gold.view_table')}
+            </Button>
+          </div>
           <DateRangeControl
             value={range}
             onChange={setRange}
@@ -130,14 +180,50 @@ export const GoldSeriesPanel: FC<GoldSeriesPanelProps> = ({ code, source, backfi
           />
         </div>
 
+        {(gaps.length > 0 || showTodayMissing) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {gaps.length > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="warning" className="cursor-help gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    {t('market.gold.gap_warning', { count: gaps.length })}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent className="max-w-xs">
+                  <p className="font-medium">{t('market.gold.gap_tooltip_title')}</p>
+                  <p className="text-muted-foreground">
+                    {t('market.gold.gap_tooltip_range', {
+                      from: gaps[0],
+                      to: gaps[gaps.length - 1],
+                    })}
+                  </p>
+                  <p className="mt-1 tabular-nums">
+                    {gaps.slice(0, 12).join(', ')}
+                    {gaps.length > 12 ? ' …' : ''}
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            )}
+            {showTodayMissing && (
+              <Badge variant="warning" className="gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                {t('market.gold.today_missing')}
+              </Badge>
+            )}
+          </div>
+        )}
+
         {isLoading ? (
           <Skeleton className="h-[300px] w-full" />
-        ) : (points ?? []).length === 0 ? (
+        ) : rows.length === 0 ? (
           <p className="py-12 text-center text-sm text-muted-foreground">
             {t('market.sync.series_empty')}
           </p>
+        ) : view === 'chart' ? (
+          <GoldHistoryChart points={rows} unit={unit} />
         ) : (
-          <GoldHistoryChart points={points ?? []} unit={unit} />
+          <GoldHistoryTable points={rows} unit={unit} />
         )}
       </CardContent>
 

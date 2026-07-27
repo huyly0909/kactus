@@ -12,7 +12,7 @@ one that mixes ``NotificationSettings`` in — the gateway's settings do not car
 
 It no longer inherits ``DataSettings``: after the data-plane split this process
 neither crawls nor opens DuckDB, so ``data_source``, ``vnstock_api_key`` and
-``db_path`` are not its business. They live on kactus-data-server's settings.
+``db_path`` are not its business. They live on kactus-data-plane's settings.
 What replaced them is ``data_plane_url`` + ``internal_service_token`` on
 ``CommonSettings`` — the address of the service that does own them.
 
@@ -41,6 +41,8 @@ class Settings(CommonSettings, NotificationSettings):
     # own, it must be declared here, because kactus-fin still owns the single
     # Alembic head for the shared database.
     INSTALLED_PACKAGES: ClassVar[list[str]] = CommonSettings.INSTALLED_PACKAGES + [
+        "kactus_gold",
+        "kactus_stock_vn",
         "kactus_notification",
         "kactus_fin",
     ]

@@ -1,6 +1,6 @@
 """The queue consumer — one per kactus-fin worker.
 
-**Why here and not in the data plane.**  The plan put this in kactus-data-server
+**Why here and not in the data plane.**  The plan put this in kactus-data-plane
 on the grounds that it was already a single-replica background service.  That
 premise dissolved once Phase 1 and 2 landed:
 
@@ -8,8 +8,8 @@ premise dissolved once Phase 1 and 2 landed:
   registers under its own ``consumer_name``, entries are distributed rather than
   duplicated, and a worker dying leaves its pending entries claimable by the
   rest.  Single-replica is the weaker arrangement here, not the stronger one.
-- kactus-data-server deliberately does not depend on kactus-notification
-  (see ``deploy/Dockerfile.data-server``).  Wiring the consumer there would drag
+- kactus-data-plane deliberately does not depend on kactus-notification
+  (see ``deploy/Dockerfile.data-plane``).  Wiring the consumer there would drag
   ``zlapi`` — unofficial, reverse-engineered, ``os.kill``-happy enough to need a
   guard — into the ETL image.  That is exactly the leak Phase 0.6 removed from
   kactus-common, moved rather than fixed.

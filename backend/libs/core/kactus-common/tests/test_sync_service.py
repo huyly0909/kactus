@@ -11,7 +11,7 @@ import pytest
 import pytest_asyncio
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
-from kactus_common.sync.const import SyncJobStatus, SyncJobType
+from kactus_common.sync.const import SyncJobStatus
 from kactus_common.sync.service import SyncJobService
 
 TEST_DB_URL = "sqlite+aiosqlite://"
@@ -28,7 +28,8 @@ async def db():
     await manager.close()
 
 
-async def _enqueue(session, key="gold_backfill:sjc", type_=SyncJobType.GOLD_BACKFILL):
+# Any wire string works — the queue is domain-agnostic (gold just got here first).
+async def _enqueue(session, key="gold_backfill:sjc", type_="gold_backfill"):
     return await SyncJobService.enqueue(
         session, job_type=type_, params={"source": "sjc"}, dedup_key=key
     )

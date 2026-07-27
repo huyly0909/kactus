@@ -9,19 +9,25 @@ WORKDIR /app
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 # Copy workspace manifests first (cache-friendly layer). `uv sync --frozen`
-# resolves against uv.lock, which names every workspace member, so all six
+# resolves against uv.lock, which names every workspace member, so all eight
 # manifests must be present even though this image only runs kactus-fin.
 COPY backend/pyproject.toml backend/uv.lock ./
 COPY backend/libs/core/kactus-common/pyproject.toml libs/core/kactus-common/pyproject.toml
+COPY backend/libs/domain/kactus-gold/pyproject.toml libs/domain/kactus-gold/pyproject.toml
+COPY backend/libs/domain/kactus-stock-vn/pyproject.toml libs/domain/kactus-stock-vn/pyproject.toml
 COPY backend/libs/kactus-data/pyproject.toml libs/kactus-data/pyproject.toml
 COPY backend/libs/kactus-notification/pyproject.toml libs/kactus-notification/pyproject.toml
 COPY backend/services/kactus-fin/pyproject.toml services/kactus-fin/pyproject.toml
 COPY backend/services/kactus-fin-gateway/pyproject.toml services/kactus-fin-gateway/pyproject.toml
-COPY backend/services/kactus-data-server/pyproject.toml services/kactus-data-server/pyproject.toml
+COPY backend/services/kactus-data-plane/pyproject.toml services/kactus-data-plane/pyproject.toml
 
 # Create stub packages so uv can resolve
 RUN mkdir -p libs/core/kactus-common/src/kactus_common && \
     touch libs/core/kactus-common/src/kactus_common/__init__.py && \
+    mkdir -p libs/domain/kactus-gold/src/kactus_gold && \
+    touch libs/domain/kactus-gold/src/kactus_gold/__init__.py && \
+    mkdir -p libs/domain/kactus-stock-vn/src/kactus_stock_vn && \
+    touch libs/domain/kactus-stock-vn/src/kactus_stock_vn/__init__.py && \
     mkdir -p libs/kactus-data/src/kactus_data && \
     touch libs/kactus-data/src/kactus_data/__init__.py && \
     mkdir -p libs/kactus-notification/src/kactus_notification && \
@@ -30,8 +36,8 @@ RUN mkdir -p libs/core/kactus-common/src/kactus_common && \
     touch services/kactus-fin/src/kactus_fin/__init__.py && \
     mkdir -p services/kactus-fin-gateway/src/kactus_fin_gateway && \
     touch services/kactus-fin-gateway/src/kactus_fin_gateway/__init__.py && \
-    mkdir -p services/kactus-data-server/src/kactus_data_server && \
-    touch services/kactus-data-server/src/kactus_data_server/__init__.py
+    mkdir -p services/kactus-data-plane/src/kactus_data_plane && \
+    touch services/kactus-data-plane/src/kactus_data_plane/__init__.py
 
 # Install dependencies only (cached unless pyproject.toml changes)
 RUN uv sync --package kactus-fin --frozen --no-install-project
@@ -42,6 +48,8 @@ RUN uv sync --package kactus-fin --frozen --no-install-project
 # is copied above, for lock resolution — shipping the source here would put the
 # ETL library back on the control plane's import path.
 COPY backend/libs/core/kactus-common/ libs/core/kactus-common/
+COPY backend/libs/domain/kactus-gold/ libs/domain/kactus-gold/
+COPY backend/libs/domain/kactus-stock-vn/ libs/domain/kactus-stock-vn/
 COPY backend/libs/kactus-notification/ libs/kactus-notification/
 COPY backend/services/kactus-fin/ services/kactus-fin/
 COPY backend/manage.py backend/pytest.ini ./

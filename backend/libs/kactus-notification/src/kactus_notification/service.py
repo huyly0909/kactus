@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .const import NotificationChannelType, NotificationLogStatus, NotificationTrigger
 from .model import NotificationChannel, NotificationLog
-from .schema import NotificationEvent, parse_channel_config
+from .schema import SECRET_FIELDS, SECRET_MASK, NotificationEvent, parse_channel_config
 
 
 def _validate_config(channel_type: NotificationChannelType, config: dict) -> None:
@@ -31,6 +31,21 @@ def _validate_config(channel_type: NotificationChannelType, config: dict) -> Non
             f"Invalid config for {channel_type} channel",
             data={"errors": exc.errors(include_url=False, include_context=False)},
         ) from exc
+
+
+def _merge_masked_secrets(
+    channel_type: NotificationChannelType, incoming: dict, stored: dict
+) -> dict:
+    """Keep the stored value wherever the incoming config carries the ``***`` mask.
+
+    The API always masks secrets on the way out, so a client that round-trips a
+    fetched config would otherwise clobber every credential with ``***``.
+    """
+    merged = dict(incoming)
+    for key in SECRET_FIELDS.get(channel_type, set()):
+        if merged.get(key) == SECRET_MASK and key in stored:
+            merged[key] = stored[key]
+    return merged
 
 
 class NotificationChannelService:
@@ -94,7 +109,9 @@ class NotificationChannelService:
         if is_active is not None:
             channel.is_active = is_active
         if config is not None:
-            _validate_config(NotificationChannelType(channel.channel_type), config)
+            ctype = NotificationChannelType(channel.channel_type)
+            config = _merge_masked_secrets(ctype, config, channel.config or {})
+            _validate_config(ctype, config)
             channel.config = config
         await channel.save(session)
         return channel

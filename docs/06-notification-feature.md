@@ -138,7 +138,7 @@ Retry ở §7 chạy **inline trong request**: một Zalo lag giữ request hàn
 
 ⚠️ Vì vậy **raise nghĩa là "chưa xử lý được"** (crash, DB chết) — **không** phải "gửi thất bại". Một lần gửi hỏng đã ghi `NotificationLog(FAILED)` là **đã xử lý**, handler phải nuốt; để nó raise thì cả vòng retry chạy lại mãi chừng nào channel còn hỏng, mỗi vòng thêm một dòng audit trùng. Xem `kactus_fin/notification/consumer.py::deliver`.
 
-**Consumer chạy ở đâu:** mỗi worker kactus-fin một cái — **lệch plan**, plan đặt ở data plane vì nó single-replica. Lý do đổi: (1) consumer group *chia* entry chứ không broadcast, nên N worker = N sender + tự failover, single-replica là phương án yếu hơn; (2) `kactus-data-server` cố ý không phụ thuộc `kactus-notification` (xem `deploy/Dockerfile.data-server`), đặt consumer ở đó là kéo `zlapi` vào image ETL — đúng thứ Phase 0.6 vừa gỡ khỏi kactus-common; (3) sender + channel row + `NotificationLog` vốn đã ở process này. Vẫn không phát sinh service thứ tư.
+**Consumer chạy ở đâu:** mỗi worker kactus-fin một cái — **lệch plan**, plan đặt ở data plane vì nó single-replica. Lý do đổi: (1) consumer group *chia* entry chứ không broadcast, nên N worker = N sender + tự failover, single-replica là phương án yếu hơn; (2) `kactus-data-plane` cố ý không phụ thuộc `kactus-notification` (xem `deploy/Dockerfile.data-server`), đặt consumer ở đó là kéo `zlapi` vào image ETL — đúng thứ Phase 0.6 vừa gỡ khỏi kactus-common; (3) sender + channel row + `NotificationLog` vốn đã ở process này. Vẫn không phát sinh service thứ tư.
 
 `POST /{id}/test` giữ **đồng bộ**: user đang ngồi trước form credential chờ câu trả lời, `202` ở đó không trả lời gì.
 

@@ -1,7 +1,7 @@
 """Lifecycle + dedup for the sync-job queue.
 
 Used from two sides: kactus-fin enqueues PENDING jobs (inside the request's user
-context, so ``created_by`` auto-populates), and the kactus-data-server
+context, so ``created_by`` auto-populates), and the kactus-data-plane
 dispatcher claims / progresses / finishes them. Both share this one service so
 the FIFO + dedup rules live in a single place.
 """
@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .const import ACTIVE_SYNC_STATUSES, SyncJobStatus, SyncJobType
+from .const import ACTIVE_SYNC_STATUSES, SyncJobStatus
 from .model import SyncJob
 
 
@@ -24,7 +24,7 @@ class SyncJobService:
     async def enqueue(
         session: AsyncSession,
         *,
-        job_type: SyncJobType,
+        job_type: str,
         params: dict,
         dedup_key: str,
     ) -> tuple[SyncJob, bool]:

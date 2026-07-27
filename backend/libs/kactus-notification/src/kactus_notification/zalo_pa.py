@@ -41,7 +41,7 @@ from zlapi import ZaloAPI
 from zlapi import _client as _zlapi_client
 from zlapi.models import Message, ThreadType
 
-from .schema import Recipient, ZaloPAChannelConfig
+from .schema import Recipient, ZaloPAChannelConfig, ZaloRecipientTarget
 
 # --------------------------------------------------------------------------- #
 # Constants (ported from reorc zalo_pa/consts.py)
@@ -52,6 +52,8 @@ CONTINUE_URL = "https://chat.zalo.me/"
 FORM_DATA_VERSION = "5.6.1"
 QR_SCAN_TIMEOUT = 60  # seconds to wait for a scan long-poll
 QR_CONFIRM_TIMEOUT = 60  # seconds to wait for a confirm long-poll
+SEND_DELAY_SECS = 1.5  # pause between consecutive sends (Zalo anti-spam)
+TEST_GREETING = "Hello, nice to meet you"
 
 _USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -563,9 +565,7 @@ async def list_session_recipients(session_id: str, query: str = "") -> list[Reci
 async def build_channel_config(
     session_id: str,
     *,
-    thread_id: str,
-    thread_type: int,
-    recipient_name: str | None,
+    recipients: list[ZaloRecipientTarget],
 ) -> ZaloPAChannelConfig:
     """Assemble a :class:`ZaloPAChannelConfig` from a completed login session."""
     state = await _completed_session(session_id)
@@ -577,9 +577,7 @@ async def build_channel_config(
         zpsid=creds.get("zpsid", ""),
         secret_key=creds.get("secret_key", ""),
         user_agent=creds["user_agent"],
-        thread_id=thread_id,
-        thread_type=thread_type,
-        recipient_name=recipient_name,
+        recipients=recipients,
         zalo_user_id=state.get("zalo_user_id"),
         account_name=state.get("account_name"),
     )
@@ -603,6 +601,19 @@ def send_text_sync(bot: ZaloAPI, text: str, thread_id: str, thread_type: int) ->
     """Blocking text send (0 = user, 1 = group)."""
     tt = ThreadType.GROUP if thread_type == 1 else ThreadType.USER
     bot.send(Message(text=text), thread_id=str(thread_id), thread_type=tt)
+
+
+def _first(obj, *keys: str, default: object = "") -> object:
+    """First truthy value under any of ``keys`` — attr or mapping access.
+
+    zlapi returns Munch-like objects (attr *and* key access) but tests fake them
+    with plain objects/dicts, so read both ways.
+    """
+    for key in keys:
+        value = obj.get(key) if isinstance(obj, dict) else getattr(obj, key, None)
+        if value:
+            return value
+    return default
 
 
 # --------------------------------------------------------------------------- #
@@ -646,16 +657,31 @@ class ZlapiAsync:
         )
 
     async def list_recipients(self, query: str = "") -> list[Recipient]:
-        """Direct friends + groups → pickable recipients (no history/conversation)."""
+        """Direct friends + groups → pickable recipients (no history/conversation).
+
+        zlapi objects are Munch-like and the key that actually carries a value
+        varies per account (an aliased friend has their name under ``zaloName``/
+        ``dName``, not ``displayName``), so every field reads through a fallback
+        chain rather than a single key.
+        """
         recipients: list[Recipient] = []
 
         friends = await self.fetch_all_friends() or []
         for friend in friends:
             recipients.append(
                 Recipient(
-                    id=str(getattr(friend, "userId", "")),
-                    name=getattr(friend, "displayName", "") or "",
-                    avatar=getattr(friend, "avatar", None),
+                    id=str(_first(friend, "userId", "id")),
+                    name=str(
+                        _first(
+                            friend,
+                            "displayName",
+                            "zaloName",
+                            "dName",
+                            "username",
+                            "name",
+                        )
+                    ),
+                    avatar=_first(friend, "avatar", "avt", default=None),
                     is_group=False,
                 )
             )
@@ -672,8 +698,9 @@ class ZlapiAsync:
                 recipients.append(
                     Recipient(
                         id=str(group_id),
-                        name=info.get("name") or f"Group {str(group_id)[:8]}",
-                        avatar=info.get("avt") or info.get("fullAvt"),
+                        name=str(_first(info, "name", "groupName", "dName"))
+                        or f"Group {str(group_id)[:8]}",
+                        avatar=_first(info, "avt", "fullAvt", default=None),
                         is_group=True,
                     )
                 )
@@ -684,3 +711,86 @@ class ZlapiAsync:
             q = query.lower()
             recipients = [r for r in recipients if q in r.name.lower()]
         return recipients
+
+
+# --------------------------------------------------------------------------- #
+# Channel-level operations — driven by a stored (already-decrypted)
+# ZaloPAChannelConfig, no QR session involved. These back the conversations
+# edit picker and the ⚡ test-message endpoint.
+# --------------------------------------------------------------------------- #
+def _channel_credentials(config: ZaloPAChannelConfig) -> dict:
+    return {
+        "cookies": config.cookies,
+        "imei": config.imei,
+        "user_agent": config.user_agent,
+    }
+
+
+async def list_channel_recipients(
+    config: ZaloPAChannelConfig, query: str = ""
+) -> list[Recipient]:
+    """Friends + groups reachable with a channel's stored session (no re-scan).
+
+    A dead/expired stored session surfaces as ``ExternalServiceError`` so the
+    caller can offer a reconnect instead of a 500.
+    """
+    try:
+        client = await ZlapiAsync.create(_channel_credentials(config))
+        return await client.list_recipients(query)
+    except ExternalServiceError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — zlapi raises library-specific errors
+        raise ExternalServiceError(
+            f"Zalo recipients fetch failed (session may be expired — re-scan QR): {exc}"
+        ) from exc
+
+
+async def send_greeting_to_recipients(
+    config: ZaloPAChannelConfig, text: str
+) -> list[dict]:
+    """Send ``text`` to every saved conversation; per-target results, no abort.
+
+    Sequential sends with ``SEND_DELAY_SECS`` between them (anti-spam); one
+    failed target does not stop the rest. Only a session that cannot even be
+    hydrated raises — per-target failures come back as ``ok=False`` rows.
+    """
+    if not config.recipients:
+        raise ValidationError("Channel has no saved conversations")
+    try:
+        client = await ZlapiAsync.create(_channel_credentials(config))
+    except ExternalServiceError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise ExternalServiceError(
+            f"Zalo session invalid (re-scan the QR): {exc}"
+        ) from exc
+
+    results: list[dict] = []
+    for index, target in enumerate(config.recipients):
+        if index:
+            await asyncio.sleep(SEND_DELAY_SECS)
+        try:
+            await client.send_text(text, target.thread_id, target.thread_type)
+            results.append(
+                {
+                    "thread_id": target.thread_id,
+                    "name": target.name,
+                    "ok": True,
+                    "error": None,
+                }
+            )
+        except Exception as exc:  # noqa: BLE001 — collect, don't abort the batch
+            logger.warning(
+                "[zalo_pa] test send to {tid} failed: {exc}",
+                tid=target.thread_id,
+                exc=exc,
+            )
+            results.append(
+                {
+                    "thread_id": target.thread_id,
+                    "name": target.name,
+                    "ok": False,
+                    "error": str(exc),
+                }
+            )
+    return results

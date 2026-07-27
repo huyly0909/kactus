@@ -76,6 +76,7 @@
     "finance": "Finance",
     "portfolios": "Portfolios",
     "notifications": "Notifications",
+    "scheduler": "Scheduler",
     "route_not_found": "Page not found",
     "no_route_permission": "You don't have access to that page"
   },
@@ -87,6 +88,30 @@
     "toggle_theme": "Toggle theme",
     "account": "Account",
     "no_email": "No email"
+  },
+  "scheduler": {
+    "title": "Scheduler",
+    "subtitle": "Recurring crawl jobs and the shared data-sync queue.",
+    "tab": {
+      "jobs": "Jobs",
+      "queue": "Queue"
+    },
+    "jobs": {
+      "running": "Scheduler running",
+      "stopped": "Scheduler stopped",
+      "tier": "vnstock: {{tier}}",
+      "scheduled": "Scheduled",
+      "paused": "Paused",
+      "col_job": "Job",
+      "col_id": "ID",
+      "col_cadence": "Cadence",
+      "col_next": "Next run",
+      "col_status": "Status",
+      "run": "Run",
+      "cancel": "Cancel",
+      "tbd": "Not available yet (TBD)",
+      "empty": "No scheduled jobs."
+    }
   },
   "settings": {
     "title": "Settings",
@@ -278,6 +303,12 @@
       "unit": "Unit",
       "unit_vnd_luong": "VND/tael",
       "unit_usd_oz": "USD/oz",
+      "view_chart": "Chart",
+      "view_table": "Table",
+      "gap_warning": "{{count}} missing day(s)",
+      "gap_tooltip_title": "Expected trading days with no data",
+      "gap_tooltip_range": "Between {{from}} and {{to}}",
+      "today_missing": "No data for today yet",
       "import": {
         "button": "Import",
         "title": "Import gold history CSV",
@@ -293,6 +324,10 @@
         "title": "Price history",
         "series": "Series",
         "group_main": "Main",
+        "date": "Date",
+        "open": "Open",
+        "high": "High",
+        "low": "Low",
         "close": "Close",
         "empty": "No history yet — import the backfill CSVs to see the chart."
       },
@@ -325,6 +360,22 @@
       "no_active": "No jobs running.",
       "no_jobs": "No jobs yet.",
       "cancel": "Cancel",
+      "all": "All",
+      "status_active": "Active",
+      "filter_status": "Status",
+      "filter_type": "Type",
+      "filter_source": "Source",
+      "col_status": "Status",
+      "col_type": "Type",
+      "col_source": "Source",
+      "col_job": "Job",
+      "col_progress": "Progress",
+      "col_time": "Time",
+      "type": {
+        "gold": "Gold",
+        "stock": "Stock",
+        "coin": "Coin"
+      },
       "source": {
         "sjc": "SJC",
         "yahoo": "XAU (world)",
@@ -432,6 +483,8 @@
     "status_success": "Success",
     "status_failed": "Failed",
     "reauth_ok": "Zalo session refreshed",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
     "telegram": {
       "bot_token": "Bot token",
       "chat_id": "Chat ID"
@@ -460,7 +513,19 @@
       "retry": "Try again",
       "qr_expired": "The QR code expired. Please try again.",
       "qr_rejected": "Login was rejected on the phone.",
-      "qr_failed": "Zalo login failed. Please try again."
+      "qr_failed": "Zalo login failed. Please try again.",
+      "pick_hint_multi": "Choose the friends and groups that will receive messages.",
+      "selected_count": "{{count}} selected",
+      "create_channel": "Create channel",
+      "conversations": "Conversations",
+      "no_conversations": "No conversations saved yet.",
+      "edit_conversations": "Edit conversations",
+      "session_dead": "The Zalo session is no longer valid — reconnect to load conversations. Saved conversations are kept.",
+      "recipients_updated": "Conversations updated",
+      "test_message": "Send test message",
+      "test_sent": "Test message: sent {{sent}}, failed {{failed}}",
+      "test_sent_ok": "Test message sent to {{sent}} conversation(s)",
+      "test_message_failed": "Test message failed — check the channel"
     }
   }
 }

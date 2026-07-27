@@ -98,10 +98,15 @@ class MarketRowSchema(BaseSchema):
 
 
 class CrawlJobSchema(BaseSchema):
-    """A scheduled crawl job and its next fire time."""
+    """A scheduled crawl job: identity, cadence, next fire time, paused state."""
 
     id: str
+    name: str | None = None
+    #: Human-readable trigger/cadence (e.g. the cron expression), for display.
+    cadence: str | None = None
     next_run_time: str | None = None
+    #: True when the scheduler is running but this job has no next fire time.
+    paused: bool = False
 
 
 class CrawlStatusSchema(BaseSchema):

@@ -76,6 +76,7 @@
     "finance": "Tài chính",
     "portfolios": "Danh mục",
     "notifications": "Thông báo",
+    "scheduler": "Lịch trình",
     "route_not_found": "Không tìm thấy trang",
     "no_route_permission": "Bạn không có quyền truy cập trang đó"
   },
@@ -87,6 +88,30 @@
     "toggle_theme": "Đổi giao diện sáng/tối",
     "account": "Tài khoản",
     "no_email": "Không có email"
+  },
+  "scheduler": {
+    "title": "Lịch trình",
+    "subtitle": "Các công việc thu thập định kỳ và hàng đợi đồng bộ dữ liệu dùng chung.",
+    "tab": {
+      "jobs": "Công việc",
+      "queue": "Hàng đợi"
+    },
+    "jobs": {
+      "running": "Bộ lập lịch đang chạy",
+      "stopped": "Bộ lập lịch đã dừng",
+      "tier": "vnstock: {{tier}}",
+      "scheduled": "Đã lên lịch",
+      "paused": "Tạm dừng",
+      "col_job": "Công việc",
+      "col_id": "ID",
+      "col_cadence": "Chu kỳ",
+      "col_next": "Lần chạy kế",
+      "col_status": "Trạng thái",
+      "run": "Chạy",
+      "cancel": "Hủy",
+      "tbd": "Chưa hỗ trợ (TBD)",
+      "empty": "Chưa có công việc theo lịch."
+    }
   },
   "settings": {
     "title": "Cài đặt",
@@ -278,6 +303,12 @@
       "unit": "Đơn vị",
       "unit_vnd_luong": "VND/lượng",
       "unit_usd_oz": "USD/oz",
+      "view_chart": "Biểu đồ",
+      "view_table": "Bảng",
+      "gap_warning": "Thiếu {{count}} ngày",
+      "gap_tooltip_title": "Những ngày kỳ vọng có dữ liệu nhưng bị thiếu",
+      "gap_tooltip_range": "Trong khoảng {{from}} đến {{to}}",
+      "today_missing": "Hôm nay chưa có dữ liệu",
       "import": {
         "button": "Nhập dữ liệu",
         "title": "Nhập CSV lịch sử giá vàng",
@@ -293,6 +324,10 @@
         "title": "Lịch sử giá",
         "series": "Chuỗi giá",
         "group_main": "Chính",
+        "date": "Ngày",
+        "open": "Mở cửa",
+        "high": "Cao nhất",
+        "low": "Thấp nhất",
         "close": "Giá đóng cửa",
         "empty": "Chưa có dữ liệu lịch sử — nhập file CSV backfill để xem biểu đồ."
       },
@@ -325,6 +360,22 @@
       "no_active": "Không có công việc nào đang chạy.",
       "no_jobs": "Chưa có công việc nào.",
       "cancel": "Hủy",
+      "all": "Tất cả",
+      "status_active": "Đang hoạt động",
+      "filter_status": "Trạng thái",
+      "filter_type": "Loại",
+      "filter_source": "Nguồn",
+      "col_status": "Trạng thái",
+      "col_type": "Loại",
+      "col_source": "Nguồn",
+      "col_job": "Công việc",
+      "col_progress": "Tiến độ",
+      "col_time": "Thời gian",
+      "type": {
+        "gold": "Vàng",
+        "stock": "Chứng khoán",
+        "coin": "Tiền số"
+      },
       "source": {
         "sjc": "SJC",
         "yahoo": "XAU (thế giới)",
@@ -432,6 +483,8 @@
     "status_success": "Thành công",
     "status_failed": "Thất bại",
     "reauth_ok": "Đã làm mới phiên Zalo",
+    "activate": "Kích hoạt",
+    "deactivate": "Vô hiệu hoá",
     "telegram": {
       "bot_token": "Bot token",
       "chat_id": "Chat ID"
@@ -460,7 +513,19 @@
       "retry": "Thử lại",
       "qr_expired": "Mã QR đã hết hạn. Vui lòng thử lại.",
       "qr_rejected": "Đăng nhập đã bị từ chối trên điện thoại.",
-      "qr_failed": "Đăng nhập Zalo thất bại. Vui lòng thử lại."
+      "qr_failed": "Đăng nhập Zalo thất bại. Vui lòng thử lại.",
+      "pick_hint_multi": "Chọn những bạn bè và nhóm sẽ nhận tin nhắn.",
+      "selected_count": "Đã chọn {{count}}",
+      "create_channel": "Tạo kênh",
+      "conversations": "Cuộc trò chuyện",
+      "no_conversations": "Chưa lưu cuộc trò chuyện nào.",
+      "edit_conversations": "Sửa cuộc trò chuyện",
+      "session_dead": "Phiên Zalo không còn hiệu lực — kết nối lại để tải cuộc trò chuyện. Các cuộc trò chuyện đã lưu vẫn được giữ.",
+      "recipients_updated": "Đã cập nhật cuộc trò chuyện",
+      "test_message": "Gửi tin nhắn thử",
+      "test_sent": "Tin nhắn thử: đã gửi {{sent}}, thất bại {{failed}}",
+      "test_sent_ok": "Đã gửi tin nhắn thử tới {{sent}} cuộc trò chuyện",
+      "test_message_failed": "Gửi tin nhắn thử thất bại — kiểm tra lại kênh"
     }
   }
 }

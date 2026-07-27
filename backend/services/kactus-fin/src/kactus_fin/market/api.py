@@ -11,9 +11,20 @@ import datetime
 
 from fastapi import Query
 from kactus_common.exceptions import NotFoundError
-from kactus_common.market.const import (
+from kactus_common.router import KactusAPIRouter
+from kactus_common.settings.service import GlobalSettingsService
+from kactus_fin import data_client
+from kactus_fin.dependencies import provide_session
+from kactus_gold.const import DEFAULT_GOLD_HISTORY_LIMIT, GOLD_AVAILABILITY_SCHEDULE
+from kactus_gold.schedule import gold_schedule_entity_id
+from kactus_gold.schema import (
+    GoldHistoryCodeSchema,
+    GoldHistoryPointSchema,
+    GoldPriceSchema,
+    GoldScheduleSchema,
+)
+from kactus_stock_vn.const import (
     DEFAULT_FINANCE_LIMIT,
-    DEFAULT_GOLD_HISTORY_LIMIT,
     DEFAULT_LIST_LIMIT,
     DEFAULT_NEWS_LIMIT,
     DEFAULT_OHLCV_LIMIT,
@@ -21,19 +32,15 @@ from kactus_common.market.const import (
     ReportPeriod,
     ReportType,
 )
-from kactus_common.market.schema import (
+from kactus_stock_vn.schema import (
     FinanceReportSchema,
-    GoldHistoryCodeSchema,
-    GoldHistoryPointSchema,
-    GoldPriceSchema,
     OHLCVSchema,
     StockDetailSchema,
     StockListingSchema,
     StockNewsSchema,
     StockQuoteSchema,
 )
-from kactus_common.router import KactusAPIRouter
-from kactus_fin import data_client
+from sqlalchemy.ext.asyncio import AsyncSession
 
 router = KactusAPIRouter(prefix="/api/market", tags=["market"])
 
@@ -68,6 +75,26 @@ async def list_gold_history(
 async def list_gold_history_codes() -> list[GoldHistoryCodeSchema]:
     """Catalogue of stored gold series (for the history chart's picker)."""
     return await data_client.list_gold_history_codes()
+
+
+@router.get("/gold/schedule")
+@provide_session
+async def get_gold_schedule(
+    source: str,
+    code: str,
+    session: AsyncSession,
+) -> GoldScheduleSchema:
+    """Data-availability schedule for one gold series (drives gap / stale chips).
+
+    OLTP config (``global_settings``), not DuckDB — read directly, not via the
+    data plane. Returns the series' expected weekdays + holidays + market timezone.
+    """
+    cfg = await GlobalSettingsService.load(
+        session,
+        entity_type=GOLD_AVAILABILITY_SCHEDULE,
+        entity_id=gold_schedule_entity_id(source, code),
+    )
+    return GoldScheduleSchema(source=source, code=code, **cfg.model_dump())
 
 
 # --------------------------------------------------------------------------- #

@@ -1,6 +1,6 @@
 """Shared fixtures for the kactus-fin tests.
 
-The interesting one is ``data_plane``: a stand-in for kactus-data-server, served
+The interesting one is ``data_plane``: a stand-in for kactus-data-plane, served
 to ``data_client`` through an in-process ASGI transport.
 
 Why a fake *server* rather than monkeypatching the client functions — the client
@@ -10,10 +10,10 @@ real code that a stubbed ``data_client.list_gold`` would skip straight past.
 Routing it through a real httpx client against a real FastAPI app exercises
 every layer except the socket.
 
-The fake declares the same routes as ``kactus_data_server.api`` but cannot
+The fake declares the same routes as ``kactus_data_plane.api`` but cannot
 import it: kactus-fin has no dependency on the data plane, and the import-linter
 contract forbids adding one. The duplication is the point — if the two drift,
-these tests keep passing while production breaks, which is why the data server
+these tests keep passing while production breaks, which is why the data plane
 has its own contract tests against the same schemas.
 """
 
@@ -25,18 +25,6 @@ import pytest_asyncio
 from fastapi import FastAPI, Query, Request
 from httpx import ASGITransport
 from kactus_common.exceptions import install_exception_handlers
-from kactus_common.market.schema import (
-    FinanceReportSchema,
-    GoldHistoryCodeSchema,
-    GoldHistoryPointSchema,
-    GoldImportResultSchema,
-    GoldPriceSchema,
-    OHLCVSchema,
-    StockDetailSchema,
-    StockListingSchema,
-    StockNewsSchema,
-    StockQuoteSchema,
-)
 from kactus_common.portfolio.schema import (
     CrawlJobSchema,
     CrawlRequest,
@@ -45,6 +33,20 @@ from kactus_common.portfolio.schema import (
     MarketRowSchema,
 )
 from kactus_common.router import KactusAPIRouter
+from kactus_gold.schema import (
+    GoldHistoryCodeSchema,
+    GoldHistoryPointSchema,
+    GoldImportResultSchema,
+    GoldPriceSchema,
+)
+from kactus_stock_vn.schema import (
+    FinanceReportSchema,
+    OHLCVSchema,
+    StockDetailSchema,
+    StockListingSchema,
+    StockNewsSchema,
+    StockQuoteSchema,
+)
 
 
 class FakeDataPlane:

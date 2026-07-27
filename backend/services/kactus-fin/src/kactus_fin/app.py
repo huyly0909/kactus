@@ -118,7 +118,7 @@ async def lifespan(app: FastAPI):
 
     Short by design. Everything that used to be built here — vnstock auth, the
     DuckDB handle, the asset providers, the crawl scheduler — moved to
-    kactus-data-server. This process owns no long-lived resource beyond its
+    kactus-data-plane. This process owns no long-lived resource beyond its
     connection pools, which is what lets it run at more than one worker.
     """
     settings = get_settings()

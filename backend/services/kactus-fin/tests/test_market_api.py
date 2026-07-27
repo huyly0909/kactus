@@ -6,7 +6,7 @@ the translation of query parameters into a data-plane call, the 404 policy for
 an unknown symbol, and what a user sees when the data plane is unreachable.
 
 The row-level assertions (derived spreads, exact decimals, ordering) moved to
-``services/kactus-data-server/tests/test_market_api.py`` along with the storage
+``services/kactus-data-plane/tests/test_market_api.py`` along with the storage
 that produces them.
 
 Requests reach a fake data plane over an in-process ASGI transport (see
@@ -23,17 +23,19 @@ from httpx import ASGITransport, AsyncClient
 from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
-from kactus_common.market.schema import (
+from kactus_common.user import auth as auth_mod
+from kactus_common.user.model import User
+from kactus_gold.schema import (
     GoldHistoryCodeSchema,
     GoldHistoryPointSchema,
     GoldImportResultSchema,
     GoldPriceSchema,
+)
+from kactus_stock_vn.schema import (
     StockDetailSchema,
     StockListingSchema,
     StockQuoteSchema,
 )
-from kactus_common.user import auth as auth_mod
-from kactus_common.user.model import User
 
 TEST_DB_URL = "sqlite+aiosqlite://"
 

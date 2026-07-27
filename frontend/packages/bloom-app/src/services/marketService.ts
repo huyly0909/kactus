@@ -6,6 +6,7 @@ import type {
   GoldHistoryPoint,
   GoldImportResult,
   GoldPrice,
+  GoldScheduleResponse,
   OHLCV,
   OHLCVInterval,
   ReportPeriod,
@@ -58,6 +59,14 @@ export const marketService = {
   goldHistoryCodes: async (): Promise<GoldHistoryCode[]> => {
     const { data } = await apiClient.get<ApiResponse<GoldHistoryCode[]>>(
       '/api/market/gold/history/codes',
+    );
+    return data.data;
+  },
+
+  goldSchedule: async (source: string, code: string): Promise<GoldScheduleResponse> => {
+    const { data } = await apiClient.get<ApiResponse<GoldScheduleResponse>>(
+      '/api/market/gold/schedule',
+      { params: { source, code } },
     );
     return data.data;
   },

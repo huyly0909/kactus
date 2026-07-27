@@ -23,7 +23,6 @@ from io import BytesIO
 import pandas as pd
 from kactus_common.datetimes import utcnow_naive
 from kactus_common.exceptions import ValidationError
-from kactus_common.market.schema import GoldImportResultSchema
 from kactus_data.sources.gold.history_tables import GOLD_PRICE_HISTORY_TABLE
 from kactus_data.sources.gold.portfolio_tables import (
     UNIT_USD_PER_OZ,
@@ -33,6 +32,7 @@ from kactus_data.sources.gold.yahoo import CODE as XAU_CODE
 from kactus_data.sources.stock.market import _to_table_df
 from kactus_data.storage.duckdb import DuckDBStorage
 from kactus_data.util.time import to_event_dt
+from kactus_gold.schema import GoldImportResultSchema
 
 
 class GoldHistoryDataset(StrEnum):

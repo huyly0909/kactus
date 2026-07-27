@@ -1,7 +1,7 @@
 """Bridge market events → the SSE broker.
 
 Registered by whichever process *runs crawls* — after the data-plane split that
-is kactus-data-server, not kactus-fin. The crawl emits ``data_refreshed`` in
+is kactus-data-plane, not kactus-fin. The crawl emits ``data_refreshed`` in
 its own process; this handler publishes it to the broker, and on the Redis
 backend every kactus-fin worker's listener picks it up and pushes it to the
 browsers it holds. Nobody has to know which process holds which connection.

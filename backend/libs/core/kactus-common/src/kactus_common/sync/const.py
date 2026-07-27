@@ -5,17 +5,6 @@ from __future__ import annotations
 from enum import StrEnum
 
 
-class SyncJobType(StrEnum):
-    """The kind of work a queued sync job performs.
-
-    Gold is the first consumer; stock crawls migrate onto the queue later, so a
-    new member lands here without a schema change.
-    """
-
-    GOLD_BACKFILL = "gold_backfill"
-    GOLD_SYNC = "gold_sync"
-
-
 class SyncJobStatus(StrEnum):
     """Lifecycle of a queued sync job."""
 

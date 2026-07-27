@@ -6,7 +6,7 @@ Create Date: 2026-07-27 00:00:00.000000
 
 The shared sync-job queue: one durable, FIFO row per queued DuckDB write (gold
 backfill / sync-now to start; stock later). kactus-fin enqueues PENDING rows;
-the single kactus-data-server dispatcher claims / progresses / finishes them.
+the single kactus-data-plane dispatcher claims / progresses / finishes them.
 
 The partial unique index ``uq_sync_job_active_dedup`` enforces *one live job per
 dedup_key* (PENDING or RUNNING) at the DB — the backstop behind the app-level
