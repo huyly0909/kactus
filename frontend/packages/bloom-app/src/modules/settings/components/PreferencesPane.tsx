@@ -316,7 +316,8 @@ export const PreferencesPane: FC = () => {
                   onClick={() => {
                     if (!active) updatePrefs.mutate({ language: lng });
                   }}
-                  className={cn('h-9 flex-1', !active && 'text-muted-foreground')}
+                  size="lg"
+                  className={cn('flex-1', !active && 'text-muted-foreground')}
                 >
                   {lng.toUpperCase()}
                 </Button>

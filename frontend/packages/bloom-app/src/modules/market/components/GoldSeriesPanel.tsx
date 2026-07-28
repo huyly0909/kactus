@@ -155,7 +155,6 @@ export const GoldSeriesPanel: FC<GoldSeriesPanelProps> = ({ code, source, backfi
             <Button
               size="sm"
               variant={view === 'chart' ? 'secondary' : 'ghost'}
-              className="h-7 gap-1.5"
               onClick={() => setView('chart')}
             >
               <LineChart className="h-4 w-4" />
@@ -164,7 +163,6 @@ export const GoldSeriesPanel: FC<GoldSeriesPanelProps> = ({ code, source, backfi
             <Button
               size="sm"
               variant={view === 'table' ? 'secondary' : 'ghost'}
-              className="h-7 gap-1.5"
               onClick={() => setView('table')}
             >
               <TableIcon className="h-4 w-4" />

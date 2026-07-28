@@ -173,7 +173,6 @@ export const SchedulerQueuePane: FC = () => {
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 gap-1.5"
             onClick={() => cancel.mutate(j.id)}
             disabled={cancel.isPending}
           >
@@ -189,7 +188,7 @@ export const SchedulerQueuePane: FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
           <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
-            <SelectTrigger className="h-9 w-[9rem]">
+            <SelectTrigger className="w-[9rem]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -198,7 +197,7 @@ export const SchedulerQueuePane: FC = () => {
             </SelectContent>
           </Select>
           <Select value={type} onValueChange={(v) => setType(v as TypeFilter)}>
-            <SelectTrigger className="h-9 w-[9rem]">
+            <SelectTrigger className="w-[9rem]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -210,7 +209,7 @@ export const SchedulerQueuePane: FC = () => {
             </SelectContent>
           </Select>
           <Select value={source} onValueChange={(v) => setSource(v as SourceFilter)}>
-            <SelectTrigger className="h-9 w-[10rem]">
+            <SelectTrigger className="w-[10rem]">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

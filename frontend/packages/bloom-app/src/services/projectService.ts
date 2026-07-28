@@ -1,6 +1,11 @@
 import { apiClient } from './apiClient';
 import type { ApiResponse } from '../types';
-import type { Project, ProjectMemberDetail, PermissionsResponse } from '../types/project';
+import type {
+  Project,
+  ProjectMemberDetail,
+  PermissionsResponse,
+  ProjectStatus,
+} from '../types/project';
 
 export interface Pagination<T> {
   total: number;
@@ -17,6 +22,8 @@ interface ProjectUpdatePayload {
   name?: string;
   code?: string;
   description?: string;
+  /** Archive/restore. The only writer of `Project.status`. */
+  status?: ProjectStatus;
 }
 
 export interface AddMemberPayload {

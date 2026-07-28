@@ -75,7 +75,12 @@ const hydrateActiveProject = async (authUser: AuthUser): Promise<void> => {
       store.clearProject();
       return;
     }
-    store.setProject(items.find((p) => p.created_by === authUser.id) ?? items[0]);
+    // Never auto-select an archived project — that would silently restore a
+    // scope its owner deliberately retired. An explicit cookie choice above is
+    // still honoured; this only governs the fallback.
+    const selectable = items.filter((p) => p.status === 'active');
+    const pool = selectable.length > 0 ? selectable : items;
+    store.setProject(pool.find((p) => p.created_by === authUser.id) ?? pool[0]);
   } catch {
     /* non-fatal — the Projects page lets the user pick manually */
   } finally {

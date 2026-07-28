@@ -167,5 +167,7 @@ async def list_all_projects(
 ) -> Pagination[ProjectSchema]:
     """List all projects (admin only)."""
     projects = await ProjectService.list_all(session)
-    items = [ProjectSchema.model_validate(p) for p in projects]
+    # viewer_id=None: an operator listing every project is not a member of them,
+    # so "my role" has no meaning here.
+    items = await ProjectService.build_schemas(session, projects, viewer_id=None)
     return Pagination(total=len(items), items=items)

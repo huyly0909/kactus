@@ -410,8 +410,7 @@ export function DataTable<T>({
             <div className="flex gap-1">
               <Button
                 variant="outline"
-                size="icon"
-                className="h-8 w-8"
+                size="icon-sm"
                 onClick={() => table.previousPage()}
                 disabled={!table.getCanPreviousPage()}
               >
@@ -419,8 +418,7 @@ export function DataTable<T>({
               </Button>
               <Button
                 variant="outline"
-                size="icon"
-                className="h-8 w-8"
+                size="icon-sm"
                 onClick={() => table.nextPage()}
                 disabled={!table.getCanNextPage()}
               >
@@ -447,8 +445,7 @@ function ServerPager({ pagination }: { pagination: DataTablePagination }) {
       <div className="flex gap-1">
         <Button
           variant="outline"
-          size="icon"
-          className="h-8 w-8"
+          size="icon-sm"
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
         >
@@ -456,8 +453,7 @@ function ServerPager({ pagination }: { pagination: DataTablePagination }) {
         </Button>
         <Button
           variant="outline"
-          size="icon"
-          className="h-8 w-8"
+          size="icon-sm"
           onClick={() => onPageChange(page + 1)}
           disabled={page * pageSize >= total}
         >

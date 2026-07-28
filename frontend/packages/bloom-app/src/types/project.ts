@@ -7,7 +7,19 @@ export interface Project {
   description?: string;
   status: string;
   created_by?: string;
+  /** UTC, tz-aware — render with `useFormatDateTime()`, never `toLocaleString()`. */
+  create_time?: string;
+  /** Derived server-side from the OWNER membership (or `created_by`). */
+  owner_name?: string | null;
+  owner_email?: string | null;
+  /** `FancyInt` — arrives as a string; `Number()` it before comparing. */
+  member_count?: string;
+  /** The requesting user's role here; null for a superuser listing. */
+  my_role?: string | null;
 }
+
+/** `Project.status` values — the archive filter's domain. */
+export type ProjectStatus = 'active' | 'archived';
 
 export interface ProjectMember {
   id: string;

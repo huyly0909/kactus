@@ -9,6 +9,12 @@ Covers the end-to-end behaviour introduced with project scoping:
   owner-grant guard rails;
 * domain entities (portfolios here) are isolated across projects — a record in
   another project reads as 404, never leaking its existence;
+* per-project routes authorise against the **path** project, not the selected
+  one, so a role in your own project grants nothing elsewhere;
+* the list read model carries owner/member-count/my-role without an N+1;
+* ``status`` archives and restores a project;
+* ``code`` is freely editable but must stay a unique slug — including against
+  soft-deleted holders, which the unique index still reserves;
 * user actions land in the append-only ``audit_logs`` table.
 
 In-memory SQLite (shared pool) for the OLTP side; the market data plane is faked
@@ -144,6 +150,253 @@ async def test_list_projects_only_shows_membership(app, db):
     items = resp.json()["data"]["items"]
     # Owner sees exactly their personal project, not Other's.
     assert [int(p["id"]) for p in items] == [owner._project_id]
+
+
+@pytest.mark.asyncio
+async def test_list_projects_carries_owner_members_and_role(app, db):
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    await _make_user(db, "member@kactus.io", "Member")
+
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    await oc.post(
+        f"/api/projects/{owner._project_id}/members",
+        json={"email": "member@kactus.io", "role": "member"},
+    )
+    resp = await oc.get("/api/projects")
+    await oc.aclose()
+
+    assert resp.status_code == 200
+    row = resp.json()["data"]["items"][0]
+    # Derived, not columns: resolved from users + project_members.
+    assert row["owner_name"] == "Owner"
+    assert row["owner_email"] == "owner@kactus.io"
+    assert row["my_role"] == DefaultRole.OWNER.value
+    assert int(row["member_count"]) == 2  # owner + invited member
+    # AwareUTCDatetime — carries an explicit UTC marker ("Z" or "+00:00"), so the
+    # client can localise it instead of guessing the zone.
+    assert row["create_time"].endswith(("Z", "+00:00"))
+
+
+@pytest.mark.asyncio
+async def test_build_schemas_does_not_n_plus_one(db):
+    """Query count must not grow with the number of projects."""
+    from sqlalchemy import event
+
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    async with db.get_session() as session:
+        for i in range(4):
+            await ProjectService.create(
+                session, name=f"P{i}", code=f"p-{i}", creator_id=owner.id
+            )
+        projects = await ProjectService.get_user_projects(session, owner.id)
+        assert len(projects) == 5  # personal + 4
+
+        counts: list[str] = []
+
+        def _count(conn, cursor, statement, *a):  # noqa: ANN001
+            counts.append(statement)
+
+        engine = session.get_bind().engine
+        event.listen(engine, "before_cursor_execute", _count)
+        try:
+            items = await ProjectService.build_schemas(
+                session, projects, viewer_id=owner.id
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", _count)
+
+    assert len(items) == 5
+    # 3 batched reads: member counts, membership rows, owner users.
+    assert len(counts) == 3, counts
+
+
+# --------------------------------------------------------------------------- #
+# Per-project routes authorise on the path project, not the cookie
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_other_project_is_forbidden_even_when_owner_of_own(app, db):
+    """A role in the *selected* project must not authorise another project.
+
+    ``@permission`` resolved the role from the project cookie while the handler
+    loaded the project from the path — being OWNER of your own project made you
+    OWNER of everyone's. The projects list edits non-active projects, so the two
+    ids routinely differ.
+    """
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    stranger = await _make_user(db, "stranger@kactus.io", "Stranger")
+
+    # Cookie = own project (where this user is OWNER); path = someone else's.
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    read = await oc.get(f"/api/projects/{stranger._project_id}")
+    written = await oc.put(
+        f"/api/projects/{stranger._project_id}", json={"name": "pwned"}
+    )
+    members = await oc.get(f"/api/projects/{stranger._project_id}/members")
+    await oc.aclose()
+
+    assert read.status_code == 403
+    assert written.status_code == 403
+    assert members.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_member_of_non_selected_project_may_still_read_it(app, db):
+    """The converse: membership in the path project is what counts."""
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    guest = await _make_user(db, "guest@kactus.io", "Guest")
+
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    await oc.post(
+        f"/api/projects/{owner._project_id}/members",
+        json={"email": "guest@kactus.io", "role": "member"},
+    )
+    await oc.aclose()
+
+    # Guest still has their *own* project selected, but is a member of owner's.
+    gc = await _client(app, "guest@kactus.io", project_id=guest._project_id)
+    resp = await gc.get(f"/api/projects/{owner._project_id}")
+    await gc.aclose()
+    assert resp.status_code == 200
+    assert resp.json()["data"]["my_role"] == DefaultRole.MEMBER.value
+
+
+# --------------------------------------------------------------------------- #
+# Archive / restore
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_archive_and_restore_project(app, db):
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+
+    archived = await oc.put(
+        f"/api/projects/{owner._project_id}", json={"status": "archived"}
+    )
+    assert archived.status_code == 200
+    assert archived.json()["data"]["status"] == "archived"
+    # Archiving is not deletion — it still lists (the UI filters it out).
+    listed = await oc.get("/api/projects")
+    assert [int(p["id"]) for p in listed.json()["data"]["items"]] == [owner._project_id]
+
+    restored = await oc.put(
+        f"/api/projects/{owner._project_id}", json={"status": "active"}
+    )
+    await oc.aclose()
+    assert restored.json()["data"]["status"] == "active"
+
+
+@pytest.mark.asyncio
+async def test_invalid_status_is_rejected(app, db):
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    resp = await oc.put(
+        f"/api/projects/{owner._project_id}", json={"status": "deleted"}
+    )
+    await oc.aclose()
+    assert resp.status_code == 400
+    assert "deleted" in resp.text
+
+
+# --------------------------------------------------------------------------- #
+# ``code`` is freely editable — the only rules are slug, length and uniqueness
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_duplicate_code_is_a_conflict(app, db):
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    await oc.post("/api/projects", json={"name": "Team", "code": "team-x"})
+
+    # Rename the personal project onto the code the new one holds.
+    resp = await oc.put(f"/api/projects/{owner._project_id}", json={"code": "team-x"})
+    await oc.aclose()
+    assert resp.status_code == 409
+    # The field is named in ``data`` so the form can put the message under it.
+    assert resp.json()["data"]["code"] == "team-x"
+
+
+@pytest.mark.asyncio
+async def test_code_of_soft_deleted_project_stays_taken(app, db):
+    """The real regression: a deleted holder still reserves the code.
+
+    ``ix_projects_code`` has no partial predicate, so the row keeps the code even
+    though the soft-delete filter hides it from every ordinary read. Before the
+    explicit ``skip_deleted_filter`` lookup this reached the database and came
+    back as an unhandled ``IntegrityError`` — a 500.
+    """
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    created = await oc.post("/api/projects", json={"name": "Team", "code": "team-x"})
+    dead_id = int(created.json()["data"]["id"])
+
+    async with db.get_session() as session:
+        project = await ProjectService.get_by_id(session, dead_id)
+        await ProjectService.delete(session, project)
+
+    renamed = await oc.put(
+        f"/api/projects/{owner._project_id}", json={"code": "team-x"}
+    )
+    recreated = await oc.post("/api/projects", json={"name": "Again", "code": "team-x"})
+    await oc.aclose()
+    assert renamed.status_code == 409, renamed.text
+    assert recreated.status_code == 409, recreated.text
+
+
+@pytest.mark.asyncio
+async def test_resubmitting_own_code_is_not_a_conflict(app, db):
+    """The edit form posts every field, so most saves re-send the same code."""
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    resp = await oc.put(
+        f"/api/projects/{owner._project_id}",
+        json={"name": "Renamed", "code": f"user-{owner.id}"},
+    )
+    await oc.aclose()
+    assert resp.status_code == 200
+    assert resp.json()["data"]["name"] == "Renamed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("code", ["x" * 51, "Team X", "TEAM-X", "team_x", ""])
+async def test_invalid_code_is_rejected(app, db, code):
+    """Length and slug are enforced server-side, not only in the zod schema.
+
+    An over-long code is a ``StringDataRightTruncation`` on Postgres (a 500) and
+    is silently accepted by the SQLite the tests run on — so the check has to be
+    in the service, where both back ends behave the same.
+    """
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    resp = await oc.put(f"/api/projects/{owner._project_id}", json={"code": code})
+    await oc.aclose()
+    assert resp.status_code == 400, resp.text
+
+
+@pytest.mark.asyncio
+async def test_integrity_error_is_reported_as_conflict(app, db, monkeypatch):
+    """The pre-check exists for the message; this is what closes the race.
+
+    Two concurrent writers both pass the SELECT and one loses at the index. The
+    no-op monkeypatch reproduces that without threads.
+    """
+    from kactus_common.project import service as service_mod
+
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    await oc.post("/api/projects", json={"name": "Team", "code": "team-x"})
+
+    async def _no_op(session, code, *, exclude_id=None):  # noqa: ANN001, ANN202
+        return None
+
+    monkeypatch.setattr(service_mod, "_assert_code_available", _no_op)
+
+    clash = await oc.post("/api/projects", json={"name": "Clash", "code": "team-x"})
+    assert clash.status_code == 409, clash.text
+
+    # The rollback ran: without it the session stays errored and the next
+    # statement fails with PendingRollbackError instead of answering.
+    monkeypatch.undo()
+    listed = await oc.get("/api/projects")
+    await oc.aclose()
+    assert listed.status_code == 200
 
 
 # --------------------------------------------------------------------------- #

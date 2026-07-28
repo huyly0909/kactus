@@ -146,9 +146,64 @@ const FormMessage = React.forwardRef<
 });
 FormMessage.displayName = 'FormMessage';
 
+interface FieldRowProps {
+  label: React.ReactNode;
+  /** Small grey line under the label — format rules, units, constraints. */
+  hint?: React.ReactNode;
+  /** Static text pinned to the right of the control (a unit, a computed echo). */
+  suffix?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+}
+
+/**
+ * A flat label-left form row: 140px label column + value column, no card, no
+ * border. This is the entity-page counterpart of `FormItem` (which stays the
+ * label-above shape used inside dialogs).
+ *
+ * Goes *inside* `FormField`'s render, replacing `FormItem` — it provides its
+ * own `FormItemContext` (so `FormControl` still gets a matching id) and renders
+ * `FormMessage` itself in the value column, which makes the "row and message
+ * both print the error" duplication impossible.
+ *
+ *   <FormField control={form.control} name="code" render={({ field }) => (
+ *     <FieldRow label={t('projects.code')} hint={t('projects.code_format')}>
+ *       <FormControl><Input {...field} /></FormControl>
+ *     </FieldRow>
+ *   )} />
+ */
+const FieldRow: React.FC<FieldRowProps> = ({ label, hint, suffix, children, className }) => {
+  const id = React.useId();
+  return (
+    <FormItemContext.Provider value={{ id }}>
+      {/* minmax(0,1fr), not 1fr: a bare 1fr track has min-width:auto, so a long
+          nowrap value overruns its column instead of truncating. */}
+      <div
+        className={cn(
+          'grid grid-cols-1 items-start gap-x-3 gap-y-1 py-1.5 text-sm sm:grid-cols-[140px_minmax(0,1fr)]',
+          className,
+        )}
+      >
+        <div className="flex flex-col pt-1.5 text-muted-foreground">
+          <FormLabel className="font-normal">{label}</FormLabel>
+          {hint && <span className="mt-0.5 text-[11px] text-muted-foreground/70">{hint}</span>}
+        </div>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">{children}</div>
+            {suffix && <span className="shrink-0 text-xs text-muted-foreground">{suffix}</span>}
+          </div>
+          <FormMessage />
+        </div>
+      </div>
+    </FormItemContext.Provider>
+  );
+};
+
 export {
   useFormField,
   Form,
+  FieldRow,
   FormItem,
   FormLabel,
   FormControl,

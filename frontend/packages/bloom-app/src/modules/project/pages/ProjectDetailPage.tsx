@@ -1,12 +1,17 @@
-import { useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, UserPlus, Trash2 } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { FolderGit2, Trash2, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { BareSection } from '@/components/ui/bare-section';
+import { EntityPage, EntityPageBody, EntityPageHeader } from '@/components/ui/entity-page';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Input } from '@/components/ui/input';
+import { FieldRow, FormControl, FormField } from '@/components/ui/form';
 import {
   Table,
   TableBody,
@@ -22,151 +27,283 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useFormatDateTime } from '@/hooks/useFormatDateTime';
 import {
   useProject,
   useProjectMembers,
   useRemoveMember,
   useUpdateMemberRole,
+  useUpdateProject,
 } from '@/hooks/useProjectQuery';
+import {
+  projectDisplayName,
+  projectFormSchema,
+  projectMemberCount,
+  type ProjectFormValues,
+} from '@/lib/project';
 import { useAuthStore } from '@/store/authStore';
+import { useProjectStore } from '@/store/projectStore';
 import type { ProjectMemberDetail } from '@/types/project';
 import { InviteMemberDialog } from '@modules/project/components/InviteMemberDialog';
 
+/**
+ * One project: identity, edit form and members — reached by clicking a row on
+ * the list, so the URL names what is on screen and the page can be linked to.
+ *
+ * Every control and every piece of state lives in the sticky bar at the top:
+ * the archive kebab, Discard, Save, and Save's own disabled state reporting
+ * whether there is anything to save. Nothing is in a footer. There is no
+ * in-page back button either — TopHeader already renders one.
+ */
 export function ProjectDetailPage() {
   const { id = '' } = useParams();
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const fmtDateTime = useFormatDateTime();
   const user = useAuthStore((s) => s.user);
+  const currentProject = useProjectStore((s) => s.currentProject);
+  const setProject = useProjectStore((s) => s.setProject);
 
   const { data: project, isLoading: projectLoading } = useProject(id);
   const { data: members, isLoading: membersLoading } = useProjectMembers(id);
   const updateRole = useUpdateMemberRole(id);
   const removeMember = useRemoveMember(id);
+  const update = useUpdateProject(id);
 
   const [inviteOpen, setInviteOpen] = useState(false);
   const [toRemove, setToRemove] = useState<ProjectMemberDetail | null>(null);
 
-  // The current user's own role in this project drives what controls show.
-  // Superusers act as owner (backend also bypasses gating for them).
-  const myRole = useMemo(() => {
-    if (user?.is_superuser) return 'owner';
-    return members?.items.find((m) => m.user_id === user?.id)?.role ?? '';
-  }, [members, user]);
-
+  // The API resolves the viewer's own membership, so gating no longer waits on
+  // the members query. Superusers act as owner (the backend agrees).
+  const myRole = user?.is_superuser ? 'owner' : (project?.my_role ?? '');
   const canManage = myRole === 'owner' || myRole === 'manager';
   const canGrantOwner = myRole === 'owner';
+  const isArchived = project?.status === 'archived';
+
+  const form = useForm<ProjectFormValues>({
+    resolver: zodResolver(projectFormSchema(t)),
+    defaultValues: { name: '', code: '', description: '' },
+  });
+
+  // Fill once the project arrives, and refill after a save so the form stops
+  // reporting itself dirty against values the server has already accepted.
+  const { reset } = form;
+  useEffect(() => {
+    if (!project) return;
+    reset({
+      name: project.name,
+      code: project.code,
+      description: project.description ?? '',
+    });
+  }, [project, reset]);
+
+  const onSubmit = async (values: ProjectFormValues) => {
+    try {
+      const updated = await update.mutateAsync({
+        name: values.name,
+        code: values.code,
+        description: values.description ?? '',
+      });
+      // Renaming the active project must refresh the sidebar chip too.
+      if (currentProject?.id === updated.id) setProject(updated);
+    } catch (err) {
+      // A duplicate code is a field problem, not a page problem — the mutation
+      // already toasted, but the message belongs under the input that caused it.
+      const data = (err as { response?: { data?: { data?: { code?: string } } } })?.response?.data;
+      if (data?.data?.code) form.setError('code', { message: t('projects.code_taken') });
+    }
+  };
 
   const roleBadgeVariant = (role: string) =>
     role === 'owner' ? 'default' : role === 'manager' ? 'secondary' : 'outline';
 
+  if (!projectLoading && !project) {
+    return (
+      <EntityPage>
+        <EntityPageHeader
+          title={t('projects.not_found')}
+          titleIcon={<FolderGit2 className="h-5 w-5 shrink-0 text-muted-foreground" />}
+        />
+      </EntityPage>
+    );
+  }
+
   return (
-    <div className="p-6 md:p-8">
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mb-4 -ml-2"
-        onClick={() => navigate('/projects')}
+    <EntityPage form={form} onValid={onSubmit}>
+      <EntityPageHeader
+        isLoading={projectLoading}
+        titleIcon={<FolderGit2 className="h-5 w-5 shrink-0 text-muted-foreground" />}
+        title={project ? projectDisplayName(project) : ''}
+        // Only a manager gets Discard/Save; only an owner may archive.
+        onDiscard={canManage ? () => reset() : undefined}
+        saveDisabled={update.isPending}
+        archive={
+          canGrantOwner && project
+            ? {
+                active: !isArchived,
+                isPending: update.isPending,
+                archiveLabel: t('projects.archive'),
+                unarchiveLabel: t('projects.restore'),
+                confirmText: t('projects.archive_confirm', {
+                  name: projectDisplayName(project),
+                }),
+                onToggle: () => update.mutateAsync({ status: isArchived ? 'active' : 'archived' }),
+              }
+            : undefined
+        }
       >
-        <ArrowLeft className="mr-1 h-4 w-4" />
-        {t('projects.back_to_list')}
-      </Button>
+        <Badge variant={isArchived ? 'secondary' : 'success'}>
+          {t(isArchived ? 'projects.status_archived' : 'projects.status_active')}
+        </Badge>
+      </EntityPageHeader>
 
-      {projectLoading ? (
-        <Skeleton className="mb-6 h-20 w-full max-w-lg" />
-      ) : project ? (
-        <div className="mb-8">
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight">{project.name}</h1>
-            <Badge variant="outline" className="font-mono text-xs">
-              {project.code}
-            </Badge>
-          </div>
-          {project.description && (
-            <p className="mt-1 text-sm text-muted-foreground">{project.description}</p>
-          )}
-        </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">{t('projects.not_found')}</p>
-      )}
+      <EntityPageBody className="space-y-8">
+        {projectLoading || !project ? (
+          <Skeleton className="h-40 w-full max-w-2xl" />
+        ) : (
+          <>
+            <BareSection title={t('projects.edit_title')}>
+              <div className="max-w-2xl">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FieldRow label={t('projects.name')}>
+                      <FormControl>
+                        <Input disabled={!canManage} {...field} />
+                      </FormControl>
+                    </FieldRow>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="code"
+                  render={({ field }) => (
+                    <FieldRow label={t('projects.code')} hint={t('projects.code_format')}>
+                      <FormControl>
+                        <Input className="font-mono" disabled={!canManage} {...field} />
+                      </FormControl>
+                    </FieldRow>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="description"
+                  render={({ field }) => (
+                    <FieldRow label={t('projects.description')}>
+                      <FormControl>
+                        <Input disabled={!canManage} {...field} />
+                      </FormControl>
+                    </FieldRow>
+                  )}
+                />
+                {/* Read-only facts sit in the same 140px grid as the editable
+                    fields — one column of labels, not a separate facts line. */}
+                <FieldRow label={t('projects.owner_label')}>
+                  <p className="pt-1.5 text-sm">
+                    {project.owner_name ?? project.owner_email ?? '—'}
+                  </p>
+                </FieldRow>
+                <FieldRow label={t('projects.col_members')}>
+                  <p className="pt-1.5 text-sm tabular-nums">{projectMemberCount(project)}</p>
+                </FieldRow>
+                <FieldRow label={t('projects.col_created')}>
+                  <p className="pt-1.5 text-sm tabular-nums">{fmtDateTime(project.create_time)}</p>
+                </FieldRow>
+              </div>
+              {!canManage && (
+                <p className="pt-2 text-xs text-muted-foreground">{t('projects.readonly_hint')}</p>
+              )}
+            </BareSection>
 
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-base">{t('projects.members_title')}</CardTitle>
-          {canManage && (
-            <Button size="sm" onClick={() => setInviteOpen(true)}>
-              <UserPlus className="mr-1 h-4 w-4" />
-              {t('projects.invite_title')}
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent>
-          {membersLoading ? (
-            <Skeleton className="h-24 w-full" />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('projects.member_name')}</TableHead>
-                  <TableHead>{t('projects.member_email')}</TableHead>
-                  <TableHead>{t('projects.member_role')}</TableHead>
-                  {canManage && <TableHead className="text-right">{t('common.actions')}</TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {members?.items.map((m) => {
-                  const isSelf = m.user_id === user?.id;
-                  // Only an owner may change/revoke an owner's role.
-                  const canEditThis = canManage && (m.role !== 'owner' || canGrantOwner);
-                  return (
-                    <TableRow key={m.id}>
-                      <TableCell>{m.name ?? '—'}</TableCell>
-                      <TableCell className="text-muted-foreground">{m.email ?? '—'}</TableCell>
-                      <TableCell>
-                        {canEditThis && !isSelf ? (
-                          <Select
-                            value={m.role}
-                            onValueChange={(role) => updateRole.mutate({ userId: m.user_id, role })}
-                          >
-                            <SelectTrigger className="h-8 w-32">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="member">{t('projects.role_member')}</SelectItem>
-                              <SelectItem value="manager">{t('projects.role_manager')}</SelectItem>
-                              {canGrantOwner && (
-                                <SelectItem value="owner">{t('projects.role_owner')}</SelectItem>
-                              )}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Badge variant={roleBadgeVariant(m.role)}>
-                            {t(`projects.role_${m.role}`)}
-                          </Badge>
-                        )}
-                      </TableCell>
+            <BareSection
+              title={t('projects.members_title')}
+              action={
+                canManage && (
+                  <Button size="sm" onClick={() => setInviteOpen(true)}>
+                    <UserPlus className="h-4 w-4" />
+                    {t('projects.invite_title')}
+                  </Button>
+                )
+              }
+            >
+              {membersLoading ? (
+                <Skeleton className="h-24 w-full" />
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('projects.member_name')}</TableHead>
+                      <TableHead>{t('projects.member_email')}</TableHead>
+                      <TableHead>{t('projects.member_role')}</TableHead>
                       {canManage && (
-                        <TableCell className="text-right">
-                          {canEditThis && !isSelf && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8 text-destructive"
-                              onClick={() => setToRemove(m)}
-                              aria-label={t('common.remove')}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </TableCell>
+                        <TableHead className="text-right">{t('common.actions')}</TableHead>
                       )}
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {members?.items.map((m) => {
+                      const isSelf = m.user_id === user?.id;
+                      // Only an owner may change/revoke an owner's role.
+                      const canEditThis = canManage && (m.role !== 'owner' || canGrantOwner);
+                      return (
+                        <TableRow key={m.id}>
+                          <TableCell>{m.name ?? '—'}</TableCell>
+                          <TableCell className="text-muted-foreground">{m.email ?? '—'}</TableCell>
+                          <TableCell>
+                            {canEditThis && !isSelf ? (
+                              <Select
+                                value={m.role}
+                                onValueChange={(role) =>
+                                  updateRole.mutate({ userId: m.user_id, role })
+                                }
+                              >
+                                <SelectTrigger className="w-32">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="member">
+                                    {t('projects.role_member')}
+                                  </SelectItem>
+                                  <SelectItem value="manager">
+                                    {t('projects.role_manager')}
+                                  </SelectItem>
+                                  {canGrantOwner && (
+                                    <SelectItem value="owner">
+                                      {t('projects.role_owner')}
+                                    </SelectItem>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Badge variant={roleBadgeVariant(m.role)}>
+                                {t(`projects.role_${m.role}`)}
+                              </Badge>
+                            )}
+                          </TableCell>
+                          {canManage && (
+                            <TableCell className="text-right">
+                              {canEditThis && !isSelf && (
+                                <Button
+                                  size="icon-sm"
+                                  variant="ghost-destructive"
+                                  onClick={() => setToRemove(m)}
+                                  aria-label={t('common.remove')}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </BareSection>
+          </>
+        )}
+      </EntityPageBody>
 
       <InviteMemberDialog
         projectId={id}
@@ -191,6 +328,6 @@ export function ProjectDetailPage() {
           setToRemove(null);
         }}
       />
-    </div>
+    </EntityPage>
   );
 }

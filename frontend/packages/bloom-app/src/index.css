@@ -47,6 +47,20 @@
   --color-chart-5: var(--chart-5);
   --color-debug: var(--debug);
 
+  /* Status colors. Bridged so `bg-success/15`, `text-warning`, `text-gain`
+     compile as real utilities — without this every consumer has to write
+     `bg-[var(--warning)]/15` by hand, which is what the codebase used to do.
+     Bridged as var(), NOT hsl(var()): kactus stores complete oklch values,
+     not the raw HSL triplets shadcn's upstream tokens use. */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-gain: var(--gain);
+  --color-loss: var(--loss);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -95,6 +109,14 @@
   --gain: oklch(0.7 0.18 150);
   --loss: oklch(0.6 0.2 25);
   --warning: oklch(0.75 0.15 70);
+  --warning-foreground: oklch(0.145 0 0);
+  /* One green in the app: status "success" IS the gain green. A separate
+     success hue would put two greens on the same screen (a success Badge next
+     to a gain figure) with no way to tell why they differ. */
+  --success: var(--gain);
+  --success-foreground: oklch(0.145 0 0);
+  --info: oklch(0.65 0.18 252);
+  --info-foreground: oklch(0.985 0 0);
 
   /* Debug marker */
   --debug: oklch(0.75 0.15 70);
@@ -136,6 +158,11 @@
   --gain: oklch(0.55 0.2 150);
   --loss: oklch(0.55 0.2 25);
   --warning: oklch(0.65 0.15 70);
+  --warning-foreground: oklch(0.985 0 0);
+  --success: var(--gain);
+  --success-foreground: oklch(0.985 0 0);
+  --info: oklch(0.55 0.2 252);
+  --info-foreground: oklch(0.985 0 0);
   --debug: oklch(0.68 0.16 70);
 }
 
@@ -482,22 +509,9 @@ body,
   background: var(--muted-foreground);
 }
 
-/* ── Utility classes ───────────────────────────────────────────────────── */
-.bg-debug {
-  background-color: var(--debug);
-}
-.text-debug {
-  color: var(--debug);
-}
-.text-gain {
-  color: var(--gain);
-}
-.text-loss {
-  color: var(--loss);
-}
-.bg-gain {
-  background-color: var(--gain);
-}
-.bg-loss {
-  background-color: var(--loss);
-}
+/* `bg-debug` / `text-debug` / `text-gain` / `bg-loss` … are NOT declared here.
+   They come from the @theme bridges above, so they are real Tailwind utilities
+   that compose with opacity and variants. Hand-writing them as plain rules —
+   which this file used to do — put them outside @layer utilities, where they
+   beat every layered rule regardless of source order: `hover:text-debug/80`
+   silently never applied. */

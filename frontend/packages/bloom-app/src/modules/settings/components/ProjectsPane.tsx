@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Badge } from '@/components/ui/badge';
 import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
 import { useAdminProjects } from '@/hooks/useAdminQuery';
+import { projectDisplayName, projectMemberCount } from '@/lib/project';
 import type { Project } from '@/types/project';
 
 /** Read-only list of every project in the system (superuser only). */
@@ -10,11 +11,34 @@ export function ProjectsPane() {
   const { data, isLoading } = useAdminProjects();
 
   const columns: DataTableColumn<Project>[] = [
-    { key: 'name', title: t('admin.projects.name'), className: 'font-medium' },
+    {
+      key: 'name',
+      title: t('admin.projects.name'),
+      className: 'font-medium',
+      sortable: true,
+      render: projectDisplayName,
+    },
     {
       key: 'code',
       title: t('admin.projects.code'),
       render: (p) => <code className="font-mono text-xs text-muted-foreground">{p.code}</code>,
+    },
+    {
+      key: 'owner_name',
+      title: t('admin.projects.owner'),
+      sortable: true,
+      render: (p) => (
+        <span className="text-muted-foreground">{p.owner_name ?? p.owner_email ?? '—'}</span>
+      ),
+    },
+    {
+      key: 'member_count',
+      title: t('admin.projects.members'),
+      align: 'right',
+      className: 'tabular-nums',
+      sortable: true,
+      sortAccessor: projectMemberCount,
+      render: projectMemberCount,
     },
     {
       key: 'description',

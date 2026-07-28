@@ -4,11 +4,75 @@ from __future__ import annotations
 
 import time
 
-from kactus_common.exceptions import ConflictError, NotFoundError
+from kactus_common.exceptions import ConflictError, NotFoundError, ValidationError
+from kactus_common.user.model import User
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .const import PERSONAL_PROJECT_NAME, DefaultRole
+from .const import (
+    PERSONAL_PROJECT_NAME,
+    PROJECT_CODE_MAX_LENGTH,
+    PROJECT_CODE_PATTERN,
+    DefaultRole,
+    ProjectStatus,
+)
 from .model import Project, ProjectMember
+from .schema import ProjectSchema
+
+_VALID_STATUSES = {s.value for s in ProjectStatus}
+
+
+def _validate_code(code: str) -> None:
+    """Reject a ``code`` the column or the slug rule cannot hold.
+
+    Raised from the service rather than declared as a Pydantic constraint on the
+    request schema: no ``RequestValidationError`` handler is installed, so a
+    constraint failure would return FastAPI's default 422 body, which carries no
+    ``message`` field — and that is exactly what the frontend reads to show the
+    user why their input was refused.
+    """
+    if not code:
+        raise ValidationError("Project code is required", data={"code": code})
+    if len(code) > PROJECT_CODE_MAX_LENGTH:
+        raise ValidationError(
+            f"Project code must be at most {PROJECT_CODE_MAX_LENGTH} characters",
+            data={"code": code, "max_length": PROJECT_CODE_MAX_LENGTH},
+        )
+    if not PROJECT_CODE_PATTERN.match(code):
+        raise ValidationError(
+            "Project code may contain only lowercase letters, numbers and hyphens",
+            data={"code": code},
+        )
+
+
+async def _assert_code_available(
+    session: AsyncSession, code: str, *, exclude_id: int | None = None
+) -> None:
+    """Raise :class:`ConflictError` if any project already holds ``code``.
+
+    ``skip_deleted_filter`` is the point of this function. ``Project.first()``
+    goes through the global soft-delete filter, so a code held by a deleted
+    project reads as free — while ``ix_projects_code`` is a *plain* unique index
+    with no partial predicate and still reserves it. Without this the write
+    reaches the database and dies as an unhandled ``IntegrityError`` (a 500)
+    instead of a conflict the caller can act on.
+
+    Hence "already in use" and not "already exists": the holder may be a project
+    the user cannot see, so pointing them at it would be a lie.
+    """
+    stmt = (
+        select(Project.id)
+        .where(Project.code == code)
+        .execution_options(skip_deleted_filter=True)
+    )
+    if exclude_id is not None:
+        stmt = stmt.where(Project.id != exclude_id)
+    existing = await session.scalar(stmt.limit(1))
+    if existing is not None:
+        raise ConflictError(
+            f"Project code '{code}' is already in use", data={"code": code}
+        )
 
 
 class ProjectService:
@@ -28,12 +92,8 @@ class ProjectService:
         creator_id: int,
     ) -> Project:
         """Create a new project and assign the creator as owner."""
-        existing = await Project.first(session, code=code)
-        if existing:
-            raise ConflictError(
-                f"Project with code '{code}' already exists",
-                data={"code": code},
-            )
+        _validate_code(code)
+        await _assert_code_available(session, code)
 
         project = Project.init(
             name=name,
@@ -42,16 +102,27 @@ class ProjectService:
             created_by=creator_id,
         )
         session.add(project)
-        await session.flush()
 
-        # Auto-assign creator as owner
-        member = ProjectMember.init(
-            project_id=project.id,
-            user_id=creator_id,
-            role=DefaultRole.OWNER,
-        )
-        session.add(member)
-        await session.commit()
+        try:
+            await session.flush()
+
+            # Auto-assign creator as owner
+            member = ProjectMember.init(
+                project_id=project.id,
+                user_id=creator_id,
+                role=DefaultRole.OWNER,
+            )
+            session.add(member)
+            await session.commit()
+        except IntegrityError as exc:
+            # The check above lost a race with a concurrent create. Roll back
+            # first — an errored session refuses every later statement with a
+            # confusing PendingRollbackError — then report the real conflict.
+            await session.rollback()
+            raise ConflictError(
+                f"Project code '{code}' is already in use", data={"code": code}
+            ) from exc
+
         await session.refresh(project)
         return project
 
@@ -96,15 +167,25 @@ class ProjectService:
         name: str | None = None,
         code: str | None = None,
         description: str | None = None,
+        status: str | None = None,
     ) -> Project:
-        """Update project fields."""
-        if code and code != project.code:
-            existing = await Project.first(session, code=code)
-            if existing:
-                raise ConflictError(
-                    f"Project with code '{code}' already exists",
-                    data={"code": code},
-                )
+        """Update project fields.
+
+        ``status`` archives or restores the project — it is the only writer of
+        :class:`ProjectStatus`, and the list UI hides non-active projects by
+        default.
+        """
+        # Re-submitting the unchanged code is a no-op, not a self-conflict — the
+        # form posts every field, so most saves land here.
+        if code is not None and code != project.code:
+            _validate_code(code)
+            await _assert_code_available(session, code, exclude_id=project.id)
+
+        if status is not None and status not in _VALID_STATUSES:
+            raise ValidationError(
+                f"Invalid project status '{status}'",
+                data={"valid": sorted(_VALID_STATUSES)},
+            )
 
         if name is not None:
             project.name = name
@@ -112,8 +193,17 @@ class ProjectService:
             project.code = code
         if description is not None:
             project.description = description
+        if status is not None:
+            project.status = status
 
-        await project.save(session)
+        try:
+            await project.save(session)
+        except IntegrityError as exc:
+            await session.rollback()
+            raise ConflictError(
+                f"Project code '{project.code}' is already in use",
+                data={"code": project.code},
+            ) from exc
         return project
 
     @staticmethod
@@ -134,8 +224,6 @@ class ProjectService:
     @staticmethod
     async def get_user_projects(session: AsyncSession, user_id: int) -> list[Project]:
         """Get all projects a user is a member of."""
-        from sqlalchemy import select
-
         stmt = (
             select(Project)
             .join(
@@ -146,6 +234,103 @@ class ProjectService:
         )
         result = await session.scalars(stmt)
         return list(result.all())
+
+    # -------------------------------------------------------------------
+    # Read-model assembly
+    # -------------------------------------------------------------------
+
+    @staticmethod
+    async def build_schemas(
+        session: AsyncSession,
+        projects: list[Project],
+        *,
+        viewer_id: int | None,
+    ) -> list[ProjectSchema]:
+        """Serialise projects with their owner, member count and viewer's role.
+
+        Three queries total regardless of how many projects are passed —
+        deliberately *not* the per-row ``UserService.get_by_id`` loop used by the
+        members endpoint, which would be an N+1 on the main project list.
+
+        ``viewer_id=None`` (admin listing) leaves ``my_role`` unset: "my role" is
+        meaningless for an operator listing projects they are not a member of.
+        """
+        if not projects:
+            return []
+
+        project_ids = [p.id for p in projects]
+
+        # 1. member counts, grouped
+        count_rows = await session.execute(
+            select(ProjectMember.project_id, func.count())
+            .where(ProjectMember.project_id.in_(project_ids))
+            .group_by(ProjectMember.project_id)
+        )
+        counts: dict[int, int] = dict(count_rows.all())  # type: ignore[arg-type]
+
+        # 2. every membership we care about: the OWNER rows (for the owner
+        #    column) and the viewer's own rows (for my_role). One query, because
+        #    both are ProjectMember rows over the same project set.
+        member_rows = await session.scalars(
+            select(ProjectMember).where(
+                ProjectMember.project_id.in_(project_ids),
+                (ProjectMember.role == DefaultRole.OWNER.value)
+                | (ProjectMember.user_id == (viewer_id or 0)),
+            )
+        )
+        owner_of: dict[int, int] = {}
+        my_role_of: dict[int, str] = {}
+        for m in member_rows.all():
+            if m.role == DefaultRole.OWNER.value:
+                owner_of.setdefault(m.project_id, m.user_id)
+            if viewer_id is not None and m.user_id == viewer_id:
+                my_role_of[m.project_id] = m.role
+
+        # A project with no OWNER row (legacy/imported data) still has a creator.
+        for p in projects:
+            if p.id not in owner_of and p.created_by is not None:
+                owner_of[p.id] = p.created_by
+
+        # 3. resolve those owner ids to a name/email
+        users_by_id: dict[int, User] = {}
+        if owner_of:
+            user_rows = await session.scalars(
+                select(User).where(User.id.in_(set(owner_of.values())))
+            )
+            users_by_id = {u.id: u for u in user_rows.all()}
+
+        items: list[ProjectSchema] = []
+        for p in projects:
+            owner = users_by_id.get(owner_of.get(p.id, 0))
+            items.append(
+                ProjectSchema(
+                    id=p.id,
+                    name=p.name,
+                    code=p.code,
+                    description=p.description,
+                    status=p.status,
+                    created_by=p.created_by,
+                    create_time=p.create_time,
+                    owner_name=owner.name if owner else None,
+                    owner_email=owner.email if owner else None,
+                    member_count=counts.get(p.id, 0),
+                    my_role=my_role_of.get(p.id),
+                )
+            )
+        return items
+
+    @staticmethod
+    async def build_schema(
+        session: AsyncSession,
+        project: Project,
+        *,
+        viewer_id: int | None,
+    ) -> ProjectSchema:
+        """Single-project counterpart of :meth:`build_schemas`."""
+        items = await ProjectService.build_schemas(
+            session, [project], viewer_id=viewer_id
+        )
+        return items[0]
 
     # -------------------------------------------------------------------
     # Member management

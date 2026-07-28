@@ -19,7 +19,7 @@ const JobActions: FC = () => {
       <Tooltip>
         <TooltipTrigger asChild>
           <span tabIndex={0} className="inline-flex">
-            <Button size="sm" variant="ghost" className="h-7 gap-1.5" disabled>
+            <Button size="sm" variant="ghost" disabled>
               <Play className="h-3.5 w-3.5" />
               {t('scheduler.jobs.run')}
             </Button>
@@ -30,7 +30,7 @@ const JobActions: FC = () => {
       <Tooltip>
         <TooltipTrigger asChild>
           <span tabIndex={0} className="inline-flex">
-            <Button size="sm" variant="ghost" className="h-7 gap-1.5" disabled>
+            <Button size="sm" variant="ghost" disabled>
               <Ban className="h-3.5 w-3.5" />
               {t('scheduler.jobs.cancel')}
             </Button>

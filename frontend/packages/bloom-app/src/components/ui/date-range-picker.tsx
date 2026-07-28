@@ -243,7 +243,7 @@ export const DateRangeCalendar: FC<DateRangeCalendarProps> = ({
             min={minDate || undefined}
             max={value.to || undefined}
             onChange={(e) => onChange({ ...value, from: e.target.value })}
-            className="h-8 w-auto px-2 text-xs"
+            className="w-auto px-2 text-xs"
           />
           <span className="shrink-0 text-xs text-muted-foreground">–</span>
           <Input
@@ -251,7 +251,7 @@ export const DateRangeCalendar: FC<DateRangeCalendarProps> = ({
             value={value.to}
             min={value.from || minDate || undefined}
             onChange={(e) => onChange({ ...value, to: e.target.value })}
-            className="h-8 w-auto px-2 text-xs"
+            className="w-auto px-2 text-xs"
           />
         </div>
       </div>

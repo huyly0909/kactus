@@ -77,7 +77,9 @@ export function LoginPage() {
               </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {/* lg + h-10: the one full-width CTA on the app's only unauthenticated
+                page — it should not read as a compact toolbar action. */}
+            <Button type="submit" size="lg" className="h-10 w-full" disabled={isSubmitting}>
               {isSubmitting && <Loader2 className="animate-spin" />}
               {t('auth.login')}
             </Button>

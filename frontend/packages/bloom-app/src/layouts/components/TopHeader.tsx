@@ -155,7 +155,9 @@ export function TopHeader() {
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="icon" className="cursor-pointer">
+            {/* icon-lg, not icon: Avatar is size-8 and would exactly fill an
+                icon button, leaving no inset for the hover ring. */}
+            <Button variant="ghost" size="icon-lg">
               <Avatar>
                 <AvatarFallback>
                   {user?.name ? user.name.charAt(0).toUpperCase() : <User size={14} />}

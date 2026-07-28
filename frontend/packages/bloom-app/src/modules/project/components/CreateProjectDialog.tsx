@@ -1,6 +1,5 @@
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,6 +19,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { useCreateProject } from '@/hooks/useProjectQuery';
+import { projectFormSchema, type ProjectFormValues } from '@/lib/project';
 
 interface Props {
   open: boolean;
@@ -31,19 +31,8 @@ export function CreateProjectDialog({ open, onOpenChange }: Props) {
   const { t } = useTranslation();
   const create = useCreateProject();
 
-  const schema = z.object({
-    name: z.string().trim().min(1, t('errors.required')),
-    code: z
-      .string()
-      .trim()
-      .min(1, t('errors.required'))
-      .regex(/^[a-z0-9-]+$/, t('projects.code_format')),
-    description: z.string().trim().optional(),
-  });
-  type FormValues = z.infer<typeof schema>;
-
-  const form = useForm<FormValues>({
-    resolver: zodResolver(schema),
+  const form = useForm<ProjectFormValues>({
+    resolver: zodResolver(projectFormSchema(t)),
     defaultValues: { name: '', code: '', description: '' },
   });
 
@@ -52,7 +41,7 @@ export function CreateProjectDialog({ open, onOpenChange }: Props) {
     onOpenChange(o);
   };
 
-  const onSubmit = async (values: FormValues) => {
+  const onSubmit = async (values: ProjectFormValues) => {
     await create.mutateAsync({
       name: values.name,
       code: values.code,

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { projectService, type AddMemberPayload } from '@/services/projectService';
+import type { ProjectStatus } from '@/types/project';
 
 /** Query key factory — the single source of cache keys for the feature. */
 export const projectKeys = {
@@ -54,8 +55,12 @@ export function useUpdateProject(projectId: string) {
   const qc = useQueryClient();
   const { t } = useTranslation();
   return useMutation({
-    mutationFn: (body: { name?: string; code?: string; description?: string }) =>
-      projectService.updateProject(projectId, body),
+    mutationFn: (body: {
+      name?: string;
+      code?: string;
+      description?: string;
+      status?: ProjectStatus;
+    }) => projectService.updateProject(projectId, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: projectKeys.all });
       toast.success(t('common.update_success'));

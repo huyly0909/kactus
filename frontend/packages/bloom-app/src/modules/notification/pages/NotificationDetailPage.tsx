@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Send, FlaskConical, Trash2, Save, Users, Pencil, Zap } from 'lucide-react';
+import { Send, FlaskConical, Trash2, Save, Users, Pencil, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -75,14 +75,9 @@ export function NotificationDetailPage() {
 
   return (
     <div className="p-6 md:p-8">
-      <button
-        onClick={() => navigate('/notifications')}
-        className="mb-4 flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-4 w-4" />
-        {t('common.back')}
-      </button>
-
+      {/* No in-page back button — TopHeader renders the app's one back arrow
+          and the breadcrumb names the parent. Two arrows 56px apart is worse
+          than either alone. */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-bold tracking-tight">{channel.name}</h1>

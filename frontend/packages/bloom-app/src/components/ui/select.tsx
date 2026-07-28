@@ -13,8 +13,17 @@ const SelectTrigger = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
+    // type="button" is not optional: Radix does not set it, and a <button>
+    // defaults to type="submit". Inside an entity-page form (which wraps the
+    // whole page, tables included) merely opening a Select would submit it.
+    type="button"
     className={cn(
-      'flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1',
+      'flex h-8 w-full cursor-pointer items-center justify-between gap-2 whitespace-nowrap rounded-md border border-input bg-transparent px-2.5 py-1 text-base outline-none transition-all duration-150 md:text-sm',
+      'placeholder:text-muted-foreground data-[placeholder]:text-muted-foreground',
+      'focus-visible:border-ring focus-visible:ring-1 focus-visible:ring-ring/30',
+      'aria-invalid:border-destructive aria-invalid:ring-1 aria-invalid:ring-destructive/20',
+      'disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
+      'pointer-coarse:h-10 [&>span]:line-clamp-1',
       className,
     )}
     {...props}
