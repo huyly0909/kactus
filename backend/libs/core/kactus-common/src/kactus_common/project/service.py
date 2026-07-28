@@ -138,8 +138,25 @@ class ProjectService:
         if user.is_superuser:
             return None
         code = f"user-{user.id}"
-        existing = await Project.first(session, code=code)
+        # ``skip_deleted_filter`` for the same reason as ``_assert_code_available``,
+        # and it has to match it: a *soft-deleted* personal project still holds
+        # the code in the plain unique index, so without this the lookup reads
+        # "free", falls through to ``create``, and dies on the conflict check —
+        # leaving the user permanently unable to get their project back.
+        existing = await session.scalar(
+            select(Project)
+            .where(Project.code == code)
+            .execution_options(skip_deleted_filter=True)
+            .limit(1)
+        )
         if existing:
+            if existing.is_deleted:
+                # "Ensure" has to mean the user ends up *with* a project. The
+                # backfill moves their portfolios/channels into whatever this
+                # returns, so handing back a deleted row would quietly park
+                # their data somewhere invisible.
+                existing.deleted_timestamp = 0
+                await existing.save(session)
             return existing
         return await ProjectService.create(
             session,
@@ -286,7 +303,14 @@ class ProjectService:
             if viewer_id is not None and m.user_id == viewer_id:
                 my_role_of[m.project_id] = m.role
 
-        # A project with no OWNER row (legacy/imported data) still has a creator.
+        # Everything resolved so far is a *real* owner. Remember that before the
+        # fallback below blurs the two — ``has_owner`` is the only thing telling
+        # the UI apart an owned project from a repaired-looking one.
+        owned_ids = set(owner_of)
+
+        # A project with no OWNER row (legacy/imported data, or a membership
+        # deleted out of band — the schema has no foreign keys) still has a
+        # creator worth naming. It is shown, but never *as* the owner.
         for p in projects:
             if p.id not in owner_of and p.created_by is not None:
                 owner_of[p.id] = p.created_by
@@ -301,7 +325,8 @@ class ProjectService:
 
         items: list[ProjectSchema] = []
         for p in projects:
-            owner = users_by_id.get(owner_of.get(p.id, 0))
+            owner_id = owner_of.get(p.id)
+            owner = users_by_id.get(owner_id) if owner_id is not None else None
             items.append(
                 ProjectSchema(
                     id=p.id,
@@ -311,8 +336,10 @@ class ProjectService:
                     status=p.status,
                     created_by=p.created_by,
                     create_time=p.create_time,
+                    owner_id=owner_id,
                     owner_name=owner.name if owner else None,
                     owner_email=owner.email if owner else None,
+                    has_owner=p.id in owned_ids,
                     member_count=counts.get(p.id, 0),
                     my_role=my_role_of.get(p.id),
                 )
@@ -371,6 +398,80 @@ class ProjectService:
             session, project_id=project_id, role=DefaultRole.OWNER
         )
         return len(owners)
+
+    # -------------------------------------------------------------------
+    # Ownership
+    #
+    # A project must always have at least one OWNER member — that row *is* the
+    # ownership record, there is no ``projects.owner_id`` column. ``create``
+    # writes it in the same transaction as the project, and ``remove_member`` /
+    # ``update_member_role`` refuse to drop or demote the last one, so the only
+    # remaining way to lose it is an out-of-band row deletion (the schema has no
+    # foreign keys). The helpers below detect that state, repair it, and stop
+    # user deactivation from causing it.
+    # -------------------------------------------------------------------
+
+    @staticmethod
+    async def owner_ids(session: AsyncSession, project_id: int) -> list[int]:
+        """User ids holding OWNER here. Empty means the project is unassigned."""
+        stmt = select(ProjectMember.user_id).where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.role == DefaultRole.OWNER.value,
+        )
+        return list((await session.scalars(stmt)).all())
+
+    @staticmethod
+    async def sole_owner_project_ids(session: AsyncSession, user_id: int) -> list[int]:
+        """Live projects where ``user_id`` is the **only** owner.
+
+        One grouped query rather than a ``count_owners`` loop, because the caller
+        (user deactivation) has no project in hand to loop over. The join to
+        ``Project`` is what applies the global soft-delete filter — an archived
+        or deleted project must not block deactivating its owner.
+        """
+        mine = select(ProjectMember.project_id).where(
+            ProjectMember.user_id == user_id,
+            ProjectMember.role == DefaultRole.OWNER.value,
+        )
+        stmt = (
+            select(ProjectMember.project_id)
+            .join(Project, Project.id == ProjectMember.project_id)
+            .where(
+                ProjectMember.role == DefaultRole.OWNER.value,
+                ProjectMember.project_id.in_(mine),
+            )
+            .group_by(ProjectMember.project_id)
+            .having(func.count() == 1)
+        )
+        return list((await session.scalars(stmt)).all())
+
+    @staticmethod
+    async def assign_owner(
+        session: AsyncSession, *, project_id: int, user_id: int
+    ) -> ProjectMember:
+        """Make ``user_id`` an OWNER, adding the membership when absent.
+
+        The repair path for a project with **zero** members:
+        ``update_member_role`` cannot help there because there is nobody to
+        promote. Idempotent, and deliberately additive — it never demotes the
+        sitting owner, since co-owners are legal and handing ownership over is
+        "promote B, then demote A" (safe in that order thanks to the last-owner
+        guard on :meth:`update_member_role`).
+        """
+        member = await ProjectMember.first(
+            session, project_id=project_id, user_id=user_id
+        )
+        if member is None:
+            return await ProjectService.add_member(
+                session,
+                project_id=project_id,
+                user_id=user_id,
+                role=DefaultRole.OWNER,
+            )
+        if member.role != DefaultRole.OWNER.value:
+            member.role = DefaultRole.OWNER.value
+            await member.save(session)
+        return member
 
     @staticmethod
     async def remove_member(

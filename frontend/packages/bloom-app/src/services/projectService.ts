@@ -94,6 +94,19 @@ export const projectService = {
     return data.data;
   },
 
+  /**
+   * Give an existing user OWNER, adding them to the project if they are not a
+   * member yet. Unlike `addMember({role:'owner'})` this works on a project with
+   * **no** members — the repair path for one whose OWNER row was lost.
+   */
+  assignOwner: async (projectId: string, email: string) => {
+    const { data } = await apiClient.post<ApiResponse<ProjectMemberDetail>>(
+      `/api/projects/${projectId}/owner`,
+      { email },
+    );
+    return data.data;
+  },
+
   /** Change a member's role. */
   updateMemberRole: async (projectId: string, userId: string, role: string) => {
     const { data } = await apiClient.patch<ApiResponse<ProjectMemberDetail>>(

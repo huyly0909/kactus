@@ -27,7 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useAddMember } from '@/hooks/useProjectQuery';
+import { useAddMember, useAssignOwner } from '@/hooks/useProjectQuery';
 
 interface Props {
   projectId: string;
@@ -35,17 +35,33 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   /** Only an OWNER may grant the OWNER role (backend also enforces this). */
   canGrantOwner: boolean;
+  /**
+   * `assign-owner` repairs a project that has lost its owner: the role picker
+   * disappears and the submit goes to `POST /owner` instead of `POST /members`.
+   * That is not cosmetic — `addMember` 409s on someone who is already a member,
+   * and the project may have no members at all to pick from.
+   */
+  mode?: 'invite' | 'assign-owner';
 }
 
 /**
- * Invite an existing user by exact email + role.
+ * Invite an existing user by exact email + role, or (in `assign-owner` mode)
+ * hand a project its owner back.
  *
  * There is deliberately no email search/autocomplete — the backend exposes no
  * endpoint to enumerate the user directory, so the inviter must know the address.
  */
-export function InviteMemberDialog({ projectId, open, onOpenChange, canGrantOwner }: Props) {
+export function InviteMemberDialog({
+  projectId,
+  open,
+  onOpenChange,
+  canGrantOwner,
+  mode = 'invite',
+}: Props) {
   const { t } = useTranslation();
   const add = useAddMember(projectId);
+  const assignOwner = useAssignOwner(projectId);
+  const isAssign = mode === 'assign-owner';
 
   const schema = z.object({
     email: z.string().trim().min(1, t('errors.required')).email(t('errors.invalid_email')),
@@ -64,7 +80,11 @@ export function InviteMemberDialog({ projectId, open, onOpenChange, canGrantOwne
   };
 
   const onSubmit = async (values: FormValues) => {
-    await add.mutateAsync({ email: values.email, role: values.role });
+    if (isAssign) {
+      await assignOwner.mutateAsync(values.email);
+    } else {
+      await add.mutateAsync({ email: values.email, role: values.role });
+    }
     form.reset();
     onOpenChange(false);
   };
@@ -73,8 +93,12 @@ export function InviteMemberDialog({ projectId, open, onOpenChange, canGrantOwne
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t('projects.invite_title')}</DialogTitle>
-          <DialogDescription>{t('projects.invite_hint')}</DialogDescription>
+          <DialogTitle>
+            {isAssign ? t('projects.assign_owner') : t('projects.invite_title')}
+          </DialogTitle>
+          <DialogDescription>
+            {isAssign ? t('projects.assign_owner_hint') : t('projects.invite_hint')}
+          </DialogDescription>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
@@ -91,11 +115,12 @@ export function InviteMemberDialog({ projectId, open, onOpenChange, canGrantOwne
                 </FormItem>
               )}
             />
+            {/* No role picker when assigning an owner — the role *is* the point. */}
             <FormField
               control={form.control}
               name="role"
               render={({ field }) => (
-                <FormItem>
+                <FormItem className={isAssign ? 'hidden' : undefined}>
                   <FormLabel>{t('projects.member_role')}</FormLabel>
                   <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl>
@@ -119,8 +144,8 @@ export function InviteMemberDialog({ projectId, open, onOpenChange, canGrantOwne
               <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
                 {t('common.cancel')}
               </Button>
-              <Button type="submit" disabled={add.isPending}>
-                {t('projects.invite_submit')}
+              <Button type="submit" disabled={add.isPending || assignOwner.isPending}>
+                {isAssign ? t('projects.assign_owner_submit') : t('projects.invite_submit')}
               </Button>
             </DialogFooter>
           </form>

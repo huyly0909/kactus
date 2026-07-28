@@ -22,8 +22,14 @@ class ProjectSchema(BaseSchema):
     status: str
     created_by: FancyInt | None = None
     create_time: AwareUTCDatetime | None = None
+    owner_id: FancyInt | None = None
     owner_name: str | None = None
     owner_email: str | None = None
+    #: True only when a real OWNER membership backs the fields above. When it is
+    #: False they may still be populated — from ``created_by``, who *created* the
+    #: project but may hold no role in it at all. Branch on this flag, never on
+    #: ``owner_name is not None``, or an unassigned project reads as owned.
+    has_owner: bool = False
     member_count: FancyInt = 0
     my_role: str | None = None
 
@@ -67,6 +73,16 @@ class AddMemberRequest(BaseSchema):
 
     email: str
     role: str = "member"
+
+
+class AssignOwnerRequest(BaseSchema):
+    """Give an existing user OWNER on a project, by exact email.
+
+    Exact email only, like :class:`AddMemberRequest` — there is deliberately no
+    endpoint that searches the user directory.
+    """
+
+    email: str
 
 
 class UpdateMemberRoleRequest(BaseSchema):

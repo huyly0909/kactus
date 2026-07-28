@@ -14,6 +14,7 @@ from kactus_common.exceptions import (
 from kactus_common.project.const import DefaultRole, ProjectPermission
 from kactus_common.project.schema import (
     AddMemberRequest,
+    AssignOwnerRequest,
     ProjectCreateRequest,
     ProjectMemberDetailSchema,
     ProjectSchema,
@@ -233,6 +234,49 @@ async def add_member(
         project_id,
         meta={"user_id": user.id, "role": role},
     )
+    return ProjectMemberDetailSchema(
+        id=member.id,
+        project_id=member.project_id,
+        user_id=member.user_id,
+        role=member.role,
+        email=user.email,
+        name=user.name,
+    )
+
+
+@router.post("/{project_id}/owner")
+@provide_session
+async def assign_project_owner(
+    project_id: int,
+    body: AssignOwnerRequest,
+    request: Request,
+    session: AsyncSession,
+) -> ProjectMemberDetailSchema:
+    """Give an existing user OWNER on this project, adding them if needed.
+
+    Distinct from ``POST /members`` with ``role=owner``, which fails once the
+    user is already a member: this is the repair path for a project whose OWNER
+    row was lost, where the user may or may not still be a member and there may
+    be **no** members at all to promote. Additive — the sitting owner keeps the
+    role, so handing ownership over stays "assign B, then demote A".
+
+    Only an OWNER may grant OWNER, exactly as in ``update_member_role``. A
+    superuser passes because ``_actor_role`` reports them as OWNER, which is
+    what makes an ownerless project repairable from the UI at all.
+    """
+    actor = await _require(session, request, project_id, PermissionAct.write)
+    if actor != DefaultRole.OWNER.value:
+        raise PermissionDeniedError("Only an owner can grant the owner role")
+
+    user = await UserService.get_by_email(session, body.email.strip())
+    if user is None:
+        # Generic message — do not confirm whether the email exists.
+        raise NotFoundError("No registered user with that email")
+
+    member = await ProjectService.assign_owner(
+        session, project_id=project_id, user_id=user.id
+    )
+    audit("project.owner.assign", "project", project_id, meta={"user_id": user.id})
     return ProjectMemberDetailSchema(
         id=member.id,
         project_id=member.project_id,

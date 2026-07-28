@@ -479,6 +479,242 @@ async def test_last_owner_cannot_be_removed(app, db):
 
 
 # --------------------------------------------------------------------------- #
+# Ownership is an invariant
+#
+# The owner *is* a ``ProjectMember`` row with ``role='owner'`` — there is no
+# ``projects.owner_id`` column and the schema carries no foreign keys, so these
+# tests reach past the API to delete rows directly. That is the only way to
+# reproduce the state: no product code path can produce an ownerless project.
+# --------------------------------------------------------------------------- #
+async def _strip_owner(db, project_id: int) -> None:
+    """Delete the OWNER membership out of band, as a bad cleanup script would."""
+    from kactus_common.project.model import ProjectMember
+
+    async with db.get_session() as session:
+        for m in await ProjectMember.all(
+            session, project_id=project_id, role=DefaultRole.OWNER
+        ):
+            await m.delete(session)
+
+
+@pytest.mark.asyncio
+async def test_create_leaves_exactly_one_owner(app, db):
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    created = await oc.post("/api/projects", json={"name": "Team", "code": "team-x"})
+    await oc.aclose()
+
+    assert created.status_code == 200
+    body = created.json()["data"]
+    assert body["has_owner"] is True
+    assert int(body["owner_id"]) == owner.id
+
+    async with db.get_session() as session:
+        assert await ProjectService.owner_ids(session, int(body["id"])) == [owner.id]
+
+
+@pytest.mark.asyncio
+async def test_ownerless_project_is_reported_not_masked(app, db):
+    """``created_by`` still names someone — but never *as* the owner."""
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    await _strip_owner(db, owner._project_id)
+
+    await _make_user(db, "admin@kactus.io", "Admin", is_superuser=True)
+    ac = await _client(app, "admin@kactus.io")
+    resp = await ac.get(f"/api/projects/{owner._project_id}")
+    await ac.aclose()
+
+    body = resp.json()["data"]
+    assert body["has_owner"] is False
+    # The creator is still resolved and shown, which is why has_owner exists:
+    # branching on owner_name would call this project owned.
+    assert body["owner_name"] == "Owner"
+    assert int(body["owner_id"]) == owner.id
+
+
+@pytest.mark.asyncio
+async def test_owner_gone_entirely_reads_as_unassigned(app, db):
+    """The exact shape of the orphan this feature was written for."""
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    project_id = owner._project_id
+    await _strip_owner(db, project_id)
+    async with db.get_session() as session:
+        await (await User.get(session, owner.id)).delete(session)
+
+    await _make_user(db, "admin@kactus.io", "Admin", is_superuser=True)
+    ac = await _client(app, "admin@kactus.io")
+    resp = await ac.get(f"/api/projects/{project_id}")
+    await ac.aclose()
+
+    body = resp.json()["data"]
+    assert body["has_owner"] is False
+    assert body["owner_name"] is None
+    assert body["owner_email"] is None
+    assert int(body["member_count"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_assign_owner_repairs_a_project_with_no_members(app, db):
+    """``update_member_role`` cannot fix this — there is nobody to promote."""
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    rescuer = await _make_user(db, "rescuer@kactus.io", "Rescuer")
+    project_id = owner._project_id
+    await _strip_owner(db, project_id)
+    async with db.get_session() as session:
+        for m in await ProjectService.get_members(session, project_id):
+            await m.delete(session)
+
+    await _make_user(db, "admin@kactus.io", "Admin", is_superuser=True)
+    ac = await _client(app, "admin@kactus.io")
+    resp = await ac.post(
+        f"/api/projects/{project_id}/owner", json={"email": "rescuer@kactus.io"}
+    )
+    # Idempotent: re-assigning the same person changes nothing.
+    again = await ac.post(
+        f"/api/projects/{project_id}/owner", json={"email": "rescuer@kactus.io"}
+    )
+    detail = await ac.get(f"/api/projects/{project_id}")
+    await ac.aclose()
+
+    assert resp.status_code == 200
+    assert resp.json()["data"]["role"] == DefaultRole.OWNER.value
+    assert again.status_code == 200
+    assert detail.json()["data"]["has_owner"] is True
+    async with db.get_session() as session:
+        assert await ProjectService.owner_ids(session, project_id) == [rescuer.id]
+
+
+@pytest.mark.asyncio
+async def test_assign_owner_promotes_an_existing_member(app, db):
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    await _make_user(db, "member@kactus.io", "Member")
+
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    await oc.post(
+        f"/api/projects/{owner._project_id}/members",
+        json={"email": "member@kactus.io", "role": "member"},
+    )
+    resp = await oc.post(
+        f"/api/projects/{owner._project_id}/owner", json={"email": "member@kactus.io"}
+    )
+    await oc.aclose()
+
+    assert resp.status_code == 200
+    async with db.get_session() as session:
+        # Additive — the sitting owner keeps the role, so handing ownership over
+        # stays "assign B, then demote A".
+        assert len(await ProjectService.owner_ids(session, owner._project_id)) == 2
+
+
+@pytest.mark.asyncio
+async def test_manager_cannot_assign_owner(app, db):
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    await _make_user(db, "manager@kactus.io", "Manager")
+    await _make_user(db, "victim@kactus.io", "Victim")
+
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    await oc.post(
+        f"/api/projects/{owner._project_id}/members",
+        json={"email": "manager@kactus.io", "role": "manager"},
+    )
+    await oc.aclose()
+
+    mc = await _client(app, "manager@kactus.io", project_id=owner._project_id)
+    resp = await mc.post(
+        f"/api/projects/{owner._project_id}/owner", json={"email": "victim@kactus.io"}
+    )
+    await mc.aclose()
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_assign_owner_unknown_email_is_generic_404(app, db):
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    resp = await oc.post(
+        f"/api/projects/{owner._project_id}/owner", json={"email": "ghost@kactus.io"}
+    )
+    await oc.aclose()
+    assert resp.status_code == 404
+    assert "ghost@" not in resp.text
+
+
+@pytest.mark.asyncio
+async def test_sole_owner_cannot_be_deactivated(app, db):
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    await _make_user(db, "second@kactus.io", "Second")
+    await _make_user(db, "admin@kactus.io", "Admin", is_superuser=True)
+
+    ac = await _client(app, "admin@kactus.io")
+    blocked = await ac.post(f"/api/admin/users/{owner.id}/deactivate")
+    assert blocked.status_code == 409
+    assert str(owner._project_id) in blocked.text
+
+    # Give the project a co-owner, and the same call goes through.
+    oc = await _client(app, "owner@kactus.io", project_id=owner._project_id)
+    await oc.post(
+        f"/api/projects/{owner._project_id}/owner", json={"email": "second@kactus.io"}
+    )
+    await oc.aclose()
+    allowed = await ac.post(f"/api/admin/users/{owner.id}/deactivate")
+    await ac.aclose()
+    assert allowed.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_deleted_project_does_not_block_deactivation(app, db):
+    """An archived-away project must not pin its owner's account forever."""
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    await _make_user(db, "admin@kactus.io", "Admin", is_superuser=True)
+    async with db.get_session() as session:
+        project = await ProjectService.get_by_id(session, owner._project_id)
+        await ProjectService.delete(session, project)
+
+    ac = await _client(app, "admin@kactus.io")
+    resp = await ac.post(f"/api/admin/users/{owner.id}/deactivate")
+    await ac.aclose()
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_sole_owner_project_ids_ignores_co_owned_projects(db):
+    owner = await _make_user(db, "owner@kactus.io", "Owner")
+    second = await _make_user(db, "second@kactus.io", "Second")
+    admin = await _make_user(db, "admin@kactus.io", "Admin", is_superuser=True)
+
+    async with db.get_session() as session:
+        # Sole owner of their personal project.
+        assert await ProjectService.sole_owner_project_ids(session, owner.id) == [
+            owner._project_id
+        ]
+        # A superuser owns nothing (they get no personal project).
+        assert await ProjectService.sole_owner_project_ids(session, admin.id) == []
+
+        # Once the project has a second owner, neither of them is the sole one.
+        await ProjectService.assign_owner(
+            session, project_id=owner._project_id, user_id=second.id
+        )
+        assert await ProjectService.sole_owner_project_ids(session, owner.id) == []
+        assert await ProjectService.sole_owner_project_ids(session, second.id) == [
+            second._project_id
+        ]
+
+
+@pytest.mark.asyncio
+async def test_ensure_personal_project_restores_a_soft_deleted_one(db):
+    """The code stays reserved by the unique index, so re-creating is impossible."""
+    user = await _make_user(db, "owner@kactus.io", "Owner")
+    async with db.get_session() as session:
+        project = await ProjectService.get_by_id(session, user._project_id)
+        await ProjectService.delete(session, project)
+
+    async with db.get_session() as session:
+        again = await ProjectService.ensure_personal_project(session, user=user)
+        assert again.id == user._project_id
+        assert again.is_deleted is False
+
+
+# --------------------------------------------------------------------------- #
 # Cross-project isolation
 # --------------------------------------------------------------------------- #
 @pytest.mark.asyncio

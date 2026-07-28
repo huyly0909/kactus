@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { FolderGit2, Trash2, UserPlus } from 'lucide-react';
+import { Crown, FolderGit2, Trash2, UserPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { BareSection } from '@/components/ui/bare-section';
@@ -45,6 +45,7 @@ import { useAuthStore } from '@/store/authStore';
 import { useProjectStore } from '@/store/projectStore';
 import type { ProjectMemberDetail } from '@/types/project';
 import { InviteMemberDialog } from '@modules/project/components/InviteMemberDialog';
+import { ProjectOwner } from '@modules/project/components/ProjectOwner';
 
 /**
  * One project: identity, edit form and members — reached by clicking a row on
@@ -70,6 +71,7 @@ export function ProjectDetailPage() {
   const update = useUpdateProject(id);
 
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
   const [toRemove, setToRemove] = useState<ProjectMemberDetail | null>(null);
 
   // The API resolves the viewer's own membership, so gating no longer waits on
@@ -200,7 +202,7 @@ export function ProjectDetailPage() {
                     fields — one column of labels, not a separate facts line. */}
                 <FieldRow label={t('projects.owner_label')}>
                   <p className="pt-1.5 text-sm">
-                    {project.owner_name ?? project.owner_email ?? '—'}
+                    <ProjectOwner project={project} />
                   </p>
                 </FieldRow>
                 <FieldRow label={t('projects.col_members')}>
@@ -219,10 +221,21 @@ export function ProjectDetailPage() {
               title={t('projects.members_title')}
               action={
                 canManage && (
-                  <Button size="sm" onClick={() => setInviteOpen(true)}>
-                    <UserPlus className="h-4 w-4" />
-                    {t('projects.invite_title')}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    {/* Only surfaced while the project is actually broken. It is
+                        the one repair path that works with zero members — the
+                        role Select below can only promote someone already here. */}
+                    {!project.has_owner && canGrantOwner && (
+                      <Button size="sm" variant="destructive" onClick={() => setAssignOpen(true)}>
+                        <Crown className="h-4 w-4" />
+                        {t('projects.assign_owner')}
+                      </Button>
+                    )}
+                    <Button size="sm" onClick={() => setInviteOpen(true)}>
+                      <UserPlus className="h-4 w-4" />
+                      {t('projects.invite_title')}
+                    </Button>
+                  </div>
                 )
               }
             >
@@ -310,6 +323,14 @@ export function ProjectDetailPage() {
         open={inviteOpen}
         onOpenChange={setInviteOpen}
         canGrantOwner={canGrantOwner}
+      />
+
+      <InviteMemberDialog
+        projectId={id}
+        open={assignOpen}
+        onOpenChange={setAssignOpen}
+        canGrantOwner={canGrantOwner}
+        mode="assign-owner"
       />
 
       <ConfirmDialog

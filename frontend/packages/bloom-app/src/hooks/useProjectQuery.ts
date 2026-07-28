@@ -84,6 +84,21 @@ export function useAddMember(projectId: string) {
   });
 }
 
+export function useAssignOwner(projectId: string) {
+  const qc = useQueryClient();
+  const { t } = useTranslation();
+  return useMutation({
+    mutationFn: (email: string) => projectService.assignOwner(projectId, email),
+    onSuccess: () => {
+      // `projectKeys.all`, not just `members`: the owner column on the list and
+      // the detail page's `has_owner` both change with this.
+      void qc.invalidateQueries({ queryKey: projectKeys.all });
+      toast.success(t('projects.owner_assigned'));
+    },
+    onError: (err: unknown) => toast.error(resolveError(err, t('projects.owner_assign_error'))),
+  });
+}
+
 export function useUpdateMemberRole(projectId: string) {
   const qc = useQueryClient();
   const { t } = useTranslation();

@@ -3,6 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { FieldHint } from '@/components/ui/field-hint';
 import {
   Dialog,
   DialogContent,
@@ -77,7 +78,12 @@ export function CreateProjectDialog({ open, onOpenChange }: Props) {
               name="code"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>{t('projects.code')}</FormLabel>
+                  {/* Sibling of the label, never nested inside it — FormLabel is
+                      a Radix Label and would forward the click to the input. */}
+                  <div className="flex items-center gap-1">
+                    <FormLabel>{t('projects.code')}</FormLabel>
+                    <FieldHint>{t('projects.code_format')}</FieldHint>
+                  </div>
                   <FormControl>
                     <Input placeholder={t('projects.code_placeholder')} {...field} />
                   </FormControl>

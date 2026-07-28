@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
 import { useAdminProjects } from '@/hooks/useAdminQuery';
 import { projectDisplayName, projectMemberCount } from '@/lib/project';
+import { ProjectOwner } from '@modules/project/components/ProjectOwner';
 import type { Project } from '@/types/project';
 
 /** Read-only list of every project in the system (superuser only). */
@@ -27,9 +28,9 @@ export function ProjectsPane() {
       key: 'owner_name',
       title: t('admin.projects.owner'),
       sortable: true,
-      render: (p) => (
-        <span className="text-muted-foreground">{p.owner_name ?? p.owner_email ?? '—'}</span>
-      ),
+      exportValue: (p) =>
+        p.has_owner ? (p.owner_name ?? p.owner_email ?? '') : t('projects.owner_unassigned'),
+      render: (p) => <ProjectOwner project={p} className="text-muted-foreground" />,
     },
     {
       key: 'member_count',

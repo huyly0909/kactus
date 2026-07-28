@@ -11,6 +11,7 @@ import {
 } from 'react-hook-form';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
+import { FieldHint } from '@/components/ui/field-hint';
 
 const Form = FormProvider;
 
@@ -148,7 +149,7 @@ FormMessage.displayName = 'FormMessage';
 
 interface FieldRowProps {
   label: React.ReactNode;
-  /** Small grey line under the label — format rules, units, constraints. */
+  /** Format rule / unit / constraint, revealed from a `?` mark beside the label. */
   hint?: React.ReactNode;
   /** Static text pinned to the right of the control (a unit, a computed echo). */
   suffix?: React.ReactNode;
@@ -160,6 +161,10 @@ interface FieldRowProps {
  * A flat label-left form row: 140px label column + value column, no card, no
  * border. This is the entity-page counterpart of `FormItem` (which stays the
  * label-above shape used inside dialogs).
+ *
+ * `hint` renders as a `?` mark beside the label (see `FieldHint`), not as a
+ * permanent sub-line: a format rule only matters while the field is being
+ * filled in, and a column of grey text under every label buries the values.
  *
  * Goes *inside* `FormField`'s render, replacing `FormItem` — it provides its
  * own `FormItemContext` (so `FormControl` still gets a matching id) and renders
@@ -184,9 +189,11 @@ const FieldRow: React.FC<FieldRowProps> = ({ label, hint, suffix, children, clas
           className,
         )}
       >
-        <div className="flex flex-col pt-1.5 text-muted-foreground">
+        {/* The hint is a sibling of FormLabel, not a child: FormLabel is a Radix
+            Label, so an icon inside it would forward clicks to the input. */}
+        <div className="flex items-center gap-1 pt-1.5 text-muted-foreground">
           <FormLabel className="font-normal">{label}</FormLabel>
-          {hint && <span className="mt-0.5 text-[11px] text-muted-foreground/70">{hint}</span>}
+          {hint && <FieldHint>{hint}</FieldHint>}
         </div>
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-2">

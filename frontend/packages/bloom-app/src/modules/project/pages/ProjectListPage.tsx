@@ -30,6 +30,7 @@ import {
 import { useProjectStore } from '@/store/projectStore';
 import type { Project } from '@/types/project';
 import { CreateProjectDialog } from '@modules/project/components/CreateProjectDialog';
+import { ProjectOwner } from '@modules/project/components/ProjectOwner';
 
 const STATUS_OPTIONS: ProjectStatusFilter[] = ['active', 'archived', 'all'];
 
@@ -121,9 +122,11 @@ export function ProjectListPage() {
       key: 'owner_name',
       title: t('projects.col_owner_name'),
       sortable: true,
-      render: (p) => (
-        <span className="text-muted-foreground">{p.owner_name ?? p.owner_email ?? '—'}</span>
-      ),
+      // The CSV must not carry the creator's name for an unassigned project —
+      // that is the exact conflation `has_owner` exists to prevent.
+      exportValue: (p) =>
+        p.has_owner ? (p.owner_name ?? p.owner_email ?? '') : t('projects.owner_unassigned'),
+      render: (p) => <ProjectOwner project={p} className="text-muted-foreground" />,
     },
     {
       key: 'member_count',

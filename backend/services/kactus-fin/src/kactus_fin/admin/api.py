@@ -8,7 +8,7 @@ import string
 from fastapi import Request
 from kactus_common.audit import audit
 from kactus_common.authorization.casbin_service import get_casbin_service
-from kactus_common.exceptions import NotFoundError
+from kactus_common.exceptions import ConflictError, NotFoundError
 from kactus_common.project.schema import ProjectSchema
 from kactus_common.project.service import ProjectService
 from kactus_common.router import KactusAPIRouter
@@ -102,10 +102,22 @@ async def deactivate_user(
     request: Request,
     session: AsyncSession,
 ) -> UserInfo:
-    """Deactivate a user (admin only)."""
+    """Deactivate a user (admin only).
+
+    Refused while the user is the only owner of a live project: deactivating
+    them would leave it unassigned, and picking a successor is a decision, not
+    a side effect. Assign a co-owner first (``POST /api/projects/{id}/owner``).
+    """
     user = await UserService.get_by_id(session, user_id)
     if not user:
         raise NotFoundError("User not found")
+
+    blocking = await ProjectService.sole_owner_project_ids(session, user_id)
+    if blocking:
+        raise ConflictError(
+            "User is the only owner of one or more projects",
+            data={"project_ids": [str(pid) for pid in blocking]},
+        )
 
     user.status = "inactive"
     await user.save(session)
