@@ -78,6 +78,39 @@ describe('DataTable', () => {
     expect(firstNameCell()).toHaveTextContent('Alpha');
   });
 
+  it('delegates sorting instead of reordering rows when onSortChange is given', () => {
+    // Under server pagination the visible rows are one page of a larger set, so
+    // a header click must re-query — sorting them in place would only shuffle
+    // the page and quietly lie about the ordering.
+    const onSortChange = vi.fn();
+    const sortCols: DataTableColumn<Row>[] = [
+      { key: 'code', title: 'Code' },
+      { key: 'name', title: 'Name', sortable: true },
+    ];
+    const data: Row[] = [
+      { id: '1', code: 'C1', name: 'Zeta' },
+      { id: '2', code: 'C2', name: 'Alpha' },
+    ];
+    render(
+      <DataTable
+        columns={sortCols}
+        data={data}
+        searchable={false}
+        sort={{ key: 'name', desc: true }}
+        onSortChange={onSortChange}
+      />,
+    );
+    const table = screen.getByRole('table');
+    const firstNameCell = () => within(table).getAllByRole('row')[1].querySelectorAll('td')[1];
+
+    // Rendered exactly as handed over, despite a descending sort on `name`.
+    expect(firstNameCell()).toHaveTextContent('Zeta');
+
+    fireEvent.click(screen.getByRole('button', { name: /Name/ }));
+    expect(onSortChange).toHaveBeenCalledWith({ key: 'name', desc: false });
+    expect(firstNameCell()).toHaveTextContent('Zeta'); // still untouched
+  });
+
   it('hides a column marked defaultHidden and keeps the rest', () => {
     const cols: DataTableColumn<Row>[] = [
       { key: 'code', title: 'Code' },

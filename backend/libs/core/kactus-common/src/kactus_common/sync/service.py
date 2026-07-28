@@ -8,13 +8,19 @@ the FIFO + dedup rules live in a single place.
 
 from __future__ import annotations
 
+import datetime
+
 from kactus_common.database.oltp.models import utcnow
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .const import ACTIVE_SYNC_STATUSES, SyncJobStatus
 from .model import SyncJob
+
+#: ``status`` filter value meaning "PENDING or RUNNING" rather than one literal
+#: status — the queue UI's live view, and what the active-count chip selects.
+ACTIVE_STATUS_FILTER = "active"
 
 
 class SyncJobService:
@@ -168,6 +174,95 @@ class SyncJobService:
         """Most-recent jobs, newest first (queue history)."""
         stmt = select(SyncJob).order_by(SyncJob.create_time.desc()).limit(limit)
         return list((await session.scalars(stmt)).all())
+
+    @staticmethod
+    async def count_active(session: AsyncSession) -> int:
+        """How many jobs are live right now, across the whole table.
+
+        Deliberately not page- or filter-scoped: the UI's "N running" chip must
+        stay truthful while the user is reading page 5 of the failed jobs.
+        """
+        stmt = select(func.count(SyncJob.id)).where(
+            SyncJob.status.in_(list(ACTIVE_SYNC_STATUSES))
+        )
+        return int(await session.scalar(stmt) or 0)
+
+    @staticmethod
+    def _search_filters(
+        *,
+        status: str | None = None,
+        job_family: str | None = None,
+        source: str | None = None,
+        created_from: datetime.datetime | None = None,
+        created_to: datetime.datetime | None = None,
+    ) -> list[ColumnElement[bool]]:
+        """Build the WHERE terms shared by the page query and its COUNT."""
+        terms: list[ColumnElement[bool]] = []
+        if status == ACTIVE_STATUS_FILTER:
+            terms.append(SyncJob.status.in_(list(ACTIVE_SYNC_STATUSES)))
+        elif status:
+            terms.append(SyncJob.status == status)
+        if job_family:
+            # ``gold_backfill`` / ``gold_sync`` both belong to the "gold" family.
+            # LIKE (not a JSON op) so the same SQL runs on SQLite and Postgres;
+            # the underscore is escaped or "gold_" would match any 5th char.
+            terms.append(SyncJob.job_type.like(f"{job_family}\\_%", escape="\\"))
+        if source:
+            # ``params`` is a plain JSON column: ``as_string()`` compiles to
+            # json_extract on SQLite and ->> on Postgres, so this one expression
+            # serves the unit tests and prod alike.
+            terms.append(SyncJob.params["source"].as_string() == source)
+        if created_from is not None:
+            terms.append(SyncJob.create_time >= created_from)
+        if created_to is not None:
+            terms.append(SyncJob.create_time <= created_to)
+        return terms
+
+    @staticmethod
+    async def search(
+        session: AsyncSession,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        status: str | None = None,
+        job_family: str | None = None,
+        source: str | None = None,
+        created_from: datetime.datetime | None = None,
+        created_to: datetime.datetime | None = None,
+        order: str = "desc",
+    ) -> tuple[list[SyncJob], int]:
+        """One page of jobs matching the filters + the total matching count.
+
+        Ordered on ``create_time`` (the enqueue instant), newest first by
+        default. ``id`` breaks ties so a page boundary cannot drop or repeat a
+        row when several jobs share a timestamp. ``created_from`` / ``created_to``
+        are UTC instants — the caller resolves the user's calendar days.
+        """
+        terms = SyncJobService._search_filters(
+            status=status,
+            job_family=job_family,
+            source=source,
+            created_from=created_from,
+            created_to=created_to,
+        )
+        total = int(
+            await session.scalar(select(func.count(SyncJob.id)).where(*terms)) or 0
+        )
+
+        time_col = SyncJob.create_time
+        ordering = (
+            (time_col.asc(), SyncJob.id.asc())
+            if order == "asc"
+            else (time_col.desc(), SyncJob.id.desc())
+        )
+        stmt = (
+            select(SyncJob)
+            .where(*terms)
+            .order_by(*ordering)
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        return list((await session.scalars(stmt)).all()), total
 
     @staticmethod
     async def active_keys(session: AsyncSession) -> set[str]:

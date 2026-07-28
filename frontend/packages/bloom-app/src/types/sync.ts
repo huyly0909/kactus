@@ -38,6 +38,33 @@ export interface SyncJobList {
   recent: SyncJob[];
 }
 
+/** Query for `GET /api/market/sync/jobs/search`. Every field is optional; an
+ *  omitted filter means "no bound", not "all" — the client drops `all` itself. */
+export interface SyncJobQuery {
+  page?: number;
+  page_size?: number;
+  /** A literal status, or `active` for pending-OR-running. */
+  status?: SyncJobStatus | 'active';
+  /** Job family — the first segment of `job_type` (`gold_backfill` → `gold`). */
+  type?: string;
+  source?: string;
+  /** YYYY-MM-DD, read in the *user's* timezone by the server. */
+  created_from?: string;
+  created_to?: string;
+  order?: 'asc' | 'desc';
+}
+
+/** One page of the queue. `total` is the filtered match count; `active_count`
+ *  deliberately is not — it counts every live job so the "N running" chip stays
+ *  truthful while the user pages through finished history. */
+export interface SyncJobPage {
+  total: number;
+  page: number;
+  page_size: number;
+  items: SyncJob[];
+  active_count: number;
+}
+
 export interface EnqueueSyncJobResponse {
   job: SyncJob;
   /** `false` → an identical job was already live and this click was collapsed. */

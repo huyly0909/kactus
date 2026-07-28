@@ -1,32 +1,35 @@
-import { type FC, useMemo, useState } from 'react';
+import { type FC } from 'react';
 import { useTranslation } from 'react-i18next';
 import { XCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
 import {
-  DataTable,
-  type DataTableColumn,
-  type DataTableFilterChip,
-} from '@/components/ui/data-table';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+  DataTableFilterBar,
+  EMPTY_RANGE,
+  type TableFilterDef,
+} from '@/components/ui/data-table-filters';
+import { datePresets, type DateRange } from '@/components/ui/date-range-picker';
 import { useFormatDateTime } from '@/hooks/useFormatDateTime';
-import { useCancelSyncJob, useSyncJobs, useSyncStream } from '@/hooks/useSyncQuery';
-import { isActiveStatus, type SyncJob } from '@/types/sync';
+import { useTableQueryState } from '@/hooks/useTableQueryState';
+import { useCancelSyncJob, useSyncJobPage, useSyncStream } from '@/hooks/useSyncQuery';
+import { cn } from '@/lib/utils';
+import { isActiveStatus, type SyncJob, type SyncJobQuery } from '@/types/sync';
 import { SyncProgressBar, syncStatusBadge } from '@modules/market/components/SyncProgressBar';
 import { RefreshCountdown } from './RefreshCountdown';
 
-type StatusFilter = 'active' | 'all';
-type TypeFilter = 'all' | 'gold' | 'stock' | 'coin';
-type SourceFilter = 'all' | 'yahoo' | 'sjc' | 'mihong';
-
-const TYPE_OPTIONS: TypeFilter[] = ['all', 'gold', 'stock', 'coin'];
-const SOURCE_OPTIONS: SourceFilter[] = ['all', 'yahoo', 'sjc', 'mihong'];
+const PAGE_SIZE = 20;
+const STATUS_OPTIONS = [
+  'all',
+  'active',
+  'pending',
+  'running',
+  'success',
+  'failed',
+  'cancelled',
+] as const;
+const TYPE_OPTIONS = ['all', 'gold', 'stock', 'coin'] as const;
+const SOURCE_OPTIONS = ['all', 'yahoo', 'sjc', 'mihong'] as const;
 
 /** Asset family — the first segment of `job_type` (`gold_backfill` → `gold`). */
 function jobType(job: SyncJob): string {
@@ -49,67 +52,91 @@ function describeJob(job: SyncJob): string {
 }
 
 /**
- * Queue tab — the shared FIFO `sync_jobs` queue as a filterable dataview.
- * Active + recent are merged and de-duped by id, filtered by status / type /
- * source, then sorted by `create_time` ascending (FIFO). Defaults to the
- * active (pending/running) jobs. A live job can be cancelled inline.
+ * Queue tab — the shared `sync_jobs` queue, newest first.
  *
- * Note: the endpoint returns all `active` jobs but only the 50 most-recent
- * others, so history filtering is bounded to that window (client-side).
+ * Filtering, ordering and paging all happen in SQL: a narrow filter searches
+ * every row rather than a recent window, and the page state lives in the URL so
+ * a filtered view survives a reload. `active_count` comes back with every page
+ * and is global, so the "N running" chip stays truthful on page 4 of the
+ * finished history. A live job can be cancelled inline.
+ *
+ * Note: CSV export covers the **current page** — `DataTable` exports the rows
+ * it was handed, and the whole point here is that it is no longer handed the
+ * whole table.
  */
 export const SchedulerQueuePane: FC = () => {
   const { t } = useTranslation();
   const fmtDateTime = useFormatDateTime();
-  const { data, isLoading, isFetching, refetch } = useSyncJobs();
   const cancel = useCancelSyncJob();
   useSyncStream();
 
-  const [status, setStatus] = useState<StatusFilter>('active');
-  const [type, setType] = useState<TypeFilter>('all');
-  const [source, setSource] = useState<SourceFilter>('all');
+  const { page, setPage, pageSize, sort, setSort, filters, setFilter } = useTableQueryState({
+    defaultFilters: {
+      status: 'all',
+      type: 'all',
+      source: 'all',
+      created: EMPTY_RANGE as DateRange,
+    },
+    defaultSort: { key: 'create_time', desc: true },
+    pageSize: PAGE_SIZE,
+    urlKey: 'queue',
+  });
 
-  // Merge active + recent, de-dupe by id (active wins — it is the freshest copy
-  // of a row that also appears in recent).
-  const merged = useMemo(() => {
-    const byId = new Map<string, SyncJob>();
-    for (const j of data?.recent ?? []) byId.set(j.id, j);
-    for (const j of data?.active ?? []) byId.set(j.id, j);
-    return [...byId.values()];
-  }, [data]);
+  const created = filters.created as DateRange;
+  const query: SyncJobQuery = {
+    page,
+    page_size: pageSize,
+    order: sort?.desc === false ? 'asc' : 'desc',
+    ...(filters.status !== 'all' && { status: filters.status as SyncJobQuery['status'] }),
+    ...(filters.type !== 'all' && { type: filters.type as string }),
+    ...(filters.source !== 'all' && { source: filters.source as string }),
+    ...(created.from && { created_from: created.from }),
+    ...(created.to && { created_to: created.to }),
+  };
+  const { data, isLoading, isFetching, refetch } = useSyncJobPage(query);
 
-  const filtered = useMemo(() => {
-    const rows = merged.filter((j) => {
-      if (status === 'active' && !isActiveStatus(j.status)) return false;
-      if (type !== 'all' && jobType(j) !== type) return false;
-      if (source !== 'all' && jobSource(j) !== source) return false;
-      return true;
-    });
-    // DataTable does not sort by default — pre-sort FIFO (create_time asc).
-    return rows.sort((a, b) => (a.create_time ?? '').localeCompare(b.create_time ?? ''));
-  }, [merged, status, type, source]);
-
-  const chips: DataTableFilterChip[] = [];
-  if (status === 'active') {
-    chips.push({
+  const filterDefs: TableFilterDef[] = [
+    {
       id: 'status',
-      label: `${t('market.sync.filter_status')}: ${t('market.sync.status_active')}`,
-      onRemove: () => setStatus('all'),
-    });
-  }
-  if (type !== 'all') {
-    chips.push({
+      kind: 'select',
+      label: t('market.sync.filter_status'),
+      options: STATUS_OPTIONS.map((o) => ({
+        value: o,
+        label:
+          o === 'all'
+            ? t('market.sync.all')
+            : o === 'active'
+              ? t('market.sync.status_active')
+              : t(`market.sync.status.${o}`),
+      })),
+    },
+    {
       id: 'type',
-      label: `${t('market.sync.filter_type')}: ${t(`market.sync.type.${type}`)}`,
-      onRemove: () => setType('all'),
-    });
-  }
-  if (source !== 'all') {
-    chips.push({
+      kind: 'select',
+      label: t('market.sync.filter_type'),
+      options: TYPE_OPTIONS.map((o) => ({
+        value: o,
+        label: o === 'all' ? t('market.sync.all') : t(`market.sync.type.${o}`),
+      })),
+    },
+    {
       id: 'source',
-      label: `${t('market.sync.filter_source')}: ${t(`market.sync.source.${source}`)}`,
-      onRemove: () => setSource('all'),
-    });
-  }
+      kind: 'select',
+      label: t('market.sync.filter_source'),
+      options: SOURCE_OPTIONS.map((o) => ({
+        value: o,
+        label: o === 'all' ? t('market.sync.all') : t(`market.sync.source.${o}`),
+      })),
+    },
+    {
+      id: 'created',
+      kind: 'dateRange',
+      label: t('market.sync.filter_created'),
+      presets: datePresets('today', 'yesterday', '7d', '30d', '90d', 'month', 'all'),
+    },
+  ];
+
+  const activeCount = data?.active_count ?? 0;
 
   const columns: DataTableColumn<SyncJob>[] = [
     {
@@ -156,12 +183,24 @@ export const SchedulerQueuePane: FC = () => {
       ),
     },
     {
-      key: 'time',
-      title: t('market.sync.col_time'),
+      // Sorted server-side on `create_time` — so that is what the cell leads
+      // with. The finished stamp rides along underneath rather than in front,
+      // where it would silently disagree with the ordering.
+      key: 'create_time',
+      title: t('market.sync.col_queued'),
       className: 'tabular-nums',
       sortable: true,
-      sortAccessor: (j) => j.finished_at ?? j.started_at ?? j.create_time ?? '',
-      render: (j) => fmtDateTime(j.finished_at ?? j.started_at ?? j.create_time),
+      exportValue: (j) => j.create_time ?? '',
+      render: (j) => (
+        <div className="flex flex-col">
+          <span className="whitespace-nowrap">{fmtDateTime(j.create_time)}</span>
+          {j.finished_at && (
+            <span className="whitespace-nowrap text-xs text-muted-foreground">
+              {t('market.sync.finished_at', { time: fmtDateTime(j.finished_at) })}
+            </span>
+          )}
+        </div>
+      ),
     },
     {
       key: 'actions',
@@ -185,55 +224,49 @@ export const SchedulerQueuePane: FC = () => {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Select value={status} onValueChange={(v) => setStatus(v as StatusFilter)}>
-            <SelectTrigger className="w-[9rem]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">{t('market.sync.status_active')}</SelectItem>
-              <SelectItem value="all">{t('market.sync.all')}</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={type} onValueChange={(v) => setType(v as TypeFilter)}>
-            <SelectTrigger className="w-[9rem]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {TYPE_OPTIONS.map((o) => (
-                <SelectItem key={o} value={o}>
-                  {o === 'all' ? t('market.sync.all') : t(`market.sync.type.${o}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={source} onValueChange={(v) => setSource(v as SourceFilter)}>
-            <SelectTrigger className="w-[10rem]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SOURCE_OPTIONS.map((o) => (
-                <SelectItem key={o} value={o}>
-                  {o === 'all' ? t('market.sync.all') : t(`market.sync.source.${o}`)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <RefreshCountdown onRefresh={() => void refetch()} refreshing={isFetching} />
-      </div>
+      <DataTableFilterBar
+        filters={filterDefs}
+        values={filters}
+        onChange={setFilter}
+        actions={
+          <>
+            <Button
+              size="sm"
+              variant={filters.status === 'active' ? 'default' : 'outline'}
+              disabled={activeCount === 0}
+              onClick={() => setFilter('status', 'active')}
+              className="gap-1.5"
+            >
+              <span
+                className={cn(
+                  'h-2 w-2 rounded-full',
+                  activeCount > 0 ? 'animate-pulse bg-emerald-500' : 'bg-muted-foreground/40',
+                )}
+              />
+              {t('market.sync.active_count', { count: activeCount })}
+            </Button>
+            <RefreshCountdown onRefresh={() => void refetch()} refreshing={isFetching} />
+          </>
+        }
+      />
 
       <DataTable
         columns={columns}
-        data={filtered}
+        data={data?.items ?? []}
         loading={isLoading}
-        pageSize={50}
         searchable={false}
         enableExport
         exportFilename="sync-queue.csv"
         getRowKey={(j) => j.id}
-        filterChips={chips}
+        sort={sort}
+        onSortChange={setSort}
+        pagination={{
+          mode: 'server',
+          page,
+          pageSize,
+          total: data?.total ?? 0,
+          onPageChange: setPage,
+        }}
         emptyMessage={t('market.sync.no_jobs')}
       />
     </div>

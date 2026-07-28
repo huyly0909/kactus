@@ -14,6 +14,8 @@ rows, the min-date clamp, the dedup, and the superuser gate.
 
 from __future__ import annotations
 
+import datetime
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -285,3 +287,227 @@ async def test_cancel_job_marks_cancelled(admin_client):
 async def test_cancel_unknown_job_is_404(admin_client):
     resp = await admin_client.post("/api/market/sync/jobs/999999/cancel")
     assert resp.status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Search (paged / filtered queue)
+# --------------------------------------------------------------------------- #
+#: Seed rows for the search tests, oldest → newest. Enqueueing through the API
+#: cannot produce this fixture: the dedup index allows only one live job per
+#: key, and ``create_time`` would collapse into the same instant.
+SEED = [
+    ("gold_backfill", "sjc", SyncJobStatus.SUCCESS, datetime.date(2026, 7, 1)),
+    ("gold_backfill", "mihong", SyncJobStatus.FAILED, datetime.date(2026, 7, 2)),
+    ("gold_sync", "yahoo", SyncJobStatus.SUCCESS, datetime.date(2026, 7, 3)),
+    ("gold_sync", "sjc", SyncJobStatus.CANCELLED, datetime.date(2026, 7, 4)),
+    ("stock_sync", "vnstock", SyncJobStatus.SUCCESS, datetime.date(2026, 7, 5)),
+    ("gold_backfill", "yahoo", SyncJobStatus.PENDING, datetime.date(2026, 7, 6)),
+    ("gold_sync", "mihong", SyncJobStatus.RUNNING, datetime.date(2026, 7, 7)),
+]
+
+
+@pytest_asyncio.fixture
+async def seeded(db):
+    """Insert {@link SEED} at 12:00 UTC on each day, oldest first."""
+    async with db.get_session() as session:
+        for i, (job_type, source, status, day) in enumerate(SEED):
+            session.add(
+                SyncJob.init(
+                    job_type=job_type,
+                    dedup_key=f"{job_type}:{source}:{i}",
+                    params={"source": source},
+                    status=str(status),
+                    create_time=datetime.datetime.combine(
+                        day, datetime.time(12, 0), tzinfo=datetime.UTC
+                    ),
+                )
+            )
+        await session.commit()
+    return SEED
+
+
+def _sources(resp) -> list[str]:
+    return [j["params"]["source"] for j in resp.json()["data"]["items"]]
+
+
+@pytest.mark.asyncio
+async def test_search_requires_superuser(user_client):
+    resp = await user_client.get("/api/market/sync/jobs/search")
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_search_defaults_to_newest_first_all_statuses(admin_client, seeded):
+    resp = await admin_client.get("/api/market/sync/jobs/search")
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["total"] == len(SEED)
+    assert data["page"] == 1
+    # Newest first, and no status is filtered out by default.
+    assert _sources(resp) == [s for _, s, _, _ in reversed(SEED)]
+
+
+@pytest.mark.asyncio
+async def test_search_order_asc_flips_the_page(admin_client, seeded):
+    resp = await admin_client.get(
+        "/api/market/sync/jobs/search", params={"order": "asc"}
+    )
+    assert _sources(resp) == [s for _, s, _, _ in SEED]
+
+
+@pytest.mark.asyncio
+async def test_search_pages_without_gaps_or_repeats(admin_client, seeded):
+    seen: list[str] = []
+    for page in (1, 2, 3, 4):
+        resp = await admin_client.get(
+            "/api/market/sync/jobs/search", params={"page": page, "page_size": 2}
+        )
+        body = resp.json()["data"]
+        assert body["total"] == len(SEED)  # total is the match count, not the page
+        assert body["page_size"] == 2
+        seen.extend(_sources(resp))
+    # Walking every page reproduces the full ordering exactly — no row dropped
+    # at a page boundary, none served twice.
+    assert seen == [s for _, s, _, _ in reversed(SEED)]
+
+
+@pytest.mark.asyncio
+async def test_search_status_active_matches_pending_and_running(admin_client, seeded):
+    resp = await admin_client.get(
+        "/api/market/sync/jobs/search", params={"status": "active"}
+    )
+    body = resp.json()["data"]
+    assert body["total"] == 2
+    assert {j["status"] for j in body["items"]} == {
+        SyncJobStatus.PENDING,
+        SyncJobStatus.RUNNING,
+    }
+
+
+@pytest.mark.asyncio
+async def test_search_status_literal_narrows_to_one(admin_client, seeded):
+    resp = await admin_client.get(
+        "/api/market/sync/jobs/search", params={"status": "failed"}
+    )
+    body = resp.json()["data"]
+    assert body["total"] == 1
+    assert body["items"][0]["params"]["source"] == "mihong"
+
+
+@pytest.mark.asyncio
+async def test_search_type_matches_the_job_family(admin_client, seeded):
+    """``gold`` covers gold_backfill + gold_sync, and excludes stock_sync."""
+    resp = await admin_client.get(
+        "/api/market/sync/jobs/search", params={"type": "gold"}
+    )
+    body = resp.json()["data"]
+    assert body["total"] == 6
+    assert all(j["job_type"].startswith("gold_") for j in body["items"])
+
+
+@pytest.mark.asyncio
+async def test_search_source_filters_on_params_json(admin_client, seeded):
+    resp = await admin_client.get(
+        "/api/market/sync/jobs/search", params={"source": "mihong"}
+    )
+    body = resp.json()["data"]
+    assert body["total"] == 2
+    assert _sources(resp) == ["mihong", "mihong"]
+
+
+@pytest.mark.asyncio
+async def test_search_filters_combine(admin_client, seeded):
+    resp = await admin_client.get(
+        "/api/market/sync/jobs/search",
+        params={"type": "gold", "source": "sjc", "status": "success"},
+    )
+    body = resp.json()["data"]
+    assert body["total"] == 1
+    assert body["items"][0]["job_type"] == "gold_backfill"
+
+
+@pytest.mark.asyncio
+async def test_search_date_range_is_inclusive_on_both_ends(admin_client, seeded):
+    resp = await admin_client.get(
+        "/api/market/sync/jobs/search",
+        params={"created_from": "2026-07-02", "created_to": "2026-07-04"},
+    )
+    body = resp.json()["data"]
+    assert body["total"] == 3
+    assert _sources(resp) == ["sjc", "yahoo", "mihong"]
+
+
+@pytest.mark.asyncio
+async def test_search_date_range_is_read_in_the_user_timezone(app, db):
+    """A job enqueued at 20:00 UTC on 2026-06-30 is 03:00 on 07-01 in VN.
+
+    So asking for "2026-07-01" returns it for a UTC+7 user and not for a UTC
+    one: the day the filter cuts on follows the viewer, per the timezone
+    convention. Filtering the raw UTC day would put the row on the wrong page
+    for every Vietnamese admin — which is the whole product.
+    """
+    async with db.get_session() as session:
+        session.add(
+            SyncJob.init(
+                job_type="gold_sync",
+                dedup_key="gold_sync:tz",
+                params={"source": "sjc"},
+                status=str(SyncJobStatus.SUCCESS),
+                create_time=datetime.datetime(2026, 6, 30, 20, 0, tzinfo=datetime.UTC),
+            )
+        )
+        await session.commit()
+
+    vn = await _login(
+        app,
+        email="vn@kactus.io",
+        password="Admin123!",
+        is_superuser=True,
+        timezone="Asia/Ho_Chi_Minh",
+    )
+    utc = await _login(
+        app,
+        email="utc@kactus.io",
+        password="Admin123!",
+        is_superuser=True,
+        timezone="UTC",
+    )
+    params = {"created_from": "2026-07-01", "created_to": "2026-07-01"}
+    try:
+        assert (await vn.get("/api/market/sync/jobs/search", params=params)).json()[
+            "data"
+        ]["total"] == 1
+        assert (await utc.get("/api/market/sync/jobs/search", params=params)).json()[
+            "data"
+        ]["total"] == 0
+    finally:
+        await vn.aclose()
+        await utc.aclose()
+
+
+@pytest.mark.asyncio
+async def test_search_active_count_is_global_not_page_scoped(admin_client, seeded):
+    """The "N running" chip must stay truthful on page 2 of a failed-only view."""
+    resp = await admin_client.get(
+        "/api/market/sync/jobs/search", params={"status": "failed", "page": 1}
+    )
+    body = resp.json()["data"]
+    assert body["total"] == 1
+    assert body["active_count"] == 2
+
+    last = await admin_client.get(
+        "/api/market/sync/jobs/search", params={"page": 4, "page_size": 2}
+    )
+    assert last.json()["data"]["active_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_search_page_size_is_capped(admin_client):
+    assert (
+        await admin_client.get(
+            "/api/market/sync/jobs/search", params={"page_size": 500}
+        )
+    ).status_code == 422
+    assert (
+        await admin_client.get("/api/market/sync/jobs/search", params={"page": 0})
+    ).status_code == 422

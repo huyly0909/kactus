@@ -5,6 +5,8 @@ import type {
   GoldBackfillRequest,
   GoldSyncRequest,
   SyncJobList,
+  SyncJobPage,
+  SyncJobQuery,
   SyncProgressEvent,
 } from '@/types/sync';
 import { marketKeys } from './useMarketQuery';
@@ -13,6 +15,7 @@ import { marketKeys } from './useMarketQuery';
 export const syncKeys = {
   all: ['sync'] as const,
   jobs: () => [...syncKeys.all, 'jobs'] as const,
+  page: (query: SyncJobQuery) => [...syncKeys.all, 'page', query] as const,
 };
 
 /**
@@ -32,6 +35,25 @@ export function useSyncJobs() {
   });
 }
 
+/**
+ * One filtered page of the queue (the Scheduler → Queue table). Separate from
+ * {@link useSyncJobs}, which stays the small always-on "what is live right now"
+ * read the gold panes use — this one follows the user's filters and page and
+ * would be the wrong thing to answer "is a backfill queued?" with.
+ *
+ * Polls on `active_count`, not on what is visible: a job running on page 1 must
+ * still drive the "N running" chip while the user reads page 4.
+ */
+export function useSyncJobPage(query: SyncJobQuery) {
+  return useQuery({
+    queryKey: syncKeys.page(query),
+    queryFn: () => syncService.searchJobs(query),
+    placeholderData: (prev) => prev, // keep the old page visible while paging
+    refetchInterval: (q: Query<SyncJobPage>) =>
+      (q.state.data?.active_count ?? 0) > 0 ? 1500 : false,
+  });
+}
+
 /** The `dedup_key`s currently live — powers "disable the button if queued". */
 export function useActiveSyncKeys(): Set<string> {
   const { data } = useSyncJobs();
@@ -42,7 +64,7 @@ export function useEnqueueGoldBackfill() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: GoldBackfillRequest) => syncService.enqueueGoldBackfill(body),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: syncKeys.jobs() }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: syncKeys.all }),
   });
 }
 
@@ -50,7 +72,7 @@ export function useEnqueueGoldSync() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: GoldSyncRequest) => syncService.enqueueGoldSync(body),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: syncKeys.jobs() }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: syncKeys.all }),
   });
 }
 
@@ -58,7 +80,7 @@ export function useCancelSyncJob() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (jobId: string) => syncService.cancelJob(jobId),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: syncKeys.jobs() }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: syncKeys.all }),
   });
 }
 
@@ -84,7 +106,7 @@ export function useSyncStream() {
         return; // heartbeat / market-refresh / malformed — ignore
       }
       if (payload.event !== 'sync.progress') return;
-      void qc.invalidateQueries({ queryKey: syncKeys.jobs() });
+      void qc.invalidateQueries({ queryKey: syncKeys.all });
       if (payload.status === 'success') {
         void qc.invalidateQueries({ queryKey: marketKeys.all });
       }

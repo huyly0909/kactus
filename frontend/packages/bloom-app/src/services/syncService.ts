@@ -6,6 +6,8 @@ import type {
   GoldSyncRequest,
   SyncJob,
   SyncJobList,
+  SyncJobPage,
+  SyncJobQuery,
 } from '@/types/sync';
 
 /** Sync-job queue — superuser gold backfill / sync-now + queue management.
@@ -32,6 +34,15 @@ export const syncService = {
   listJobs: async (limit = 50): Promise<SyncJobList> => {
     const { data } = await apiClient.get<ApiResponse<SyncJobList>>('/api/market/sync/jobs', {
       params: { limit },
+    });
+    return data.data;
+  },
+
+  /** One filtered, ordered page of the whole queue — filtering and paging both
+   *  happen in SQL, so a narrow filter searches every row, not a recent window. */
+  searchJobs: async (query: SyncJobQuery = {}): Promise<SyncJobPage> => {
+    const { data } = await apiClient.get<ApiResponse<SyncJobPage>>('/api/market/sync/jobs/search', {
+      params: query,
     });
     return data.data;
   },

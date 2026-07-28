@@ -55,6 +55,9 @@ class SyncJob(Base, ModelMixin, AuditMixin):
             postgresql_where=text("status IN ('pending', 'running')"),
             sqlite_where=text("status IN ('pending', 'running')"),
         ),
+        # The queue UI orders and pages on ``create_time`` (newest first) over a
+        # table that only grows — without this every page is a full sort.
+        Index("ix_sync_jobs_create_time", "create_time"),
     )
 
     @property

@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from kactus_common.schemas import AwareUTCDatetime, BaseSchema, FancyInt, OpaqueDict
+from kactus_common.schemas import (
+    AwareUTCDatetime,
+    BaseSchema,
+    FancyInt,
+    OpaqueDict,
+    Pagination,
+)
 
 
 class SyncJobSchema(BaseSchema):
@@ -47,3 +53,18 @@ class SyncJobListSchema(BaseSchema):
 
     active: list[SyncJobSchema] = []
     recent: list[SyncJobSchema] = []
+
+
+class SyncJobPageSchema(Pagination[SyncJobSchema]):
+    """One filtered, ordered page of the queue + the global live count.
+
+    ``active_count`` is intentionally *not* page- or filter-scoped: it counts
+    every PENDING/RUNNING job, so the UI's "N running" chip stays truthful while
+    the user is paging through finished history.
+    """
+
+    # Plain ``int``, not ``FancyInt``: this is a small count sitting beside the
+    # envelope's own ``total`` / ``page`` / ``page_size``, and FancyInt exists to
+    # protect 64-bit *ids* from JS precision loss. Serializing it as a string
+    # while its neighbours stay numbers would just make the client cast it back.
+    active_count: int = 0

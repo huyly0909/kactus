@@ -13,12 +13,16 @@ Two responsibilities, both superuser:
 
 from __future__ import annotations
 
-from fastapi import File, Request, UploadFile
+import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+from fastapi import File, Query, Request, UploadFile
 from kactus_common.exceptions import NotFoundError, ValidationError
 from kactus_common.router import KactusAPIRouter, multipart_upload_openapi
 from kactus_common.sync.schema import (
     EnqueueSyncJobResponse,
     SyncJobListSchema,
+    SyncJobPageSchema,
     SyncJobSchema,
 )
 from kactus_common.sync.service import SyncJobService
@@ -39,7 +43,30 @@ from sqlalchemy.ext.asyncio import AsyncSession
 #: for growth while still bounding what gets buffered in memory per file.
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 
+#: Queue page size — the default fits a screen without scrolling; the cap keeps
+#: one request from asking for the whole (only-ever-growing) table.
+DEFAULT_QUEUE_PAGE_SIZE = 20
+MAX_QUEUE_PAGE_SIZE = 200
+
+#: Timezone a user's calendar-day filter is read in when they have none saved.
+DEFAULT_USER_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+
 router = KactusAPIRouter(prefix="/api/market", tags=["market-admin"])
+
+
+def _user_tz(request: Request) -> ZoneInfo:
+    """The requesting user's timezone — the zone their date filters mean.
+
+    Falls back to VN rather than UTC: a stale or unparseable value must not
+    silently shift the day boundary a filtered page is cut on.
+    """
+    name = getattr(request.state.user, "timezone", None)
+    if not name:
+        return DEFAULT_USER_TZ
+    try:
+        return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        return DEFAULT_USER_TZ
 
 
 @router.post("/gold/import", **multipart_upload_openapi("files"))
@@ -130,6 +157,60 @@ async def list_sync_jobs(
     return SyncJobListSchema(
         active=[SyncJobSchema.model_validate(j) for j in active],
         recent=[SyncJobSchema.model_validate(j) for j in recent],
+    )
+
+
+@router.get("/sync/jobs/search")
+@provide_session
+async def search_sync_jobs(
+    request: Request,
+    session: AsyncSession,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(DEFAULT_QUEUE_PAGE_SIZE, ge=1, le=MAX_QUEUE_PAGE_SIZE),
+    status: str | None = None,
+    type: str | None = None,
+    source: str | None = None,
+    created_from: datetime.date | None = None,
+    created_to: datetime.date | None = None,
+    order: str = "desc",
+) -> SyncJobPageSchema:
+    """One filtered page of the queue, newest first, + the global live count.
+
+    ``status`` takes a literal ``SyncJobStatus`` or ``"active"`` (pending OR
+    running); ``type`` is the job family (``gold``), ``source`` matches
+    ``params.source``. ``created_from`` / ``created_to`` are the *user's*
+    calendar days — resolved to UTC instants here, so picking "today" means
+    their today, not UTC's.
+    """
+    tz = _user_tz(request)
+    created_from_dt = (
+        datetime.datetime.combine(created_from, datetime.time.min, tzinfo=tz)
+        if created_from
+        else None
+    )
+    created_to_dt = (
+        datetime.datetime.combine(created_to, datetime.time.max, tzinfo=tz)
+        if created_to
+        else None
+    )
+
+    jobs, total = await SyncJobService.search(
+        session,
+        page=page,
+        page_size=page_size,
+        status=status,
+        job_family=type,
+        source=source,
+        created_from=created_from_dt,
+        created_to=created_to_dt,
+        order="asc" if order == "asc" else "desc",
+    )
+    return SyncJobPageSchema(
+        total=total,
+        page=page,
+        page_size=page_size,
+        items=[SyncJobSchema.model_validate(j) for j in jobs],
+        active_count=await SyncJobService.count_active(session),
     )
 
 

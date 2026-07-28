@@ -84,7 +84,13 @@ export interface DataTableFilterChip {
   onRemove: () => void;
 }
 
-interface DataTableProps<T> {
+/** A single sort directive: the column `key` plus its direction. */
+export interface DataTableSort {
+  key: string;
+  desc: boolean;
+}
+
+export interface DataTableProps<T> {
   columns: DataTableColumn<T>[];
   data: T[];
   loading?: boolean;
@@ -111,6 +117,15 @@ interface DataTableProps<T> {
   filterChips?: DataTableFilterChip[];
   /** When provided, rows render as cards below the `md` breakpoint. */
   renderCard?: (record: T, index: number) => React.ReactNode;
+  /** Controlled sort state; pairs with `onSortChange`. */
+  sort?: DataTableSort | null;
+  /**
+   * Take over sorting. Header clicks call this instead of re-ordering `data`,
+   * and the rows render exactly as given — which is the only correct behaviour
+   * under server pagination, where sorting client-side would shuffle the
+   * current page rather than re-query the table.
+   */
+  onSortChange?: (sort: DataTableSort | null) => void;
 }
 
 function alignClass(align?: 'left' | 'center' | 'right'): string | undefined {
@@ -148,15 +163,34 @@ export function DataTable<T>({
   toolbarActions,
   filterChips,
   renderCard,
+  sort,
+  onSortChange,
 }: DataTableProps<T>) {
   const [globalFilter, setGlobalFilter] = useState('');
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [localSorting, setLocalSorting] = useState<SortingState>([]);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(() =>
     Object.fromEntries(columns.filter((c) => c.defaultHidden).map((c) => [c.key, false])),
   );
   const isDesktop = useIsDesktop();
   const serverMode = pagination?.mode === 'server';
   const controlledSearch = onSearchChange !== undefined;
+  const controlledSort = onSortChange !== undefined;
+
+  const sorting: SortingState = controlledSort
+    ? sort
+      ? [{ id: sort.key, desc: sort.desc }]
+      : []
+    : localSorting;
+
+  const handleSortingChange = (updater: SortingState | ((s: SortingState) => SortingState)) => {
+    const next = typeof updater === 'function' ? updater(sorting) : updater;
+    if (!controlledSort) {
+      setLocalSorting(next);
+      return;
+    }
+    const [first] = next;
+    onSortChange(first ? { key: first.id, desc: first.desc } : null);
+  };
 
   const columnDefs = useMemo<ColumnDef<T>[]>(
     () =>
@@ -191,8 +225,14 @@ export function DataTable<T>({
     columns: columnDefs,
     state: { globalFilter, sorting, columnVisibility },
     onGlobalFilterChange: setGlobalFilter,
-    onSortingChange: setSorting,
+    onSortingChange: handleSortingChange,
     onColumnVisibilityChange: setColumnVisibility,
+    manualSorting: controlledSort,
+    // Controlled sorting drives a server ORDER BY, where "unsorted" is not a
+    // state the caller can render — dropping it makes the header a plain
+    // asc/desc toggle instead of a three-click cycle whose middle step looks
+    // like nothing happened.
+    enableSortingRemoval: !controlledSort,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
