@@ -15,6 +15,7 @@ import time
 from kactus_common.database.oltp.models import utcnow
 from kactus_common.exceptions import ValidationError
 from pydantic import ValidationError as PydanticValidationError
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .const import NotificationChannelType, NotificationLogStatus, NotificationTrigger
@@ -150,8 +151,15 @@ class NotificationLogService:
         error: str | None,
         trigger: NotificationTrigger = NotificationTrigger.MANUAL,
         finished_at: datetime.datetime | None = None,
+        targets: list[dict] | None = None,
+        attempt_errors: list[dict] | None = None,
     ) -> NotificationLog:
-        """Insert a single log row capturing the final send outcome."""
+        """Insert a single log row capturing the final send outcome.
+
+        ``targets`` is the per-conversation outcome for fan-out channels; the
+        delivered/total counts are derived from it so callers cannot disagree
+        with their own target list.
+        """
         log = NotificationLog.init(
             channel_id=channel.id,
             owner_id=channel.owner_id,
@@ -160,11 +168,18 @@ class NotificationLogService:
             project_id=channel.project_id,
             channel_type=str(channel.channel_type),
             event_title=event.title,
+            body=event.body or None,
             level=str(event.level),
             status=str(status),
             trigger=str(trigger),
             attempts=attempts,
             error=error,
+            targets=targets or None,
+            attempt_errors=attempt_errors or None,
+            delivered_count=(
+                sum(1 for t in targets if t.get("ok")) if targets else None
+            ),
+            target_count=len(targets) if targets else None,
             finished_at=finished_at,
         )
         session.add(log)
@@ -179,14 +194,28 @@ class NotificationLogService:
         *,
         channel_id: int | None = None,
         limit: int = 50,
-    ) -> list[NotificationLog]:
+        offset: int = 0,
+    ) -> tuple[int, list[NotificationLog]]:
         """Most-recent-first logs for a project (optionally one channel).
 
         ``NotificationLog`` is not ``ProjectScopedMixin`` (the queue consumer
         writes it context-free), so the project scope is applied explicitly here.
+        Returns ``(total, page)`` — the total is the *matching row count*, not the
+        page size, so the client can page instead of guessing there is one page.
         """
+        total_stmt = (
+            select(func.count())
+            .select_from(NotificationLog)
+            .filter_by(project_id=project_id)
+        )
         stmt = NotificationLog.select().filter_by(project_id=project_id)
         if channel_id is not None:
+            total_stmt = total_stmt.filter_by(channel_id=channel_id)
             stmt = stmt.filter_by(channel_id=channel_id)
-        stmt = stmt.order_by(NotificationLog.create_time.desc()).limit(limit)
-        return list(await session.scalars(stmt))
+        total = int(await session.scalar(total_stmt) or 0)
+        stmt = (
+            stmt.order_by(NotificationLog.create_time.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        return total, list(await session.scalars(stmt))

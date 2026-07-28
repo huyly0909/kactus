@@ -9,4 +9,5 @@ export default defineAppModule({
   description: 'Delivery channels for reports and alerts',
   basePath: '/notifications',
   displayOrder: 30,
+  requiresProject: true,
 });

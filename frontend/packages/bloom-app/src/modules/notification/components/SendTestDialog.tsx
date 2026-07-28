@@ -14,11 +14,13 @@ import {
 import {
   Form,
   FormControl,
+  FormDescription,
   FormField,
   FormItem,
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -71,7 +73,7 @@ export function SendTestDialog({ open, onOpenChange, channelId }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{t('notification.send_title')}</DialogTitle>
         </DialogHeader>
@@ -97,7 +99,7 @@ export function SendTestDialog({ open, onOpenChange, channelId }: Props) {
                 <FormItem>
                   <FormLabel>{t('notification.event_body')}</FormLabel>
                   <FormControl>
-                    <Input {...field} />
+                    <Textarea rows={5} {...field} />
                   </FormControl>
                 </FormItem>
               )}
@@ -122,6 +124,9 @@ export function SendTestDialog({ open, onOpenChange, channelId }: Props) {
                       ))}
                     </SelectContent>
                   </Select>
+                  {/* The field looks like it might route or prioritise; it does
+                      neither, so say what it actually does. */}
+                  <FormDescription>{t('notification.level_hint')}</FormDescription>
                 </FormItem>
               )}
             />

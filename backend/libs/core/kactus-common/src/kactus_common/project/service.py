@@ -7,7 +7,7 @@ import time
 from kactus_common.exceptions import ConflictError, NotFoundError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .const import DefaultRole
+from .const import PERSONAL_PROJECT_NAME, DefaultRole
 from .model import Project, ProjectMember
 
 
@@ -72,7 +72,7 @@ class ProjectService:
             return existing
         return await ProjectService.create(
             session,
-            name=f"{user.name}'s Project",
+            name=PERSONAL_PROJECT_NAME,
             code=code,
             description="Personal project",
             creator_id=user.id,

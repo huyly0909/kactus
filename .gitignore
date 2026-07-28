@@ -14,8 +14,10 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Anchored: unanchored `lib/` also matched frontend source dirs like
+# packages/bloom-app/src/lib/, silently keeping real modules out of the repo.
+/lib/
+/lib64/
 parts/
 sdist/
 var/

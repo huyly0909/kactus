@@ -26,7 +26,7 @@ from kactus_common.audit.model import AuditLog
 from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
-from kactus_common.project.const import DefaultRole
+from kactus_common.project.const import PERSONAL_PROJECT_NAME, DefaultRole
 from kactus_common.project.service import ProjectService
 from kactus_common.user import auth as auth_mod
 from kactus_common.user.model import User
@@ -117,7 +117,10 @@ async def test_personal_project_created_with_owner_membership(db):
         role = await ProjectService.get_member_role(
             session, project_id=user._project_id, user_id=user.id
         )
+        project = await ProjectService.get_by_id(session, user._project_id)
     assert role == DefaultRole.OWNER.value
+    assert project.name == PERSONAL_PROJECT_NAME
+    assert project.code == f"user-{user.id}"
 
 
 @pytest.mark.asyncio

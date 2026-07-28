@@ -1,12 +1,27 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Plus, Bell, Send, Hash, MessageCircle, RefreshCw, Zap, Loader2 } from 'lucide-react';
+import {
+  Plus,
+  Bell,
+  Send,
+  Hash,
+  MessageCircle,
+  RefreshCw,
+  Zap,
+  Loader2,
+  FlaskConical,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
-import { useNotificationChannels, useZaloTestMessage } from '@/hooks/useNotificationQuery';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  useNotificationChannels,
+  useTestChannel,
+  useZaloTestMessage,
+} from '@/hooks/useNotificationQuery';
 import { ChannelFormDialog } from '@modules/notification/components/ChannelFormDialog';
 import { ZaloPAQRDialog } from '@modules/notification/components/ZaloPAQRDialog';
 import type { NotificationChannel, NotificationChannelType } from '@/types/notification';
@@ -17,11 +32,43 @@ const TYPE_ICON: Record<NotificationChannelType, React.ElementType> = {
   zalo_pa: MessageCircle,
 };
 
+interface RowActionProps {
+  label: string;
+  icon: React.ReactNode;
+  disabled?: boolean;
+  onClick: () => void;
+}
+
+/** Icon-only row action — the label lives in the tooltip so the actions column
+ * stays narrow and every button reads the same way. */
+function RowAction({ label, icon, disabled, onClick }: RowActionProps) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={label}
+          disabled={disabled}
+          onClick={(e) => {
+            e.stopPropagation(); // the row itself navigates to the detail page
+            onClick();
+          }}
+        >
+          {icon}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  );
+}
+
 export function NotificationListPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { data: channels, isLoading } = useNotificationChannels();
   const zaloTest = useZaloTestMessage();
+  const test = useTestChannel();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [reauthChannel, setReauthChannel] = useState<NotificationChannel | null>(null);
 
@@ -58,37 +105,46 @@ export function NotificationListPage() {
       title: '',
       className: 'text-right',
       render: (ch) => {
-        if (ch.channel_type !== 'zalo_pa') return null;
+        const isZalo = ch.channel_type === 'zalo_pa';
         const zapping = zaloTest.isPending && zaloTest.variables === ch.id;
+        const testing = test.isPending && test.variables === ch.id;
         return (
           <div className="flex items-center justify-end gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={!ch.is_active || zaloTest.isPending}
-              title={t('notification.zalo.test_message')}
-              onClick={(e) => {
-                e.stopPropagation();
-                zaloTest.mutate(ch.id);
-              }}
-            >
-              {zapping ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Zap className="h-3.5 w-3.5" />
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                setReauthChannel(ch);
-              }}
-            >
-              <RefreshCw className="mr-1 h-3.5 w-3.5" />
-              {t('notification.zalo.reconnect')}
-            </Button>
+            {/* Credential check — every channel type has one, and it is the
+                cheap thing to reach for before sending anything real. */}
+            <RowAction
+              label={t('notification.test')}
+              disabled={test.isPending}
+              onClick={() => test.mutate(ch.id)}
+              icon={
+                testing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FlaskConical className="h-3.5 w-3.5" />
+                )
+              }
+            />
+            {isZalo && (
+              <RowAction
+                label={t('notification.zalo.test_message')}
+                disabled={!ch.is_active || zaloTest.isPending}
+                onClick={() => zaloTest.mutate(ch.id)}
+                icon={
+                  zapping ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Zap className="h-3.5 w-3.5" />
+                  )
+                }
+              />
+            )}
+            {isZalo && (
+              <RowAction
+                label={t('notification.zalo.reconnect')}
+                onClick={() => setReauthChannel(ch)}
+                icon={<RefreshCw className="h-3.5 w-3.5" />}
+              />
+            )}
           </div>
         );
       },

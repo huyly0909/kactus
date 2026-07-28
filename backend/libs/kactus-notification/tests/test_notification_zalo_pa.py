@@ -162,6 +162,30 @@ def test_channel_send_partial_success_does_not_raise(monkeypatch):
     with ch:
         ch.send(RenderedMessage(text="hi"))  # must not raise
     assert delivered == ["g7"]
+    # …but the failure is not swallowed: the dispatcher logs it per conversation.
+    assert [(t.thread_id, t.ok) for t in ch.last_targets] == [
+        ("42", False),
+        ("g7", True),
+    ]
+    assert "logged out" in ch.last_targets[0].error
+
+
+def test_channel_send_records_targets_when_everything_fails(monkeypatch):
+    """The raising path still has to leave the per-conversation errors behind."""
+    monkeypatch.setattr(zalo_pa, "build_sync_bot", lambda cfg: "BOT")
+    monkeypatch.setattr("time.sleep", lambda secs: None)
+
+    def _boom(bot, text, thread_id, thread_type):
+        raise ZaloAPIException("logged out")
+
+    monkeypatch.setattr(zalo_pa, "send_text_sync", _boom)
+
+    ch = build_channel(NotificationChannelType.ZALO_PA, MULTI_CONFIG)
+    with ch:
+        with pytest.raises(ExternalServiceError):
+            ch.send(RenderedMessage(text="hi"))
+    assert [t.thread_id for t in ch.last_targets] == ["42", "g7"]
+    assert all(t.ok is False and t.error for t in ch.last_targets)
 
 
 def test_channel_send_expired_session_is_non_retryable(monkeypatch):
@@ -238,6 +262,10 @@ async def test_list_recipients_maps_friends_and_groups():
     # Query filters by name (case-insensitive).
     only_team = await client.list_recipients("team")
     assert [r.id for r in only_team] == ["g1"]
+
+    # …and diacritic-insensitive: nobody types "Chị" on an ASCII keyboard.
+    assert [r.id for r in await client.list_recipients("chi hai")] == ["u10"]
+    assert [r.id for r in await client.list_recipients("CHỊ")] == ["u10"]
 
 
 # --------------------------------------------------------------------------- #

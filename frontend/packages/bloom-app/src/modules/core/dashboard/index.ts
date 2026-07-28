@@ -9,4 +9,5 @@ export default defineAppModule({
   description: 'Overview of watchlists and notification channels',
   basePath: '/',
   displayOrder: 10,
+  requiresProject: true,
 });

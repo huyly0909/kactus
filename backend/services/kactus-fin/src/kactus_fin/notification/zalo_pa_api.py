@@ -15,16 +15,22 @@ from fastapi import Request
 from kactus_common.audit import audit
 from kactus_common.authorization.const import PermissionAct
 from kactus_common.authorization.decorator import permission
+from kactus_common.database.oltp.models import utcnow
 from kactus_common.exceptions import ConflictError, ValidationError
 from kactus_common.project.const import ProjectPermission
 from kactus_common.router import KactusAPIRouter
 from kactus_common.schemas import Pagination
 from kactus_fin.dependencies import provide_session
 from kactus_fin.notification.api import _to_schema
-from kactus_notification.const import NotificationChannelType
+from kactus_notification.const import (
+    NotificationChannelType,
+    NotificationLogStatus,
+    NotificationTrigger,
+)
 from kactus_notification.model import NotificationChannel
 from kactus_notification.schema import (
     NotificationChannelSchema,
+    NotificationEvent,
     Recipient,
     ZaloPAChannelConfig,
     ZaloPAChannelCreateRequest,
@@ -37,9 +43,13 @@ from kactus_notification.schema import (
     ZaloPATestMessageResult,
     ZaloRecipientTarget,
 )
-from kactus_notification.service import NotificationChannelService
+from kactus_notification.service import (
+    NotificationChannelService,
+    NotificationLogService,
+)
 from kactus_notification.zalo_pa import (
     TEST_GREETING,
+    TEST_MESSAGE_TITLE,
     build_channel_config,
     complete_login,
     generate_qr,
@@ -220,6 +230,10 @@ async def zalo_test_message(
     Synchronous on purpose (mirror of the generic ``/test``): the user is
     waiting at the UI for the outcome. Blocked on an inactive channel — the
     greeting is a real message, and deactivate must mean silence.
+
+    A real message went out, so it is recorded in the send history like any
+    other — ``trigger=test``, with the per-conversation outcome this endpoint
+    already computes.
     """
     channel = await NotificationChannelService.get_or_404(session, channel_id)
     _require_zalo(channel)
@@ -227,6 +241,21 @@ async def zalo_test_message(
         raise ConflictError("Channel is inactive — activate it before testing")
     results = await send_greeting_to_recipients(_zalo_config(channel), TEST_GREETING)
     sent = sum(1 for r in results if r["ok"])
+    failed = [r["error"] for r in results if not r["ok"] and r.get("error")]
+    await NotificationLogService.record(
+        session,
+        channel=channel,
+        event=NotificationEvent(title=TEST_MESSAGE_TITLE, body=TEST_GREETING),
+        status=(
+            NotificationLogStatus.SUCCESS if sent else NotificationLogStatus.FAILED
+        ),
+        attempts=1,
+        # The per-target errors carry the detail; this is the one-line summary.
+        error=None if sent else (failed[0] if failed else "No conversation reachable"),
+        trigger=NotificationTrigger.TEST,
+        finished_at=utcnow(),
+        targets=results,
+    )
     if sent:
         await NotificationChannelService.mark_used(session, channel)
     audit(

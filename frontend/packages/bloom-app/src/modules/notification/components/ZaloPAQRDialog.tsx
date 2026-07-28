@@ -51,10 +51,10 @@ export function ZaloPAQRDialog({
   const [selected, setSelected] = useState<Map<string, ZaloRecipient>>(new Map());
   const cancelled = useRef(false);
 
-  // Only fetch once the login session is usable (pick step).
+  // Only fetch once the login session is usable (pick step). The whole directory
+  // comes back in one call; the picker filters it locally as the user types.
   const { data: recipients, isLoading: recipientsLoading } = useZaloRecipients(
     step === 'pick' ? sessionId : '',
-    query,
   );
 
   useEffect(() => {
@@ -147,7 +147,9 @@ export function ZaloPAQRDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      {/* Wider than the default max-w-md: the pick step is a list of names +
+          avatars + badges, which truncates badly at 448px. */}
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{t('notification.zalo.login_title')}</DialogTitle>
         </DialogHeader>

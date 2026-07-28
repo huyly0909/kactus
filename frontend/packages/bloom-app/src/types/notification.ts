@@ -7,7 +7,7 @@
 export type NotificationChannelType = 'telegram' | 'slack' | 'zalo_pa';
 export type NotificationLevel = 'info' | 'warning' | 'critical';
 export type NotificationLogStatus = 'success' | 'failed';
-export type NotificationTrigger = 'manual' | 'event';
+export type NotificationTrigger = 'manual' | 'event' | 'test';
 
 export interface NotificationChannel {
   id: string;
@@ -19,16 +19,38 @@ export interface NotificationChannel {
   last_used_at?: string | null;
 }
 
+/** Outcome of delivering one message to one conversation (fan-out channels). */
+export interface DeliveryTarget {
+  thread_id: string;
+  thread_type: number;
+  name?: string | null;
+  ok: boolean;
+  error?: string | null;
+}
+
+/** One *failed* transport attempt — the retry history behind `attempts`. */
+export interface SendAttempt {
+  attempt: number;
+  error: string;
+  at?: string | null;
+}
+
 export interface NotificationLog {
   id: string;
   channel_id: string;
   channel_type: NotificationChannelType;
   event_title: string;
+  body?: string | null;
   level: NotificationLevel;
   status: NotificationLogStatus;
   trigger: NotificationTrigger;
   attempts: number;
   error?: string | null;
+  /** Empty for single-target channels (Telegram/Slack). */
+  targets: DeliveryTarget[];
+  attempt_errors: SendAttempt[];
+  delivered_count?: number | null;
+  target_count?: number | null;
   started_at?: string | null;
   finished_at?: string | null;
 }
@@ -82,6 +104,7 @@ export interface ZaloPAConfig {
 
 export interface ZaloTestMessageResult {
   thread_id: string;
+  thread_type: number;
   name?: string | null;
   ok: boolean;
   error?: string | null;

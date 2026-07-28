@@ -276,12 +276,14 @@ async def test_log_list_scoped_and_filtered(db):
                 error=None,
             )
         # Project-scoped: project 1 sees 3, not project 2's row.
-        mine = await NotificationLogService.list_for_project(session, 1)
+        total, mine = await NotificationLogService.list_for_project(session, 1)
+        assert total == 3
         assert {log.event_title for log in mine} == {"a", "b", "c"}
-        # Channel filter narrows to ch1's two rows.
-        ch1_logs = await NotificationLogService.list_for_project(
+        # Channel filter narrows to ch1's two rows — and the count follows it.
+        ch1_total, ch1_logs = await NotificationLogService.list_for_project(
             session, 1, channel_id=ch1.id
         )
+        assert ch1_total == 2
         assert {log.event_title for log in ch1_logs} == {"a", "b"}
 
 
@@ -300,5 +302,14 @@ async def test_log_list_limit(db):
                 attempts=1,
                 error=None,
             )
-        limited = await NotificationLogService.list_for_project(session, 1, limit=3)
+        total, limited = await NotificationLogService.list_for_project(
+            session, 1, limit=3
+        )
         assert len(limited) == 3
+        # total is the matching row count, not the page size — otherwise the
+        # client cannot tell a full page from the end of the history.
+        assert total == 5
+        _total, page2 = await NotificationLogService.list_for_project(
+            session, 1, limit=3, offset=3
+        )
+        assert len(page2) == 2

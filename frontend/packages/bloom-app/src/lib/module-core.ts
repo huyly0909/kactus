@@ -46,6 +46,10 @@ export interface AppModuleDefinition {
   adminOnly?: boolean;
   /** Registered (routes work) but never shown in the sidebar. */
   sidebarHidden?: boolean;
+  /** Every page under this module reads project-scoped data, so it is inert
+   *  until a project is selected — shown disabled rather than hidden, and the
+   *  route redirects to the project picker (see RequireProject). */
+  requiresProject?: boolean;
   requiredPermission?: NavPermission;
 }
 

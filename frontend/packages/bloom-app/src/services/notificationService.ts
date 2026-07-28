@@ -105,10 +105,12 @@ export const notificationService = {
       return data.data;
     },
 
-    listRecipients: async (sessionId: string, query = ''): Promise<ZaloRecipient[]> => {
+    /** The account's whole directory — the picker filters it in the browser.
+     * Each call costs three sequential round-trips to Zalo, so it is never
+     * re-issued per keystroke. */
+    listRecipients: async (sessionId: string): Promise<ZaloRecipient[]> => {
       const { data } = await apiClient.get<ApiResponse<ListEnvelope<ZaloRecipient>>>(
         `${BASE}/zalo-pa/sessions/${sessionId}/recipients`,
-        { params: { query } },
       );
       return data.data.items;
     },
@@ -126,10 +128,9 @@ export const notificationService = {
     },
 
     /** Friends + groups reachable with the channel's stored session (edit picker). */
-    listChannelRecipients: async (channelId: string, query = ''): Promise<ZaloRecipient[]> => {
+    listChannelRecipients: async (channelId: string): Promise<ZaloRecipient[]> => {
       const { data } = await apiClient.get<ApiResponse<ListEnvelope<ZaloRecipient>>>(
         `${BASE}/zalo-pa/channels/${channelId}/recipients`,
-        { params: { query } },
       );
       return data.data.items;
     },

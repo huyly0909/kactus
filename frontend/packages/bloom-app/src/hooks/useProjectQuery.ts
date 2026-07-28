@@ -50,6 +50,21 @@ export function useCreateProject() {
   });
 }
 
+export function useUpdateProject(projectId: string) {
+  const qc = useQueryClient();
+  const { t } = useTranslation();
+  return useMutation({
+    mutationFn: (body: { name?: string; code?: string; description?: string }) =>
+      projectService.updateProject(projectId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: projectKeys.all });
+      toast.success(t('common.update_success'));
+    },
+    // Surface the backend's own message — a member without manage rights gets a 403.
+    onError: (err: unknown) => toast.error(resolveError(err, t('common.error_generic'))),
+  });
+}
+
 export function useAddMember(projectId: string) {
   const qc = useQueryClient();
   const { t } = useTranslation();

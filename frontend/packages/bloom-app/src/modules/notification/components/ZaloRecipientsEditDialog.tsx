@@ -53,7 +53,7 @@ export function ZaloRecipientsEditDialog({ open, onOpenChange, channel }: Props)
     isLoading,
     isError,
     refetch,
-  } = useZaloChannelRecipients(open ? channel.id : '', query);
+  } = useZaloChannelRecipients(open ? channel.id : '');
   const updateRecipients = useUpdateZaloRecipients(channel.id);
 
   // Pre-check what the channel already targets, fresh on every open.
@@ -84,7 +84,7 @@ export function ZaloRecipientsEditDialog({ open, onOpenChange, channel }: Props)
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{t('notification.zalo.edit_conversations')}</DialogTitle>
         </DialogHeader>

@@ -114,7 +114,9 @@ export function NotificationDetailPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      {/* 1:3, not 1:2 — settings is three fields, while the history table now
+          carries six columns and would otherwise scroll sideways. */}
+      <div className="grid gap-6 lg:grid-cols-4">
         <Card className="lg:col-span-1">
           <CardHeader>
             <CardTitle className="text-base">{t('notification.settings')}</CardTitle>
@@ -190,7 +192,7 @@ export function NotificationDetailPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
+        <Card className="lg:col-span-3">
           <CardHeader>
             <CardTitle className="text-base">{t('notification.history')}</CardTitle>
           </CardHeader>

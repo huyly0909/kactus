@@ -26,6 +26,9 @@ from .registry import build_channel, get_template
 from .schema import NotificationEvent
 from .service import NotificationLogService
 
+#: Log title for a credential probe (``/test``) — no message leaves the system.
+CONNECTION_TEST_TITLE = "Connection test"
+
 
 def _send_blocking(impl: BaseNotificationChannel, rendered: RenderedMessage) -> None:
     with impl:  # create_connection / close_connection
@@ -35,6 +38,15 @@ def _send_blocking(impl: BaseNotificationChannel, rendered: RenderedMessage) -> 
 def _test_blocking(impl: BaseNotificationChannel) -> bool:
     with impl:
         return impl.test_connection()
+
+
+def _attempt_error(attempt: int, exc: Exception) -> dict:
+    """One entry of ``NotificationLog.attempt_errors`` (JSON-serialisable)."""
+    return {
+        "attempt": attempt,
+        "error": str(exc),
+        "at": utcnow().isoformat(),
+    }
 
 
 class Notifier:
@@ -76,6 +88,9 @@ class Notifier:
         base_delay = settings.notification_retry_base_delay
         attempts = 0
         last_err: Exception | None = None
+        # One entry per *failed* attempt. Kept for the log because "attempts: 3"
+        # without the three errors cannot tell a flaky network from a dead token.
+        attempt_errors: list[dict] = []
 
         for attempt in range(1, max_attempts + 1):
             attempts = attempt
@@ -90,10 +105,13 @@ class Notifier:
                     error=None,
                     trigger=trigger,
                     finished_at=utcnow(),
+                    targets=[t.as_dict() for t in impl.last_targets],
+                    attempt_errors=attempt_errors,
                 )
                 return
             except impl.retryable_exceptions as exc:  # transient transport error
                 last_err = exc
+                attempt_errors.append(_attempt_error(attempt, exc))
                 logger.warning(
                     "Notification send to {ctype} channel {cid} failed "
                     "(attempt {n}/{max}): {exc}",
@@ -107,6 +125,7 @@ class Notifier:
                     await asyncio.sleep(base_delay * 2 ** (attempt - 1))
             except ExternalServiceError as exc:  # deterministic — do not retry
                 last_err = exc
+                attempt_errors.append(_attempt_error(attempt, exc))
                 break
 
         await NotificationLogService.record(
@@ -118,6 +137,8 @@ class Notifier:
             error=str(last_err),
             trigger=trigger,
             finished_at=utcnow(),
+            targets=[t.as_dict() for t in impl.last_targets],
+            attempt_errors=attempt_errors,
         )
         raise ExternalServiceError(
             f"Failed to send to {ctype} channel after {attempts} attempt(s): "
@@ -125,11 +146,39 @@ class Notifier:
         ) from last_err
 
     @staticmethod
-    async def test(channel: NotificationChannel) -> bool:
-        """Validate the channel's credentials/config. ``False`` on transport error."""
+    async def test(
+        channel: NotificationChannel, session: AsyncSession | None = None
+    ) -> bool:
+        """Validate the channel's credentials/config. ``False`` on transport error.
+
+        Sends nothing (Telegram ``getMe``, Zalo ``fetchAccountInfo``, Slack a URL
+        shape check) but *is* an outcome worth auditing: pass a ``session`` and it
+        records a ``trigger=TEST`` log row so the history explains a channel that
+        was probed and found dead. No retry — the user is waiting on the answer.
+        """
         ctype = NotificationChannelType(channel.channel_type)
         impl = build_channel(ctype, channel.config)
+        error: str | None = None
         try:
-            return await asyncio.to_thread(_test_blocking, impl)
-        except requests.RequestException:
-            return False
+            ok = await asyncio.to_thread(_test_blocking, impl)
+            if not ok:
+                error = "Channel rejected the credentials"
+        except requests.RequestException as exc:
+            ok, error = False, str(exc)
+
+        if session is not None:
+            await NotificationLogService.record(
+                session,
+                channel=channel,
+                event=NotificationEvent(title=CONNECTION_TEST_TITLE),
+                status=(
+                    NotificationLogStatus.SUCCESS
+                    if ok
+                    else NotificationLogStatus.FAILED
+                ),
+                attempts=1,
+                error=error,
+                trigger=NotificationTrigger.TEST,
+                finished_at=utcnow(),
+            )
+        return ok

@@ -45,6 +45,33 @@ class RenderedMessage:
     payload: dict | None = None
 
 
+@dataclass
+class DeliveryTarget:
+    """Outcome of delivering one message to **one** conversation.
+
+    Only fan-out channels (Zalo PA, which sends to every saved conversation)
+    produce these; Telegram/Slack have a single implicit target and leave
+    ``last_targets`` empty. Persisted verbatim onto ``NotificationLog.targets``,
+    so a log row answers *which* conversations got the message — the fan-out
+    used to be invisible above ``send()``.
+    """
+
+    thread_id: str
+    thread_type: int
+    name: str | None
+    ok: bool
+    error: str | None = None
+
+    def as_dict(self) -> dict:
+        return {
+            "thread_id": self.thread_id,
+            "thread_type": self.thread_type,
+            "name": self.name,
+            "ok": self.ok,
+            "error": self.error,
+        }
+
+
 class BaseNotificationChannel(ABC):
     """Connection lifecycle + send for one channel type.
 
@@ -67,6 +94,10 @@ class BaseNotificationChannel(ABC):
     def __init__(self, config: BaseChannelConfig) -> None:
         self.config = config
         self._session: requests.Session | None = None
+        # Per-conversation outcome of the most recent send(). An attribute rather
+        # than a return value because a send that delivers to nobody *raises* —
+        # and that is exactly the case whose per-target errors we must log.
+        self.last_targets: list[DeliveryTarget] = []
 
     # ---- connection lifecycle (sync, cheap) -------------------------------- #
     def create_connection(self) -> None:
@@ -106,7 +137,11 @@ class BaseNotificationChannel(ABC):
     # ---- behaviour (blocking; wrapped in to_thread by the async caller) ---- #
     @abstractmethod
     def send(self, message: RenderedMessage) -> None:
-        """Deliver ``message`` (blocking). Raises on transport/HTTP error."""
+        """Deliver ``message`` (blocking). Raises on transport/HTTP error.
+
+        Fan-out channels record one :class:`DeliveryTarget` per conversation in
+        ``self.last_targets`` — including on the raising path.
+        """
 
     @abstractmethod
     def test_connection(self) -> bool:
@@ -212,10 +247,14 @@ class ZaloPAChannel(BaseNotificationChannel):
         targets that already received it. With zero deliveries, a transient
         transport error re-raises (safe to retry the batch); otherwise the
         ``ZaloAPIException``s mean the session is dead → non-retryable.
+
+        Every conversation's outcome lands in ``self.last_targets`` on both
+        paths, so a partial send is auditable instead of a bare "success".
         """
         from .zalo_pa import SEND_DELAY_SECS, send_text_sync
 
         cfg: ZaloPAChannelConfig = self.config  # type: ignore[assignment]
+        self.last_targets = []
         if not cfg.recipients:
             raise ExternalServiceError(
                 "Zalo PA channel has no saved conversations — edit the channel"
@@ -231,8 +270,25 @@ class ZaloPAChannel(BaseNotificationChannel):
                     self._bot, message.text, target.thread_id, target.thread_type
                 )
                 delivered += 1
+                self.last_targets.append(
+                    DeliveryTarget(
+                        thread_id=target.thread_id,
+                        thread_type=target.thread_type,
+                        name=target.name,
+                        ok=True,
+                    )
+                )
             except ZaloAPIException as exc:  # expired session / API refusal
                 session_err = exc
+                self.last_targets.append(
+                    DeliveryTarget(
+                        thread_id=target.thread_id,
+                        thread_type=target.thread_type,
+                        name=target.name,
+                        ok=False,
+                        error=str(exc),
+                    )
+                )
                 logger.warning(
                     "[zalo_pa] send to {tid} failed: {exc}",
                     tid=target.thread_id,
@@ -240,6 +296,15 @@ class ZaloPAChannel(BaseNotificationChannel):
                 )
             except self.retryable_exceptions as exc:  # transient transport error
                 transient_err = exc
+                self.last_targets.append(
+                    DeliveryTarget(
+                        thread_id=target.thread_id,
+                        thread_type=target.thread_type,
+                        name=target.name,
+                        ok=False,
+                        error=str(exc),
+                    )
+                )
                 logger.warning(
                     "[zalo_pa] send to {tid} hit transport error: {exc}",
                     tid=target.thread_id,

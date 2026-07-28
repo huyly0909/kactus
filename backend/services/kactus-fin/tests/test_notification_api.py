@@ -206,7 +206,7 @@ async def test_test_endpoint(client, monkeypatch):
         "id"
     ]
 
-    async def _ok(channel):
+    async def _ok(channel, session=None):
         return True
 
     monkeypatch.setattr(dispatcher.Notifier, "test", staticmethod(_ok))
@@ -216,12 +216,39 @@ async def test_test_endpoint(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_test_endpoint_records_history(client, monkeypatch):
+    """The real Notifier.test writes a trigger=test row so a dead probe is visible."""
+    cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
+        "id"
+    ]
+
+    class _Impl:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+        def test_connection(self):
+            return False
+
+    monkeypatch.setattr(dispatcher, "build_channel", lambda t, c: _Impl())
+    resp = await client.post(f"/api/notifications/{cid}/test")
+    assert resp.status_code == 502
+
+    logs = (await client.get(f"/api/notifications/{cid}/logs")).json()["data"]
+    assert logs["total"] == 1
+    assert logs["items"][0]["trigger"] == "test"
+    assert logs["items"][0]["status"] == "failed"
+
+
+@pytest.mark.asyncio
 async def test_test_endpoint_failure_is_502(client, monkeypatch):
     cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
         "id"
     ]
 
-    async def _fail(channel):
+    async def _fail(channel, session=None):
         return False
 
     monkeypatch.setattr(dispatcher.Notifier, "test", staticmethod(_fail))
@@ -438,7 +465,7 @@ async def test_test_endpoint_stays_synchronous(client, redis_queue, monkeypatch)
     they work; a 202 there answers nothing.
     """
 
-    async def _test(channel):
+    async def _test(channel, session=None):
         return True
 
     monkeypatch.setattr(dispatcher.Notifier, "test", staticmethod(_test))

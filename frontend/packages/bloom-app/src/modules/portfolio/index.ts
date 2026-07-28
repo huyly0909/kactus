@@ -9,4 +9,5 @@ export default defineAppModule({
   description: 'Multi-asset watchlists with scheduled refresh',
   basePath: '/portfolios',
   displayOrder: 20,
+  requiresProject: true,
 });

@@ -7,7 +7,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { useSortedModules } from '@/layouts/components/useSortedModules';
+import { ActiveProjectChip } from '@/layouts/components/ActiveProjectChip';
 import { useNavStore } from '@/store/navStore';
+import { useProjectStore } from '@/store/projectStore';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { usePermissionEvaluator } from '@/modules/core/auth/access';
 import { useDebugMode } from '@/hooks/useDebugMode';
@@ -54,6 +56,7 @@ export function ModuleSidebar() {
   const can = usePermissionEvaluator();
   const isSuperuser = useIsAdmin();
   const ctx: VisibilityCtx = { can, isSuperuser, debug };
+  const hasProject = useProjectStore((s) => s.currentProject !== null);
 
   // Mobile drawer — the desktop <aside> and the mobile <Sheet> render the same
   // nav body; the hamburger in TopHeader toggles this store.
@@ -122,7 +125,9 @@ export function ModuleSidebar() {
           {sortedModules
             .filter((mod) => moduleVisible(mod, ctx))
             .map((mod) =>
-              coarseNav ? (
+              mod.requiresProject && !hasProject ? (
+                <DisabledModuleRow key={mod.id} module={mod} />
+              ) : coarseNav ? (
                 <AccordionModuleNode
                   key={mod.id}
                   module={mod}
@@ -156,6 +161,10 @@ export function ModuleSidebar() {
           />
         </nav>
       </ScrollArea>
+
+      <div className="shrink-0 border-t border-sidebar-border p-2">
+        <ActiveProjectChip />
+      </div>
     </div>
   );
 
@@ -272,6 +281,27 @@ function ModuleNode({
         />
       </PopoverContent>
     </Popover>
+  );
+}
+
+// A `requiresProject` module with nothing selected. Shown rather than hidden:
+// the entries are the app's main navigation, and a sidebar that silently loses
+// half its rows reads as a broken build, not as "pick a project first".
+function DisabledModuleRow({ module }: { module: AppModule }) {
+  const { t } = useTranslation();
+  const Icon = module.icon;
+  return (
+    <div
+      aria-disabled
+      title={t('projects.requires_selection')}
+      className={cn(
+        ROW_BASE,
+        'px-3 py-2 text-sm gap-3 text-sidebar-foreground/35 cursor-not-allowed active:scale-100',
+      )}
+    >
+      <Icon className={ICON_BASE} />
+      <span className="truncate">{moduleLabel(module, t)}</span>
+    </div>
   );
 }
 

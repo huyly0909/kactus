@@ -1,9 +1,11 @@
+import { useMemo } from 'react';
 import { Users, Loader2, Square, CheckSquare } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { matchesSearch } from '@/lib/text';
 import type { ZaloRecipient } from '@/types/notification';
 
 /** Stable selection key — user and group id spaces may overlap. */
@@ -12,7 +14,7 @@ export function zaloRecipientKey(r: Pick<ZaloRecipient, 'id' | 'is_group'>): str
 }
 
 interface Props {
-  /** Live list from the session (create) or stored channel creds (edit). */
+  /** The account's whole directory — session (create) or stored creds (edit). */
   recipients: ZaloRecipient[] | undefined;
   isLoading: boolean;
   query: string;
@@ -23,7 +25,13 @@ interface Props {
   disabled?: boolean;
 }
 
-/** Searchable multi-select over a Zalo account's friends + groups. */
+/** Searchable multi-select over a Zalo account's friends + groups.
+ *
+ * Filtering is **local**: the directory is fetched once (three sequential
+ * round-trips to Zalo), so searching it server-side made every keystroke a
+ * multi-second refetch that blanked the list. `matchesSearch` also folds
+ * diacritics, so "duc" finds "Thành Đức".
+ */
 export function ZaloConversationPicker({
   recipients,
   isLoading,
@@ -34,6 +42,10 @@ export function ZaloConversationPicker({
   disabled,
 }: Props) {
   const { t } = useTranslation();
+  const visible = useMemo(
+    () => (recipients ?? []).filter((r) => matchesSearch(r.name, query)),
+    [recipients, query],
+  );
 
   return (
     <div className="space-y-3">
@@ -43,17 +55,17 @@ export function ZaloConversationPicker({
         placeholder={t('notification.zalo.search_recipient')}
         autoFocus
       />
-      <div className="max-h-72 space-y-1 overflow-y-auto rounded-md border border-border p-1">
+      <div className="max-h-96 space-y-1 overflow-y-auto rounded-md border border-border p-1">
         {isLoading && (
           <div className="flex items-center justify-center py-8 text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin" />
           </div>
         )}
-        {!isLoading && (recipients?.length ?? 0) === 0 && (
+        {!isLoading && visible.length === 0 && (
           <p className="py-8 text-center text-sm text-muted-foreground">{t('common.no_results')}</p>
         )}
         {!isLoading &&
-          recipients?.map((r) => {
+          visible.map((r) => {
             const isSelected = selected.has(zaloRecipientKey(r));
             return (
               <button

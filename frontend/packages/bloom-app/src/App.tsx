@@ -6,6 +6,7 @@ import { useThemeStore } from '@/store/themeStore';
 import { useDebugUrlSync } from '@/hooks/useDebugMode';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { NotFoundRedirect } from '@/layouts/components/NotFoundRedirect';
+import { RequireProject } from '@/layouts/components/RequireProject';
 import { LoginPage } from '@/modules/core/auth/pages/LoginPage';
 
 // Route-level code splitting — each page becomes its own async chunk, loaded on
@@ -81,13 +82,50 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<DashboardLayout />}>
-        <Route index element={<DashboardPage />} />
+        {/* Project-scoped pages: without a selection the API 403s, so the guard
+            sends the user to the picker rather than to empty widgets. */}
+        <Route
+          index
+          element={
+            <RequireProject>
+              <DashboardPage />
+            </RequireProject>
+          }
+        />
         <Route path="projects" element={<ProjectListPage />} />
         <Route path="projects/:id" element={<ProjectDetailPage />} />
-        <Route path="portfolios" element={<PortfolioListPage />} />
-        <Route path="portfolios/:id" element={<PortfolioDetailPage />} />
-        <Route path="notifications" element={<NotificationListPage />} />
-        <Route path="notifications/:id" element={<NotificationDetailPage />} />
+        <Route
+          path="portfolios"
+          element={
+            <RequireProject>
+              <PortfolioListPage />
+            </RequireProject>
+          }
+        />
+        <Route
+          path="portfolios/:id"
+          element={
+            <RequireProject>
+              <PortfolioDetailPage />
+            </RequireProject>
+          }
+        />
+        <Route
+          path="notifications"
+          element={
+            <RequireProject>
+              <NotificationListPage />
+            </RequireProject>
+          }
+        />
+        <Route
+          path="notifications/:id"
+          element={
+            <RequireProject>
+              <NotificationDetailPage />
+            </RequireProject>
+          }
+        />
         {/* Market module root → its first sub-page (the sidebar trigger links here). */}
         <Route path="market" element={<Navigate to="/market/gold/overview" replace />} />
         {/* Gold: Overview (board) + Data (superuser backfill/sync), tab in the URL. */}
@@ -115,6 +153,11 @@ function AppRoutes() {
           element={<Navigate to="/settings/preferences" replace />}
         />
         <Route path="settings/:tab" element={<SettingsPage />} />
+        {/* The 401 interceptor and logout hard-navigate to /login, which is not a
+            route (the login form renders in place of the router). Without this,
+            the post-login mount lands on /login → catch-all → "page not found"
+            toast on every single sign-in. */}
+        <Route path="login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<NotFoundRedirect />} />
       </Route>
     </Routes>

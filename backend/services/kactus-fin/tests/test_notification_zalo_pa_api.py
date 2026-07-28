@@ -301,6 +301,40 @@ async def test_test_message_sends_greeting_to_all(client, monkeypatch):
     assert data["sent"] == 1 and data["failed"] == 1
     assert data["results"][1]["error"] == "kicked"
 
+    # A real message went out, so the send history has to show it — and show
+    # *which* conversation was kicked, not just a green "success".
+    logs = (await client.get(f"/api/notifications/{created['id']}/logs")).json()["data"]
+    assert logs["total"] == 1
+    log = logs["items"][0]
+    assert log["trigger"] == "test"
+    assert log["status"] == "success"  # at least one conversation received it
+    assert log["body"] == "Hello, nice to meet you"
+    assert log["delivered_count"] == 1 and log["target_count"] == 2
+    kicked = next(t for t in log["targets"] if not t["ok"])
+    assert kicked["name"] == "Team" and kicked["error"] == "kicked"
+
+
+@pytest.mark.asyncio
+async def test_test_message_all_failed_is_logged_as_failed(client, monkeypatch):
+    from kactus_fin.notification import zalo_pa_api
+
+    created = await _create_channel(client, monkeypatch)
+
+    async def _greet(config, text):
+        return [{"thread_id": "42", "name": "Bob", "ok": False, "error": "blocked"}]
+
+    monkeypatch.setattr(zalo_pa_api, "send_greeting_to_recipients", _greet)
+    await client.post(
+        f"/api/notifications/zalo-pa/channels/{created['id']}/test-message"
+    )
+
+    log = (await client.get(f"/api/notifications/{created['id']}/logs")).json()["data"][
+        "items"
+    ][0]
+    assert log["status"] == "failed"
+    assert log["error"] == "blocked"
+    assert log["delivered_count"] == 0
+
 
 @pytest.mark.asyncio
 async def test_test_message_blocked_on_inactive_channel(client, monkeypatch):

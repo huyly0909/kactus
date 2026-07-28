@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import datetime
 
-from kactus_common.schemas import BaseSchema, FancyInt
+from kactus_common.schemas import AwareUTCDatetime, BaseSchema, FancyInt
 from pydantic import Field, model_validator
 
 from .const import (
@@ -177,20 +177,47 @@ class NotificationChannelSchema(BaseSchema):
     last_used_at: datetime.datetime | None = None
 
 
+class DeliveryTargetSchema(BaseSchema):
+    """Outcome of delivering one message to one conversation (fan-out channels)."""
+
+    thread_id: str
+    thread_type: int = 0
+    name: str | None = None
+    ok: bool
+    error: str | None = None
+
+
+class SendAttemptSchema(BaseSchema):
+    """One *failed* transport attempt — the retry history behind ``attempts``."""
+
+    attempt: int
+    error: str
+    at: AwareUTCDatetime | None = None
+
+
 class NotificationLogSchema(BaseSchema):
-    """One audit row — the final outcome of a :meth:`Notifier.send_event` call."""
+    """One audit row — the final outcome of a :meth:`Notifier.send_event` call.
+
+    ``targets``/``attempt_errors`` carry the detail the list view summarises: who
+    received it and what failed on the way. Empty for single-target channels.
+    """
 
     id: FancyInt
     channel_id: FancyInt
     channel_type: NotificationChannelType
     event_title: str
+    body: str | None = None
     level: NotificationLevel
     status: NotificationLogStatus
     trigger: NotificationTrigger
     attempts: int
     error: str | None = None
-    started_at: datetime.datetime | None = None
-    finished_at: datetime.datetime | None = None
+    targets: list[DeliveryTargetSchema] = []
+    attempt_errors: list[SendAttemptSchema] = []
+    delivered_count: int | None = None
+    target_count: int | None = None
+    started_at: AwareUTCDatetime | None = None
+    finished_at: AwareUTCDatetime | None = None
 
 
 class Recipient(BaseSchema):
@@ -261,6 +288,7 @@ class ZaloPATestMessageResult(BaseSchema):
     """Per-conversation outcome of a test-message send."""
 
     thread_id: str
+    thread_type: int = 0
     name: str | None = None
     ok: bool
     error: str | None = None

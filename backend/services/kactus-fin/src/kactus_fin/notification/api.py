@@ -62,11 +62,16 @@ def _log_to_schema(log: NotificationLog) -> NotificationLogSchema:
         channel_id=log.channel_id,
         channel_type=NotificationChannelType(log.channel_type),
         event_title=log.event_title,
+        body=log.body,
         level=log.level,
         status=log.status,
         trigger=log.trigger,
         attempts=log.attempts,
         error=log.error,
+        targets=log.targets or [],
+        attempt_errors=log.attempt_errors or [],
+        delivered_count=log.delivered_count,
+        target_count=log.target_count,
         started_at=log.started_at,
         finished_at=log.finished_at,
     )
@@ -164,9 +169,13 @@ async def delete_channel(
 async def test_channel(
     channel_id: int, request: Request, session: AsyncSession
 ) -> MessageResponse:
-    """Validate the channel's credentials/config (e.g. Telegram getMe)."""
+    """Validate the channel's credentials/config (e.g. Telegram getMe).
+
+    Sends nothing, but the outcome is recorded as a ``trigger=test`` log row so
+    the send history can explain a channel that was probed and found dead.
+    """
     channel = await NotificationChannelService.get_or_404(session, channel_id)
-    if not await Notifier.test(channel):
+    if not await Notifier.test(channel, session):
         raise ExternalServiceError("Channel test failed — check the credentials/config")
     await NotificationChannelService.mark_used(session, channel)
     return MessageResponse(message="ok")
@@ -239,12 +248,20 @@ async def list_channel_logs(
     request: Request,
     session: AsyncSession,
     limit: int = 50,
+    offset: int = 0,
 ) -> Pagination[NotificationLogSchema]:
-    """List a channel's send history (most-recent-first, project-scoped)."""
+    """List a channel's send history (most-recent-first, project-scoped).
+
+    ``total`` is the matching row count, not the page size — the client needs it
+    to page rather than assume ``limit`` rows means "that was everything".
+    """
     # Resolve the channel in-project before exposing logs (raises 404 otherwise).
     channel = await NotificationChannelService.get_or_404(session, channel_id)
-    logs = await NotificationLogService.list_for_project(
-        session, channel.project_id, channel_id=channel_id, limit=limit
+    total, logs = await NotificationLogService.list_for_project(
+        session,
+        channel.project_id,
+        channel_id=channel_id,
+        limit=limit,
+        offset=offset,
     )
-    items = [_log_to_schema(log) for log in logs]
-    return Pagination(total=len(items), items=items)
+    return Pagination(total=total, items=[_log_to_schema(log) for log in logs])

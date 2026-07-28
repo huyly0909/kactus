@@ -33,7 +33,13 @@ class NotificationLogStatus(StrEnum):
 
 
 class NotificationTrigger(StrEnum):
-    """What initiated a send — manual API call vs (future) event-driven auto-fire."""
+    """What initiated a send — manual API call vs (future) event-driven auto-fire.
+
+    ``TEST`` covers the two probe endpoints (``/test`` credential check and the
+    Zalo ``/test-message`` greeting): they are real outcomes worth auditing, but
+    filtering them out of "did my alert go through?" must stay possible.
+    """
 
     MANUAL = "manual"
     EVENT = "event"
+    TEST = "test"

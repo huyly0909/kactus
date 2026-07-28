@@ -36,6 +36,7 @@ from kactus_common.exceptions import (
     ValidationError,
 )
 from kactus_common.redis.client import get_redis, namespaced
+from kactus_common.text import normalize_search
 from loguru import logger
 from zlapi import ZaloAPI
 from zlapi import _client as _zlapi_client
@@ -54,6 +55,7 @@ QR_SCAN_TIMEOUT = 60  # seconds to wait for a scan long-poll
 QR_CONFIRM_TIMEOUT = 60  # seconds to wait for a confirm long-poll
 SEND_DELAY_SECS = 1.5  # pause between consecutive sends (Zalo anti-spam)
 TEST_GREETING = "Hello, nice to meet you"
+TEST_MESSAGE_TITLE = "Test message"  # send-history title for the ⚡ greeting
 
 _USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -708,8 +710,8 @@ class ZlapiAsync:
             logger.warning("[zalo_pa] could not list groups: {exc}", exc=exc)
 
         if query:
-            q = query.lower()
-            recipients = [r for r in recipients if q in r.name.lower()]
+            q = normalize_search(query)
+            recipients = [r for r in recipients if q in normalize_search(r.name)]
         return recipients
 
 
@@ -774,6 +776,7 @@ async def send_greeting_to_recipients(
             results.append(
                 {
                     "thread_id": target.thread_id,
+                    "thread_type": target.thread_type,
                     "name": target.name,
                     "ok": True,
                     "error": None,
@@ -788,6 +791,7 @@ async def send_greeting_to_recipients(
             results.append(
                 {
                     "thread_id": target.thread_id,
+                    "thread_type": target.thread_type,
                     "name": target.name,
                     "ok": False,
                     "error": str(exc),

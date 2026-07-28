@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -17,6 +17,7 @@ import { CreateProjectDialog } from '@modules/project/components/CreateProjectDi
 export function ProjectListPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const qc = useQueryClient();
   const { data, isLoading } = useProjects();
   const user = useAuthStore((s) => s.user);
@@ -33,6 +34,10 @@ export function ProjectListPage() {
     // the newly selected project (the cookie the request now carries changed).
     void qc.invalidateQueries();
     toast.success(t('projects.selected', { name: project.name }));
+    // Arrived here because a project-scoped route sent us (RequireProject)?
+    // Picking one answers that question — go back to what they asked for.
+    const from = (location.state as { from?: { pathname: string } } | null)?.from;
+    if (from?.pathname) navigate(from.pathname, { replace: true });
   };
 
   return (

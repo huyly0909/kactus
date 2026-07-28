@@ -20,9 +20,9 @@ from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.exceptions import ExternalServiceError
 from kactus_notification import dispatcher
-from kactus_notification.channel import TelegramChannel
+from kactus_notification.channel import DeliveryTarget, TelegramChannel
 from kactus_notification.config import NotificationSettings
-from kactus_notification.const import NotificationLogStatus
+from kactus_notification.const import NotificationLogStatus, NotificationTrigger
 from kactus_notification.schema import NotificationEvent, TelegramChannelConfig
 from kactus_notification.service import NotificationLogService
 
@@ -119,7 +119,8 @@ def _patch_channel(monkeypatch, fake: FakeSession) -> TelegramChannel:
 
 async def _logs(session):
     # The fake channel is unscoped (project_id=None), so logs land unscoped too.
-    return await NotificationLogService.list_for_project(session, None)
+    _total, logs = await NotificationLogService.list_for_project(session, None)
+    return logs
 
 
 @pytest.mark.asyncio
@@ -206,6 +207,82 @@ async def test_send_event_skips_inactive_channel(db, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_send_event_records_each_failed_attempt(db, monkeypatch):
+    """``attempts: 3`` alone cannot distinguish a flaky network from a dead token."""
+    fake = FakeSession(fail_times=2)  # two booms, then delivered
+    _patch_channel(monkeypatch, fake)
+    async with db.get_session() as session:
+        await dispatcher.Notifier.send_event(
+            session, _model(), NotificationEvent(title="flaky", body="the content")
+        )
+        logs = await _logs(session)
+    log = logs[0]
+    assert log.status == NotificationLogStatus.SUCCESS
+    assert log.attempts == 3
+    assert [e["attempt"] for e in log.attempt_errors] == [1, 2]
+    assert all("boom" in e["error"] for e in log.attempt_errors)
+    assert all(e["at"] for e in log.attempt_errors)
+    assert log.body == "the content"  # full content, not just the title
+
+
+@pytest.mark.asyncio
+async def test_send_event_records_per_conversation_outcome(db, monkeypatch):
+    """A fan-out that only half worked must not read as a clean success."""
+    ch = _patch_channel(monkeypatch, FakeSession())
+    targets = [
+        DeliveryTarget(thread_id="a", thread_type=0, name="Ann", ok=True),
+        DeliveryTarget(thread_id="b", thread_type=1, name="Group", ok=True),
+        DeliveryTarget(
+            thread_id="c", thread_type=0, name="Cee", ok=False, error="blocked"
+        ),
+    ]
+
+    def _fan_out(_message):
+        ch.last_targets = targets
+
+    monkeypatch.setattr(ch, "send", _fan_out)
+    async with db.get_session() as session:
+        await dispatcher.Notifier.send_event(
+            session, _model(), NotificationEvent(title="partial")
+        )
+        logs = await _logs(session)
+    log = logs[0]
+    assert log.delivered_count == 2
+    assert log.target_count == 3
+    assert {t["name"] for t in log.targets} == {"Ann", "Group", "Cee"}
+    failed = next(t for t in log.targets if not t["ok"])
+    assert failed["error"] == "blocked"
+    assert failed["thread_id"] == "c"
+
+
+@pytest.mark.asyncio
+async def test_send_event_records_targets_even_when_nothing_delivered(db, monkeypatch):
+    """The all-failed case is exactly the one whose per-target errors we need."""
+    ch = _patch_channel(monkeypatch, FakeSession())
+
+    def _all_fail(_message):
+        ch.last_targets = [
+            DeliveryTarget(
+                thread_id="a", thread_type=0, name="Ann", ok=False, error="expired"
+            )
+        ]
+        raise ExternalServiceError("session dead")
+
+    monkeypatch.setattr(ch, "send", _all_fail)
+    async with db.get_session() as session:
+        with pytest.raises(ExternalServiceError):
+            await dispatcher.Notifier.send_event(
+                session, _model(), NotificationEvent(title="dead")
+            )
+        logs = await _logs(session)
+    log = logs[0]
+    assert log.status == NotificationLogStatus.FAILED
+    assert log.delivered_count == 0
+    assert log.target_count == 1
+    assert log.targets[0]["error"] == "expired"
+
+
+@pytest.mark.asyncio
 async def test_test_success(db, monkeypatch):
     _patch_channel(monkeypatch, FakeSession(FakeResponse(200, {"ok": True})))
     assert await dispatcher.Notifier.test(_model()) is True
@@ -220,3 +297,26 @@ async def test_test_returns_false_on_transport_error(db, monkeypatch):
         lambda: (_ for _ in ()).throw(requests.ConnectionError("boom")),
     )
     assert await dispatcher.Notifier.test(_model()) is False
+
+
+@pytest.mark.asyncio
+async def test_test_records_a_log_row_when_given_a_session(db, monkeypatch):
+    """A probe that found the channel dead has to be visible in the history."""
+    ch = _patch_channel(monkeypatch, FakeSession())
+    monkeypatch.setattr(ch, "test_connection", lambda: False)
+    async with db.get_session() as session:
+        assert await dispatcher.Notifier.test(_model(), session) is False
+        logs = await _logs(session)
+    assert len(logs) == 1
+    assert logs[0].trigger == NotificationTrigger.TEST
+    assert logs[0].status == NotificationLogStatus.FAILED
+    assert logs[0].event_title == dispatcher.CONNECTION_TEST_TITLE
+
+
+@pytest.mark.asyncio
+async def test_test_without_a_session_logs_nothing(db, monkeypatch):
+    """Callers that only want the boolean (no DB handy) must stay supported."""
+    _patch_channel(monkeypatch, FakeSession(FakeResponse(200, {"ok": True})))
+    async with db.get_session() as session:
+        assert await dispatcher.Notifier.test(_model()) is True
+        assert await _logs(session) == []

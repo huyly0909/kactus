@@ -32,3 +32,9 @@ class ProjectStatus(str, Enum):
 
     ACTIVE = "active"
     ARCHIVED = "archived"
+
+
+#: Display name of the project auto-created with every non-admin user. The
+#: identity of that project is its ``user-<id>`` code, never this name — it is
+#: free text the owner may rename.
+PERSONAL_PROJECT_NAME = "First Project"

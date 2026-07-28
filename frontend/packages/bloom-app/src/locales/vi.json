@@ -287,7 +287,14 @@
     "member_add_error": "Không thể thêm thành viên",
     "member_removed": "Đã xóa thành viên",
     "remove_member_title": "Xóa thành viên",
-    "remove_member_confirm": "Xóa {{name}} khỏi dự án này?"
+    "remove_member_confirm": "Xóa {{name}} khỏi dự án này?",
+    "all_projects": "Tất cả dự án",
+    "all_projects_hint": "Xem dữ liệu của mọi dự án (chỉ quản trị viên)",
+    "none_selected": "Chưa chọn dự án",
+    "requires_selection": "Chọn một dự án trước",
+    "active_project": "Dự án đang chọn",
+    "switch_label": "Chuyển dự án",
+    "detail_title": "Thông tin dự án"
   },
   "market": {
     "source": "Nguồn",
@@ -480,8 +487,12 @@
     "level_info": "Thông tin",
     "level_warning": "Cảnh báo",
     "level_critical": "Nghiêm trọng",
+    "level_hint": "Quyết định biểu tượng hiển thị trên tin nhắn (ℹ️ / ⚠️ / 🚨). Không ảnh hưởng tới việc gửi, độ ưu tiên hay số lần thử lại.",
     "status_success": "Thành công",
     "status_failed": "Thất bại",
+    "trigger_manual": "Thủ công",
+    "trigger_event": "Tự động",
+    "trigger_test": "Thử",
     "reauth_ok": "Đã làm mới phiên Zalo",
     "activate": "Kích hoạt",
     "deactivate": "Vô hiệu hoá",
@@ -496,7 +507,15 @@
       "event": "Sự kiện",
       "status": "Trạng thái",
       "attempts": "Số lần thử",
-      "time": "Thời gian"
+      "time": "Thời gian ghi nhận",
+      "finished": "Thời gian kết thúc",
+      "recipients": "Người nhận",
+      "delivered": "Đã gửi {{delivered}}/{{total}}",
+      "error": "Lỗi",
+      "detail_title": "Chi tiết lần gửi",
+      "attempt_history": "Các lần thử",
+      "attempt_n": "Lần thử {{n}}",
+      "open_detail": "Bấm vào dòng để xem chi tiết"
     },
     "zalo": {
       "create_hint": "Kết nối Zalo sẽ mở mã QR — quét bằng ứng dụng Zalo để đăng nhập tài khoản cá nhân, sau đó chọn người nhận báo cáo.",
@@ -506,7 +525,6 @@
       "scan_hint": "Mở Zalo trên điện thoại và quét mã QR này.",
       "confirm_hint": "Xác nhận đăng nhập trên điện thoại…",
       "logged_in_as": "Đã đăng nhập với tên {{name}}",
-      "pick_hint": "Chọn một người bạn hoặc nhóm để nhận báo cáo.",
       "search_recipient": "Tìm bạn bè và nhóm…",
       "group": "Nhóm",
       "reconnect": "Kết nối lại",

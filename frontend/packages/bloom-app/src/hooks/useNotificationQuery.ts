@@ -14,10 +14,12 @@ export const notificationKeys = {
   lists: () => [...notificationKeys.all, 'list'] as const,
   detail: (id: string) => [...notificationKeys.all, 'detail', id] as const,
   logs: (id: string) => [...notificationKeys.all, 'logs', id] as const,
-  recipients: (sid: string, q: string) =>
-    [...notificationKeys.all, 'zalo-recipients', sid, q] as const,
-  channelRecipients: (id: string, q: string) =>
-    [...notificationKeys.all, 'zalo-channel-recipients', id, q] as const,
+  // Deliberately NOT keyed by the search text: one Zalo directory fetch costs
+  // three sequential round-trips upstream, so the list is fetched whole and
+  // filtered in the browser.
+  recipients: (sid: string) => [...notificationKeys.all, 'zalo-recipients', sid] as const,
+  channelRecipients: (id: string) =>
+    [...notificationKeys.all, 'zalo-channel-recipients', id] as const,
 };
 
 // ----------------------------------------------------------------- queries
@@ -44,19 +46,20 @@ export function useNotificationLogs(id: string) {
   });
 }
 
-export function useZaloRecipients(sessionId: string, query: string) {
+/** Every conversation on the freshly-scanned account. Fetched once, filtered locally. */
+export function useZaloRecipients(sessionId: string) {
   return useQuery({
-    queryKey: notificationKeys.recipients(sessionId, query),
-    queryFn: () => notificationService.zaloPa.listRecipients(sessionId, query),
+    queryKey: notificationKeys.recipients(sessionId),
+    queryFn: () => notificationService.zaloPa.listRecipients(sessionId),
     enabled: !!sessionId,
   });
 }
 
 /** Conversations reachable with a channel's stored session (edit picker). */
-export function useZaloChannelRecipients(channelId: string, query: string) {
+export function useZaloChannelRecipients(channelId: string) {
   return useQuery({
-    queryKey: notificationKeys.channelRecipients(channelId, query),
-    queryFn: () => notificationService.zaloPa.listChannelRecipients(channelId, query),
+    queryKey: notificationKeys.channelRecipients(channelId),
+    queryFn: () => notificationService.zaloPa.listChannelRecipients(channelId),
     enabled: !!channelId,
     retry: false, // a dead session 502s — retrying only delays the reconnect hint
   });
@@ -104,9 +107,15 @@ export function useDeleteChannel() {
 }
 
 export function useTestChannel() {
+  const qc = useQueryClient();
   const { t } = useTranslation();
   return useMutation({
     mutationFn: (id: string) => notificationService.test(id),
+    // The probe is recorded in the send history either way, so refresh it on
+    // failure too — a failed test is exactly what the user wants to look at.
+    onSettled: (_data, _err, id) => {
+      void qc.invalidateQueries({ queryKey: notificationKeys.logs(id) });
+    },
     onSuccess: () => toast.success(t('notification.test_ok')),
     onError: () => toast.error(t('notification.test_failed')),
   });
@@ -161,6 +170,9 @@ export function useZaloTestMessage() {
   const { t } = useTranslation();
   return useMutation({
     mutationFn: (channelId: string) => notificationService.zaloPa.testMessage(channelId),
+    onSettled: (_data, _err, channelId) => {
+      void qc.invalidateQueries({ queryKey: notificationKeys.logs(channelId) });
+    },
     onSuccess: (result, channelId) => {
       void qc.invalidateQueries({ queryKey: notificationKeys.detail(channelId) });
       if (result.failed > 0) {
