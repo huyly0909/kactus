@@ -61,16 +61,6 @@ from loguru import logger
 
 _QUANT = Decimal("0.0001")
 
-#: The series a full sync-now touches, in fetch order. Both SJC codes come off
-#: one board fetch; 999 is logged from *both* SJC and Mihong so each sub-tab has
-#: its own tick, while the board keeps only the authoritative (non-Mihong) one.
-_SYNC_SERIES: list[tuple[str, str]] = [
-    ("sjc", "SJC"),
-    ("sjc", "999"),
-    ("mihong", "999"),
-    ("yahoo", XAU_CODE),
-]
-
 _VALID_SYNC_SOURCES = frozenset({"sjc", "mihong", "yahoo"})
 
 
@@ -338,28 +328,19 @@ def _collect_sync_rows(sources: list[str], now) -> list[dict]:
     return rows
 
 
-def _authoritative_board(rows: list[dict]) -> list[dict]:
-    """One row per code for the board, preferring a non-Mihong source."""
-    by_code: dict[str, dict] = {}
-    for row in rows:
-        code = row["code"]
-        current = by_code.get(code)
-        if current is None or (
-            current["source"] == "mihong" and row["source"] != "mihong"
-        ):
-            by_code[code] = row
-    return list(by_code.values())
-
-
 def _store_sync_rows(storage: DuckDBStorage, rows: list[dict]) -> int:
-    """Append every row as a tick; upsert the authoritative rows to the board."""
+    """Append every row as a tick; upsert every ``(code, source)`` to the board.
+
+    The board is keyed ``(code, source)``, so SJC-999 and Mihong-999 land as
+    two rows rather than one overwriting the other — the board and the tick
+    log now hold the same set of series.
+    """
     if not rows:
         return 0
     ticks = storage.store(
         GOLD_PRICE_TICK_TABLE, _to_table_df(rows, GOLD_PRICE_TICK_TABLE)
     )
-    board = _authoritative_board(rows)
-    storage.store(GOLD_PRICE_BOARD_TABLE, _to_table_df(board, GOLD_PRICE_BOARD_TABLE))
+    storage.store(GOLD_PRICE_BOARD_TABLE, _to_table_df(rows, GOLD_PRICE_BOARD_TABLE))
     return ticks
 
 
@@ -383,9 +364,8 @@ async def gold_sync(
         all_rows.extend(await asyncio.to_thread(_collect_sync_rows, [source], now))
         await on_progress(index, total, cursor=source)
 
-    # Store once across all sources: every fetched (source, code) becomes a tick,
-    # but the board takes a single authoritative row per code — done per-source it
-    # would let Mihong's 999 overwrite SJC's on the board.
+    # Store once across all sources: every fetched (source, code) becomes both a
+    # tick and a board row.
     ticks = await asyncio.to_thread(_store_sync_rows, deps.storage, all_rows)
     codes = {row["code"] for row in all_rows}
 

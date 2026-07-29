@@ -11,6 +11,9 @@ export type OHLCVInterval = '1m' | '5m' | '15m' | '30m' | '1H' | '1D' | '1W' | '
 export const UNIT_VND_PER_LUONG = 'VND/luong';
 export const UNIT_USD_PER_OZ = 'USD/oz';
 
+/** One board row. Identity is `(code, source)` — `code` alone is NOT unique:
+ *  SJC and mihong both quote 999 as different products, so the board returns
+ *  a row for each. Key lists/maps on both fields. */
 export interface GoldPrice {
   code: string;
   buy_price?: string | null;

@@ -169,9 +169,7 @@ def _board_row(code, source, price, now):
 
 
 @pytest.mark.asyncio
-async def test_sync_now_logs_per_source_ticks_and_authoritative_board(
-    monkeypatch, storage
-):
+async def test_sync_now_logs_every_series_to_both_tick_and_board(monkeypatch, storage):
     now = utcnow_naive()
     monkeypatch.setattr(SjcGoldSource, "fetch_board", lambda self: [{"present": True}])
     monkeypatch.setattr(
@@ -209,12 +207,18 @@ async def test_sync_now_logs_per_source_ticks_and_authoritative_board(
     assert result["ticks"] == 4
 
     board = storage.query("SELECT * FROM gold_price_board")
-    # Board keeps one authoritative row per code — 999 is SJC's, not Mihong's.
-    assert dict(zip(board["code"], board["source"])) == {
-        "SJC": "sjc",
-        "999": "sjc",
-        "XAU": "yahoo",
+    # Board is keyed (code, source), so it now holds the same series as the
+    # tick log — SJC-999 and Mihong-999 coexist instead of one clobbering the
+    # other. Mihong's 999 kept its own price (99), not SJC's (100).
+    assert set(zip(board["code"], board["source"])) == {
+        ("SJC", "sjc"),
+        ("999", "sjc"),
+        ("999", "mihong"),
+        ("XAU", "yahoo"),
     }
+    assert len(board) == 4
+    mihong_999 = board[(board["code"] == "999") & (board["source"] == "mihong")]
+    assert Decimal(str(mihong_999["buy_price"].iloc[0])) == Decimal("99")
     assert len(prog.calls) == 3  # one tick per source
 
 

@@ -23,7 +23,16 @@ async def test_gold_board_and_filter(client):
     body = resp.json()
     assert body["code"] == "0"
     rows = body["data"]
-    assert {r["code"] for r in rows} == {"999", "SJC", "XAU"}
+    # One row per (code, source): 999 is quoted by both sjc and mihong.
+    keys = [(r["code"], r["source"]) for r in rows]
+    assert set(keys) == {
+        ("999", "mihong"),
+        ("999", "sjc"),
+        ("SJC", "sjc"),
+        ("XAU", "yahoo"),
+    }
+    # ORDER BY code, source — a code's sources must arrive adjacent and stable.
+    assert keys == sorted(keys)
 
     sjc = next(r for r in rows if r["code"] == "SJC")
     # spread is derived, not stored
@@ -31,6 +40,10 @@ async def test_gold_board_and_filter(client):
 
     filtered = await client.get("/internal/market/gold", params={"code": "SJC"})
     assert [r["code"] for r in filtered.json()["data"]] == ["SJC"]
+
+    # Filtering by a dual-sourced code returns both of its series.
+    both = await client.get("/internal/market/gold", params={"code": "999"})
+    assert [r["source"] for r in both.json()["data"]] == ["mihong", "sjc"]
 
 
 @pytest.mark.asyncio
@@ -47,15 +60,21 @@ async def test_gold_prices_are_exact_and_unit_tagged(client):
     middle where nothing is watching.
     """
     rows = (await client.get("/internal/market/gold")).json()["data"]
-    by_code = {r["code"]: r for r in rows}
+    # Keyed on (code, source): `code` alone would silently keep whichever of
+    # the two 999 rows happened to come last.
+    by_key = {(r["code"], r["source"]): r for r in rows}
 
-    assert by_code["SJC"]["buy_price"] == "121000000"
-    assert by_code["SJC"]["spread"] == "2000000"
-    assert by_code["SJC"]["unit"] == "VND/luong"
+    assert by_key[("SJC", "sjc")]["buy_price"] == "121000000"
+    assert by_key[("SJC", "sjc")]["spread"] == "2000000"
+    assert by_key[("SJC", "sjc")]["unit"] == "VND/luong"
+
+    # Each 999 series keeps its own price — neither overwrites the other.
+    assert by_key[("999", "sjc")]["buy_price"] == "118500000"
+    assert by_key[("999", "mihong")]["buy_price"] == "118000000"
 
     # World gold shares the board but is quoted per troy ounce in USD.
-    assert by_code["XAU"]["unit"] == "USD/oz"
-    assert by_code["XAU"]["buy_price"] == "4037.6999"
+    assert by_key[("XAU", "yahoo")]["unit"] == "USD/oz"
+    assert by_key[("XAU", "yahoo")]["buy_price"] == "4037.6999"
 
 
 @pytest.mark.asyncio

@@ -131,6 +131,31 @@ async def test_gold_passes_through_rows_and_filter(client, data_plane):
 
 
 @pytest.mark.asyncio
+async def test_gold_forwards_every_source_of_a_code(client, data_plane):
+    """The board is keyed ``(code, source)`` — the control plane must not dedupe.
+
+    SJC and mihong both quote 999 (bar issuer vs dealer). Collapsing them here
+    would put back exactly the bug the composite key removed: a mihong sync
+    that silently reads back as ``source: sjc``.
+    """
+    data_plane.gold = [
+        GoldPriceSchema(
+            code="999", buy_price="118000000", unit="VND/luong", source="mihong"
+        ),
+        GoldPriceSchema(
+            code="999", buy_price="118500000", unit="VND/luong", source="sjc"
+        ),
+    ]
+
+    rows = (await client.get("/api/market/gold", params={"code": "999"})).json()["data"]
+    assert [(r["code"], r["source"]) for r in rows] == [
+        ("999", "mihong"),
+        ("999", "sjc"),
+    ]
+    assert [r["buy_price"] for r in rows] == ["118000000", "118500000"]
+
+
+@pytest.mark.asyncio
 async def test_repeated_code_params_stay_a_list(client, data_plane):
     """``?code=SJC&code=999`` must not collapse into one comma-joined string.
 

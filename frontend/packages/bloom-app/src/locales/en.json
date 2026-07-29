@@ -327,7 +327,7 @@
     "empty": "No data yet — the crawler has not stored anything for this dataset.",
     "gold": {
       "title": "Gold Prices",
-      "subtitle": "Latest gold board — domestic (VND/tael) and world (USD/oz)",
+      "subtitle": "Latest gold board — one row per code and source; domestic (VND/tael) and world (USD/oz)",
       "code": "Code",
       "buy": "Buy",
       "sell": "Sell",

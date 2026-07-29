@@ -90,7 +90,12 @@ class MarketService:
     async def list_gold(
         storage: DuckDBStorage, *, codes: list[str] | None = None
     ) -> list[GoldPriceSchema]:
-        """Latest quote for every gold code (optionally filtered)."""
+        """Latest quote per ``(code, source)`` (optionally filtered by code).
+
+        The board is keyed ``(code, source)``, so **one code can return several
+        rows** — SJC and mihong both quote 999, as different products. Ordering
+        by both keys keeps a code's sources adjacent and the result stable.
+        """
 
         def _read() -> list[dict]:
             sql = f"SELECT * FROM {GOLD_BOARD_TABLE}"  # noqa: S608 - fixed table name
@@ -99,7 +104,7 @@ class MarketService:
                 placeholders = ", ".join("?" for _ in codes)
                 sql += f" WHERE code IN ({placeholders})"
                 params = list(codes)
-            sql += " ORDER BY code"
+            sql += " ORDER BY code, source"
             return _rows(storage, sql, params or None)
 
         rows = await asyncio.to_thread(_read)

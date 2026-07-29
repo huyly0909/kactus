@@ -13,9 +13,12 @@ import { GoldHistoryCard } from './GoldHistoryCard';
 import { GoldImportDialog } from './GoldImportDialog';
 
 /**
- * Gold **Overview** tab — the latest board (one row per code) plus the history
- * chart. Rows are NOT all one unit: domestic codes (SJC, 999) are VND/lượng
- * while XAU is USD/oz, so every row shows its unit and formats accordingly.
+ * Gold **Overview** tab — the latest board (one row per code *and source*)
+ * plus the history chart. `code` alone is not unique: SJC and mihong both
+ * quote 999 as different products, so both rows show, told apart by the
+ * source badge. Rows are NOT all one unit either: domestic codes (SJC, 999)
+ * are VND/lượng while XAU is USD/oz, so every row shows its unit and formats
+ * accordingly.
  */
 export const GoldOverviewPane: FC = () => {
   const { t } = useTranslation();
@@ -89,7 +92,7 @@ export const GoldOverviewPane: FC = () => {
         searchable
         searchPlaceholder={t('common.search')}
         emptyMessage={t('market.empty')}
-        getRowKey={(g) => g.code}
+        getRowKey={(g) => `${g.code}:${g.source ?? ''}`}
       />
 
       <GoldImportDialog open={importOpen} onOpenChange={setImportOpen} />

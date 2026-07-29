@@ -241,6 +241,21 @@ class LiveSjc(DeadSjc):
         return {"buy_price": 134500000.0, "sell_price": 139500000.0, "raw": {}}
 
 
+class DualSjc(LiveSjc):
+    """SJC quoting both its products — the bar (SJC) and the ring (999).
+
+    Real sjc.com.vn does this; mihong quotes 999 too, which is exactly the
+    pair the ``(code, source)`` board keys must keep apart.
+    """
+
+    def quote(self, code, board=None):
+        if str(code).upper() == "SJC":
+            return {"buy_price": 134500000.0, "sell_price": 139500000.0, "raw": {}}
+        if str(code).upper() == "999":
+            return {"buy_price": 138500000.0, "sell_price": 142500000.0, "raw": {}}
+        return None
+
+
 class FakeYahoo:
     """World-gold stub — quotes USD/oz, so the row must NOT be scaled."""
 
@@ -296,6 +311,62 @@ def test_gold_provider_no_token_required(monkeypatch, storage):
     assert (
         GoldAssetProvider(storage, xsrf_token="").crawl(CrawlKind.QUOTES, ["SJC"]) == 1
     )
+
+
+def test_gold_board_keeps_both_sources_for_999(monkeypatch, storage):
+    """SJC-999 and Mihong-999 are different products — the board keeps both.
+
+    Regression: with PK ``code`` alone the upsert deleted by code, so a
+    mihong sync was silently overwritten by SJC and users saw ``source=sjc``
+    on a row they had just synced from mihong.
+    """
+    _patch_gold(monkeypatch, DualSjc)
+    provider = GoldAssetProvider(storage)
+    assert provider.crawl(CrawlKind.QUOTES, ["999"]) == 2
+
+    board = storage.query("SELECT * FROM gold_price_board")
+    assert set(zip(board["code"], board["source"])) == {
+        ("999", "sjc"),
+        ("999", "mihong"),
+    }
+    by_source = {r["source"]: r for r in board.to_dict(orient="records")}
+    assert float(by_source["sjc"]["buy_price"]) == 138500000.0
+    assert float(by_source["mihong"]["buy_price"]) == 136571420.0  # ×10 scaled
+
+
+def test_gold_read_collapses_to_one_quote_per_code(monkeypatch, storage):
+    """A portfolio holding of "999" is one position — read() returns one row.
+
+    Ties on ``crawled_at`` (the normal case: one crawl stamps every row with
+    the same instant) go to SJC, the issuer reference.
+    """
+    _patch_gold(monkeypatch, DualSjc)
+    provider = GoldAssetProvider(storage)
+    provider.crawl(CrawlKind.QUOTES, ["999"])
+
+    rows = provider.read(CrawlKind.QUOTES, ["999"])
+    assert len(rows) == 1
+    assert rows[0]["source"] == "sjc"
+
+
+def test_gold_read_prefers_the_fresher_source(monkeypatch, storage):
+    """Freshest wins — that is what keeps mihong acting as the SJC fallback.
+
+    mihong no longer overwrites SJC's row, so "SJC is stale because Cloudflare
+    blocked us" has to be expressed by ``crawled_at`` instead.
+    """
+    _patch_gold(monkeypatch, DualSjc)
+    provider = GoldAssetProvider(storage)
+    provider.crawl(CrawlKind.QUOTES, ["999"])
+    # Age SJC's row by an hour, leaving mihong's as the only recent quote.
+    storage.query(
+        "UPDATE gold_price_board SET crawled_at = crawled_at - INTERVAL 1 HOUR "
+        "WHERE code = '999' AND source = 'sjc'"
+    )
+
+    rows = provider.read(CrawlKind.QUOTES, ["999"])
+    assert len(rows) == 1
+    assert rows[0]["source"] == "mihong"
 
 
 def test_gold_provider_skips_unsupported_and_kinds(monkeypatch, storage):

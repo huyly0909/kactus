@@ -327,7 +327,7 @@
     "empty": "Chưa có dữ liệu — trình thu thập chưa lưu dữ liệu cho tập này.",
     "gold": {
       "title": "Giá vàng",
-      "subtitle": "Bảng giá vàng mới nhất — trong nước (VND/lượng) và thế giới (USD/oz)",
+      "subtitle": "Bảng giá vàng mới nhất — mỗi mã hiển thị theo từng nguồn; trong nước (VND/lượng) và thế giới (USD/oz)",
       "code": "Mã",
       "buy": "Mua vào",
       "sell": "Bán ra",

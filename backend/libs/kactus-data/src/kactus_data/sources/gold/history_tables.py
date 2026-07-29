@@ -1,8 +1,9 @@
 """DuckDB table for historical gold price series (one row per source+code+day).
 
-Unlike ``gold_price_board`` (latest snapshot, PK ``code``), this is a dated
-series: PK ``(source, code, date)`` + UPSERT makes re-importing / re-backfilling
-the same day idempotent and lets a corrected value overwrite in place.
+Unlike ``gold_price_board`` (latest snapshot, PK ``(code, source)``), this is a
+dated series: PK ``(source, code, date)`` + UPSERT makes re-importing /
+re-backfilling the same day idempotent and lets a corrected value overwrite in
+place.
 
 ``source`` is part of the identity because the same ``code`` can come from more
 than one feed and they must coexist rather than clobber each other: SJC-999 (the

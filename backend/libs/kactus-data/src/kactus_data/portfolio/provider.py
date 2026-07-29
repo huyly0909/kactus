@@ -22,8 +22,10 @@ from kactus_data.sources.gold.mihong import CHI_TO_LUONG as MIHONG_CHI_TO_LUONG
 from kactus_data.sources.gold.mihong import SUPPORTED_CODES as MIHONG_CODES
 from kactus_data.sources.gold.mihong import MihongGoldSource
 from kactus_data.sources.gold.portfolio_tables import (
+    BOARD_SOURCE_PRIORITY,
     GOLD_PRICE_BOARD_TABLE,
     GOLD_PRICE_TICK_TABLE,
+    MIHONG_BOARD_CODES,
     UNIT_USD_PER_OZ,
     UNIT_VND_PER_LUONG,
 )
@@ -133,13 +135,19 @@ class StockAssetProvider(AssetProvider):
 
 
 class GoldAssetProvider(AssetProvider):
-    """GOLD provider — SJC-official quotes with a mihong.vn fallback.
+    """GOLD provider — SJC-official quotes plus mihong.vn.
 
-    sjc.com.vn is the issuer of the SJC bar reference price, so it is tried
-    first; mihong covers the same two codes and takes over whenever the SJC
-    board is unreachable (it sits behind Cloudflare).  Every price stored in
-    ``gold_price_board`` is **VND per lượng** — mihong quotes per chỉ and is
-    scaled on the way in, so rows stay comparable across sources.
+    sjc.com.vn is the issuer of the domestic reference price, so it leads.
+    mihong plays **two** roles: an independent series for
+    ``MIHONG_BOARD_CODES`` (SJC and mihong both quote 999, as different
+    products), and the fallback for any domestic code whenever the SJC board
+    is unreachable (it sits behind Cloudflare).  ``gold_price_board`` is keyed
+    ``(code, source)`` and keeps every series side by side; choosing one quote
+    per code happens at read time, in :func:`_preferred_gold_rows`.
+
+    Every price stored in ``gold_price_board`` is **VND per lượng** — mihong
+    quotes per chỉ and is scaled on the way in, so rows stay comparable
+    across sources.
 
     The catalog is the three codes with a wired feed — SJC bar, 999 ring, and
     world gold (XAU). DOJI/PNJ were dropped: no free daily feed, and the SJC
@@ -208,15 +216,24 @@ class GoldAssetProvider(AssetProvider):
         rows: list[dict] = []
         for code in wanted:
             if code == XAU_CODE:
-                row = self._yahoo_row(YahooGoldSource(), now)
+                got = [self._yahoo_row(YahooGoldSource(), now)]
             else:
-                row = self._sjc_row(sjc, code, sjc_board, now) or self._mihong_row(
-                    mihong, code, today, now
+                sjc_row = self._sjc_row(sjc, code, sjc_board, now)
+                # Not a short-circuit any more: with the board keyed
+                # (code, source), mihong's 999 is its own series and must be
+                # refreshed by every crawl or it goes permanently stale. It is
+                # still *also* the fallback when SJC yields nothing.
+                mihong_row = (
+                    self._mihong_row(mihong, code, today, now)
+                    if code in MIHONG_BOARD_CODES or sjc_row is None
+                    else None
                 )
-            if row is None:
+                got = [sjc_row, mihong_row]
+            fetched = [r for r in got if r is not None]
+            if not fetched:
                 logger.debug("No gold quote available for {code}", code=code)
                 continue
-            rows.append(row)
+            rows.extend(fetched)
 
         df = _to_table_df(rows, GOLD_PRICE_BOARD_TABLE)
         if df.empty:
@@ -225,7 +242,9 @@ class GoldAssetProvider(AssetProvider):
         # Every crawl also logs a tick (decision #6): the board rows already
         # carry every tick column, so the hourly scheduler accumulates an
         # intraday trail with no extra fetch. PK (code, source, crawled_at)
-        # keeps each crawl distinct; the board keeps only the latest.
+        # keeps each crawl distinct; the board keeps only the latest per
+        # (code, source). ``stored`` can exceed ``len(codes)`` — a dual-sourced
+        # code writes one row per source.
         self.storage.store(
             GOLD_PRICE_TICK_TABLE, _to_table_df(rows, GOLD_PRICE_TICK_TABLE)
         )
@@ -300,7 +319,8 @@ class GoldAssetProvider(AssetProvider):
     def read(self, kind: CrawlKind, codes: list[str]) -> list[dict]:
         if kind != CrawlKind.QUOTES:
             return []
-        return self._read_by_column(self.storage, GOLD_PRICE_BOARD_TABLE, "code", codes)
+        rows = self._read_by_column(self.storage, GOLD_PRICE_BOARD_TABLE, "code", codes)
+        return _preferred_gold_rows(rows)
 
     @staticmethod
     def _latest_point(data) -> dict:
@@ -327,6 +347,44 @@ def _safe_float(v) -> float | None:
         return None if v is None else float(v)
     except (TypeError, ValueError):
         return None
+
+
+#: Floor for a missing ``crawled_at``. Not ``datetime.min``: comparing a
+#: ``pd.Timestamp`` against year 1 raises ``OutOfBoundsDatetime`` (outside the
+#: nanosecond range).
+_EPOCH = datetime(1970, 1, 1)
+
+
+def _gold_rank(row: dict) -> tuple[datetime, int]:
+    """Sort key for picking one board row per code: freshest, then authority."""
+    crawled = row.get("crawled_at")
+    if crawled is None or crawled != crawled:  # None or NaT
+        crawled = _EPOCH
+    source = row.get("source")
+    try:
+        priority = BOARD_SOURCE_PRIORITY.index(source)
+    except ValueError:
+        # An unrecognised feed ranks last rather than blowing up the read.
+        priority = len(BOARD_SOURCE_PRIORITY)
+    return (crawled, -priority)
+
+
+def _preferred_gold_rows(rows: list[dict]) -> list[dict]:
+    """Collapse a ``(code, source)`` board to one row per code.
+
+    The board deliberately keeps SJC-999 and Mihong-999 side by side, but a
+    portfolio holding of "999" is one position and must show one price.
+    Freshest wins — that is what keeps mihong acting as the SJC fallback now
+    that it no longer overwrites SJC's row. Ties (the normal case: one crawl
+    stamps every row with the same instant) go to the higher-authority source.
+    """
+    best: dict[str, dict] = {}
+    for row in rows:
+        code = row.get("code")
+        current = best.get(code)
+        if current is None or _gold_rank(row) > _gold_rank(current):
+            best[code] = row
+    return list(best.values())
 
 
 def build_providers(

@@ -123,12 +123,24 @@ def storage(tmp_path) -> DuckDBStorage:
                     "crawled_at": now,
                     "raw_json": "{}",
                 },
+                # 999 is quoted by BOTH sources — the board is keyed
+                # (code, source), so they coexist as separate rows with
+                # different prices.
                 {
                     "code": "999",
                     "buy_price": 118_000_000.0,
                     "sell_price": 119_500_000.0,
                     "unit": "VND/luong",
                     "source": "mihong",
+                    "crawled_at": now,
+                    "raw_json": "{}",
+                },
+                {
+                    "code": "999",
+                    "buy_price": 118_500_000.0,
+                    "sell_price": 120_000_000.0,
+                    "unit": "VND/luong",
+                    "source": "sjc",
                     "crawled_at": now,
                     "raw_json": "{}",
                 },

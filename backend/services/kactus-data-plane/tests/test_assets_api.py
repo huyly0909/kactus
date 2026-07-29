@@ -29,6 +29,55 @@ def crawled(app):
     return provider
 
 
+@pytest.fixture
+def gold(app, storage):
+    """Register a real GOLD provider over the board the ``storage`` fixture seeded.
+
+    Opt-in per test: the default runtime has no GOLD provider, which is what
+    ``test_unsupported_asset_type_is_empty_not_an_error`` pins down.
+    """
+    from kactus_data.portfolio.provider import GoldAssetProvider
+    from kactus_data_plane.runtime import get_runtime
+
+    get_runtime().providers[AssetType.GOLD] = GoldAssetProvider(storage)
+    return storage
+
+
+@pytest.mark.asyncio
+async def test_gold_quotes_collapse_to_one_row_per_code(client, gold):
+    """The board holds SJC-999 and Mihong-999; a portfolio position is one row.
+
+    This is the seam that keeps the split off the portfolio page — without the
+    read-side preference, a "999" holding would take whichever row DuckDB
+    scanned last and its price would flap between refreshes.
+    """
+    rows = (
+        await client.get("/internal/assets/GOLD/quotes", params={"code": "999"})
+    ).json()["data"]
+
+    assert len(rows) == 1
+    assert rows[0]["symbol"] == "999"
+    # Both rows share a crawl instant, so authority breaks the tie: SJC issues
+    # the domestic reference, mihong is a dealer quote.
+    assert rows[0]["data"]["source"] == "sjc"
+    assert rows[0]["data"]["buy_price"] == "118500000"
+
+
+@pytest.mark.asyncio
+async def test_gold_quotes_prefer_the_fresher_source(client, gold):
+    """Freshest wins — how mihong still covers an SJC (Cloudflare) outage."""
+    gold.query(
+        "UPDATE gold_price_board SET crawled_at = crawled_at - INTERVAL 1 HOUR "
+        "WHERE code = '999' AND source = 'sjc'"
+    )
+    rows = (
+        await client.get("/internal/assets/GOLD/quotes", params={"code": "999"})
+    ).json()["data"]
+
+    assert len(rows) == 1
+    assert rows[0]["data"]["source"] == "mihong"
+
+
 @pytest.mark.asyncio
 async def test_read_quotes(client, crawled):
     resp = await client.get("/internal/assets/STOCK/quotes", params={"code": "FPT"})

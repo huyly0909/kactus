@@ -52,7 +52,12 @@ router = KactusAPIRouter(prefix="/api/market", tags=["market"])
 async def list_gold_prices(
     code: list[str] | None = Query(default=None),
 ) -> list[GoldPriceSchema]:
-    """Latest gold quotes (VND per lượng), optionally filtered by code."""
+    """Latest gold quotes, optionally filtered by code.
+
+    One row per ``(code, source)`` — a code may return **several** rows (SJC
+    and mihong both quote 999), and units differ per row: domestic is
+    VND/lượng, XAU is USD/oz.
+    """
     return await data_client.list_gold(codes=code)
 
 
