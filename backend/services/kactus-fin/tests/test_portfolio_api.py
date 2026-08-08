@@ -16,14 +16,17 @@ from httpx import ASGITransport, AsyncClient
 from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
-from kactus_common.portfolio.const import AssetType, CrawlKind
+from kactus_common.portfolio.const import AssetType
 from kactus_common.portfolio.events import MarketDataRefreshedPayload
 from kactus_common.portfolio.schema import MarketRowSchema
-from kactus_common.portfolio.service import CrawlRunService, SupportedAssetService
+from kactus_common.portfolio.service import SupportedAssetService
 from kactus_common.project.service import ProjectService
 from kactus_common.sse.broker import get_sse_broker
+from kactus_common.sync.const import SyncJobStatus
+from kactus_common.sync.model import SyncJob
 from kactus_common.user import auth as auth_mod
 from kactus_common.user.model import User
+from sqlalchemy import select
 
 TEST_DB_URL = "sqlite+aiosqlite://"
 
@@ -244,62 +247,54 @@ async def test_catalog_search(client, db):
 
 
 @pytest.mark.asyncio
-async def test_manual_refresh_forwards_to_the_data_plane(client, db, data_plane):
+async def test_manual_refresh_enqueues_a_sync_job(client, db):
+    """Refresh is a Postgres enqueue — the ack carries the queued job ids and
+    the PENDING row captures who/when/what for the queue UI."""
     pid = await _make_portfolio(client, db, "FPT")
     resp = await client.post(f"/api/portfolios/{pid}/refresh")
     assert resp.status_code == 200
-    assert resp.json()["data"]["skipped"] is False
+    data = resp.json()["data"]
+    assert data["skipped"] is False
+    assert len(data["job_ids"]) == 1
 
-    sent = data_plane.last("crawl")
-    assert sent["kind"] == "quotes"
-    assert sent["codes_by_type"] == {"STOCK": ["FPT"]}
-    assert sent["portfolio_id"] == str(pid)
-    assert sent["trigger"] == "manual"
-    assert sent["dedup"] is True
+    async with db.get_session() as session:
+        jobs = list((await session.scalars(select(SyncJob))).all())
+    assert [j.job_type for j in jobs] == ["stock_quotes"]
+    assert jobs[0].status == str(SyncJobStatus.PENDING)
+    assert jobs[0].params["codes"] == ["FPT"]
+    assert jobs[0].params["trigger"] == "manual"
+    # ``pid`` came back through JSON as a FancyInt string.
+    assert jobs[0].params["portfolio_id"] == int(pid)
+    assert jobs[0].created_by is not None  # AuditMixin, from the session user
 
 
 @pytest.mark.asyncio
-async def test_manual_refresh_dedup_stops_at_the_control_plane(client, db, data_plane):
-    """The in-flight guard runs here, against the shared Postgres.
+async def test_manual_refresh_dedup_stops_at_the_control_plane(client, db):
+    """The queue's active-unique ``dedup_key`` is the in-flight guard now.
 
-    Both planes see the same ``CrawlRun`` table, so the check could live on
-    either side — doing it here means a duplicate refresh costs no round trip
-    and the user gets the real reason back, not a generic "scheduled".
+    Both planes share the ``sync_jobs`` table, so a duplicate refresh costs no
+    round trip and the user gets the real reason back, not a "scheduled" lie.
     """
     pid = await _make_portfolio(client, db, "FPT")
-    async with db.get_session() as session:
-        await CrawlRunService.start(
-            session, asset_type=AssetType.STOCK, kind=CrawlKind.QUOTES
-        )
+    first = (await client.post(f"/api/portfolios/{pid}/refresh")).json()["data"]
+    second = (await client.post(f"/api/portfolios/{pid}/refresh")).json()["data"]
 
+    assert first["skipped"] is False
+    assert second["skipped"] is True
+    assert "already in progress" in second["message"]
+    async with db.get_session() as session:
+        jobs = list((await session.scalars(select(SyncJob))).all())
+    assert len(jobs) == 1  # no duplicate row was stacked
+
+
+@pytest.mark.asyncio
+async def test_refresh_empty_portfolio_is_skipped(client, db):
+    await _seed_catalog(db, "FPT")
+    pid = (await client.post("/api/portfolios", json={"name": "WL"})).json()["data"][
+        "id"
+    ]
     resp = await client.post(f"/api/portfolios/{pid}/refresh")
     assert resp.json()["data"]["skipped"] is True
-    assert not [c for c, _ in data_plane.calls if c == "crawl"]
-
-
-@pytest.mark.asyncio
-async def test_refresh_reports_a_dead_data_plane_instead_of_lying(client, db):
-    """A "Refresh scheduled" that never happened is the worse failure.
-
-    The call is awaited rather than fired into a local BackgroundTasks
-    precisely so this surfaces.
-    """
-    import httpx
-    from kactus_fin import data_client
-
-    pid = await _make_portfolio(client, db, "FPT")
-
-    async def boom(*args, **kwargs):
-        raise httpx.ConnectError("connection refused")
-
-    original = data_client.get_client().request
-    data_client.get_client().request = boom
-    try:
-        resp = await client.post(f"/api/portfolios/{pid}/refresh")
-    finally:
-        data_client.get_client().request = original
-
-    assert resp.status_code == 502
 
 
 @pytest.mark.asyncio
@@ -393,26 +388,35 @@ async def admin_client(app, db):
 async def test_admin_endpoints(admin_client, db, data_plane):
     # list all portfolios
     assert (await admin_client.get("/api/admin/portfolios")).status_code == 200
-    # crawl runs — still read from this service's Postgres
+    # crawl-runs is retired — history lives in the sync queue now
     assert (
         await admin_client.get("/api/admin/portfolios/crawl-runs")
-    ).status_code == 200
-    # crawl status is now the data plane's answer, forwarded
+    ).status_code == 404
+    # crawl status is still the data plane's answer, forwarded
     status = (await admin_client.get("/api/admin/portfolios/crawl-status")).json()[
         "data"
     ]
     assert status["scheduler_running"] is True
     assert [j["id"] for j in status["jobs"]] == ["crawl_quotes"]
-    # trigger crawl
-    assert (await admin_client.post("/api/admin/portfolios/crawl/run-now")).json()[
+    # run-now enqueues into the shared queue (no data-plane HTTP hop)
+    run_now = (await admin_client.post("/api/admin/portfolios/crawl/run-now")).json()[
+        "data"
+    ]
+    assert run_now["skipped"] is False
+    # quotes fans out to both asset families for the live watchlist union
+    assert len(run_now["job_ids"]) == 2
+    # catalog sync enqueues too, and dedups on the second ask
+    assert (await admin_client.post("/api/admin/portfolios/catalog/sync")).json()[
         "data"
     ]["skipped"] is False
-    assert data_plane.last("crawl")["kind"] == "quotes"
-    # catalog sync
-    assert (
-        await admin_client.post("/api/admin/portfolios/catalog/sync")
-    ).status_code == 200
-    assert data_plane.last("catalog_sync") == {}
+    assert (await admin_client.post("/api/admin/portfolios/catalog/sync")).json()[
+        "data"
+    ]["skipped"] is True
+    async with db.get_session() as session:
+        jobs = list((await session.scalars(select(SyncJob))).all())
+    assert {j.job_type for j in jobs} == {"stock_quotes", "gold_quotes", "catalog_sync"}
+    # nothing was sent to the data plane for the triggers
+    assert not [c for c, _ in data_plane.calls if c in ("crawl", "catalog_sync")]
 
 
 @pytest.mark.asyncio

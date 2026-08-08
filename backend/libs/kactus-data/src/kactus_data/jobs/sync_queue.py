@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.portfolio.const import AssetType
+from kactus_common.portfolio.symbol_provider import SymbolProvider
 from kactus_common.sse.broker import get_sse_broker
 from kactus_common.sync.const import SyncJobStatus
 from kactus_common.sync.model import SyncJob
@@ -59,6 +60,10 @@ class SyncJobDeps:
     db: DatabaseSessionManager
     storage: DuckDBStorage
     providers: dict[AssetType, AssetProvider]
+    #: Live watchlist-union resolver — crawl jobs enqueued without explicit
+    #: codes resolve them at run time, so a queued job crawls the current
+    #: watchlist rather than a snapshot taken at trigger time.
+    symbol_provider: SymbolProvider | None = None
 
 
 # on_progress(done, total, cursor=None) — persists + emits SSE + may raise cancel.

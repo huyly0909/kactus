@@ -5,8 +5,14 @@
 export interface CrawlJob {
   id: string;
   name?: string | null;
-  /** Human-readable trigger/cadence (e.g. the cron expression). */
+  /** Raw `str(trigger)` — the fallback when `cron` is absent. */
   cadence?: string | null;
+  /** Cron fields, wildcards dropped (`{day_of_week, hour, minute}`). A missing
+   * `day_of_week` means every day, weekends included. */
+  cron?: Record<string, string> | null;
+  /** Timezone the `cron` fields are expressed in — NOT UTC (the scheduler runs
+   * on `Asia/Ho_Chi_Minh`). */
+  timezone?: string | null;
   /** UTC ISO instant of the next fire, or null when paused / not scheduled. */
   next_run_time?: string | null;
   /** Scheduler is running but this job has no next fire time. */

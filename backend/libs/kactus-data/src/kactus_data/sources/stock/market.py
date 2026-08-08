@@ -15,15 +15,19 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from datetime import datetime
 
 import pandas as pd
 from kactus_common.database.duckdb.schema import Table
 from kactus_common.datetimes import VN_TZ, utcnow_naive
+from kactus_data.exceptions import RateLimitedError
+from kactus_data.sources.stock.auth import vnstock_min_interval
 from kactus_data.util.time import to_event_dt
 from loguru import logger
 
 from .portfolio_tables import (
+    STOCK_DAILY_SNAPSHOT_TABLE,
     STOCK_EVENTS_TABLE,
     STOCK_FOREIGN_TRADE_TABLE,
     STOCK_NEWS_TABLE,
@@ -45,14 +49,30 @@ def _flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def _pick(row: dict, *names: str) -> object | None:
-    """First present value among exact keys, then by case-insensitive substring."""
+def _pick(row: dict, *names: str, exclude: tuple[str, ...] = ()) -> object | None:
+    """First present value among exact keys, then by case-insensitive substring.
+
+    The substring pass is what makes this survive vnstock's column variance
+    across sources, but it happily matches a *neighbouring* field when the one
+    we asked for is absent. ``exclude`` disqualifies those neighbours by
+    substring; callers pass it wherever a near-miss is worse than no value.
+
+    Two live examples, both silent until someone compared against the exchange:
+    VCI flattens the matched price to ``match_match_price``, so asking for
+    "match_price" fell through to ``match_match_price_ato`` — the opening
+    auction price stored as the close (FPT 2026-07-27: 63100 vs the real
+    62200). And asking for "url" matched ``news_image_url`` whenever
+    ``news_source_link`` was null, pointing every article at its thumbnail.
+    """
     for n in names:
         if n in row and pd.notna(row[n]):
             return row[n]
     low = {str(k).lower(): v for k, v in row.items()}
+    banned = tuple(e.lower() for e in exclude)
     for n in names:
         for k, v in low.items():
+            if any(b in k for b in banned):
+                continue
             if n.lower() in k and pd.notna(v):
                 return v
     return None
@@ -63,6 +83,14 @@ def _to_float(v: object | None) -> float | None:
         return None if v is None else float(v)
     except (TypeError, ValueError):
         return None
+
+
+# Opening / closing auction fields. They sit right next to the continuous-session
+# ones in VCI's flattened board and are a substring match away from being
+# mistaken for them.
+_AUCTION_FIELDS = ("_ato", "_atc")
+# Thumbnail fields on the news feed — never an article link.
+_IMAGE_FIELDS = ("image",)
 
 
 # A column header is a *period* (e.g. "2018", "2018-Q1", "2018Q1") when it
@@ -91,6 +119,116 @@ def _to_table_df(rows: list[dict], table: Table) -> pd.DataFrame:
         if c not in df.columns:
             df[c] = None
     return df[cols]
+
+
+# --------------------------------------------------------------------------- #
+# End-of-session snapshot
+#
+# Units differ *within a single price-board row*, which is the whole reason this
+# lives in one function with the constants written down:
+#   match_accumulated_value  → MILLIONS of VND (279654.55 == 279.65bn)
+#   match_foreign_*_value    → absolute VND    (52667461000 == 52.67bn)
+#   prices                   → absolute VND    (62200)
+# --------------------------------------------------------------------------- #
+ACC_VALUE_UNIT_VND = 1_000_000.0
+DEPTH_LEVELS = (1, 2, 3)  # VCI publishes only three levels of the order book
+
+
+def _depth_sum(raw: dict, side: str) -> float | None:
+    """Resting volume on one side of the book, summed over published levels.
+
+    Level-1-only and the 3-level sum differ by an order of magnitude
+    (FPT 2026-07-27: 45,000 vs 367,700), so every caller must use this one.
+    """
+    vols = [_to_float(raw.get(f"bid_ask_{side}_{lvl}_volume")) for lvl in DEPTH_LEVELS]
+    present = [v for v in vols if v is not None]
+    return sum(present) if present else None
+
+
+def daily_snapshot(board: pd.DataFrame, *, source: str) -> pd.DataFrame:
+    """Price-board rows → one ``stock_daily_snapshot`` row per symbol.
+
+    Pure transform of a frame :meth:`StockMarketSource.price_board` already
+    produced — no network call. Reads prices out of ``raw_json`` by exact key
+    rather than the normalized columns, so a board stored before the ATO fix
+    still yields a correct snapshot.
+    """
+    cols = [c.name for c in STOCK_DAILY_SNAPSHOT_TABLE.columns]
+    if board is None or board.empty:
+        return pd.DataFrame(columns=cols)
+
+    now = utcnow_naive()
+    fallback_date = datetime.now(VN_TZ).date().isoformat()
+    rows: list[dict] = []
+    for r in board.to_dict(orient="records"):
+        try:
+            raw = json.loads(r["raw_json"]) if r.get("raw_json") else {}
+        except (TypeError, ValueError):
+            raw = {}
+        if not isinstance(raw, dict):
+            raw = {}
+
+        # The board states which session it describes; the wall clock does not.
+        session = str(raw.get("listing_trading_date") or "")[:10] or fallback_date
+        close = _to_float(raw.get("match_match_price")) or _to_float(
+            r.get("match_price")
+        )
+        ref = (
+            _to_float(raw.get("match_reference_price"))
+            or _to_float(raw.get("listing_ref_price"))
+            or _to_float(r.get("ref_price"))
+        )
+        volume = _to_float(raw.get("match_accumulated_volume")) or _to_float(
+            r.get("accumulated_volume")
+        )
+        change = close - ref if close is not None and ref else None
+        acc_value = _to_float(raw.get("match_accumulated_value"))
+        buy_orders = _to_float(raw.get("match_total_buy_orders"))
+        sell_orders = _to_float(raw.get("match_total_sell_orders"))
+        f_buy = _to_float(raw.get("match_foreign_buy_value"))
+        f_sell = _to_float(raw.get("match_foreign_sell_value"))
+
+        rows.append(
+            {
+                "symbol": r["symbol"],
+                "trade_date": session,
+                "close_price": close,
+                "ref_price": ref,
+                "change": change,
+                "change_pct": (
+                    (change / ref * 100) if change is not None and ref else None
+                ),
+                "volume": volume,
+                "value_vnd": (
+                    acc_value * ACC_VALUE_UNIT_VND if acc_value is not None else None
+                ),
+                "remain_bid": _depth_sum(raw, "bid"),
+                "remain_ask": _depth_sum(raw, "ask"),
+                # Order counts read 0 during the ATC window — that is "not
+                # published", not "zero orders", so leave the average NULL
+                # rather than dividing.
+                "avg_buy_size": (
+                    (volume / buy_orders) if volume and buy_orders else None
+                ),
+                "avg_sell_size": (
+                    (volume / sell_orders) if volume and sell_orders else None
+                ),
+                "foreign_buy_volume": _to_float(raw.get("match_foreign_buy_volume")),
+                "foreign_sell_volume": _to_float(raw.get("match_foreign_sell_volume")),
+                "foreign_buy_value": f_buy,
+                "foreign_sell_value": f_sell,
+                "foreign_net_value": (
+                    f_buy - f_sell if f_buy is not None and f_sell is not None else None
+                ),
+                "current_room": _to_float(raw.get("match_current_room")),
+                "total_room": _to_float(raw.get("match_total_room")),
+                "source": source,
+                "crawled_at": now,
+                "raw_json": r.get("raw_json"),
+                "event_dt": to_event_dt(session),
+            }
+        )
+    return _to_table_df(rows, STOCK_DAILY_SNAPSHOT_TABLE)
 
 
 class StockMarketSource:
@@ -141,12 +279,28 @@ class StockMarketSource:
         """Latest quote snapshot for ``codes`` (batched, chunked)."""
         now = utcnow_naive()
         rows: list[dict] = []
+        interval = vnstock_min_interval()
+        done = 0
         for chunk in _chunks(codes, self.chunk_size):
+            if done:
+                time.sleep(interval)
             try:
                 raw = _flatten_columns(self._raw_price_board(chunk))
+            except SystemExit as ex:
+                logger.warning(
+                    f"price_board: vnstock rate limited "
+                    f"({done}/{len(codes)} done): {ex}"
+                )
+                raise RateLimitedError(
+                    done=done,
+                    total=len(codes),
+                    df=_to_table_df(rows, STOCK_PRICE_BOARD_TABLE),
+                ) from ex
             except Exception as ex:  # pragma: no cover - network failure path
                 logger.warning(f"price_board failed for {chunk}: {ex}")
                 continue
+            finally:
+                done += len(chunk)
             if raw is None or raw.empty:
                 continue
             for r in raw.to_dict(orient="records"):
@@ -156,16 +310,56 @@ class StockMarketSource:
                 rows.append(
                     {
                         "symbol": str(symbol).upper(),
+                        # VCI's own flattened names lead, so the exact pass wins
+                        # before any substring guessing; ATO/ATC are the auction
+                        # prices and must never stand in for the close.
                         "match_price": _to_float(
-                            _pick(r, "match_price", "matchPrice", "close_price")
+                            _pick(
+                                r,
+                                "match_match_price",
+                                "match_price",
+                                "matchPrice",
+                                "close_price",
+                                exclude=_AUCTION_FIELDS,
+                            )
                         ),
                         "ref_price": _to_float(
-                            _pick(r, "ref_price", "reference_price", "refPrice")
+                            _pick(
+                                r,
+                                "match_reference_price",
+                                "listing_ref_price",
+                                "ref_price",
+                                "reference_price",
+                                "refPrice",
+                            )
                         ),
-                        "ceiling": _to_float(_pick(r, "ceiling", "ceiling_price")),
-                        "floor": _to_float(_pick(r, "floor", "floor_price")),
+                        "ceiling": _to_float(
+                            _pick(
+                                r,
+                                "match_ceiling_price",
+                                "listing_ceiling",
+                                "ceiling",
+                                "ceiling_price",
+                            )
+                        ),
+                        "floor": _to_float(
+                            _pick(
+                                r,
+                                "match_floor_price",
+                                "listing_floor",
+                                "floor",
+                                "floor_price",
+                            )
+                        ),
                         "accumulated_volume": _to_float(
-                            _pick(r, "accumulated_volume", "total_volume", "volume")
+                            _pick(
+                                r,
+                                "match_accumulated_volume",
+                                "accumulated_volume",
+                                "total_volume",
+                                "volume",
+                                exclude=_AUCTION_FIELDS,
+                            )
                         ),
                         "source": self.source,
                         "crawled_at": now,
@@ -177,12 +371,30 @@ class StockMarketSource:
     def _per_symbol(
         self, codes: list[str], raw_fn, map_fn, table: Table
     ) -> pd.DataFrame:
-        """Loop ``codes`` resiliently; collect normalized rows into ``table``."""
+        """Loop ``codes`` resiliently; collect normalized rows into ``table``.
+
+        Calls are paced to the active vnstock budget.  A rate-limit hit
+        surfaces as :class:`RateLimitedError` carrying the partial frame —
+        vnai signals it with ``sys.exit`` (``SystemExit``), which must never
+        escape a worker thread (it kills the event loop), and the remaining
+        codes would hit the same wall anyway.
+        """
         now = utcnow_naive()
         rows: list[dict] = []
-        for code in codes:
+        interval = vnstock_min_interval()
+        for i, code in enumerate(codes):
+            if i:
+                time.sleep(interval)
             try:
                 raw = raw_fn(code)
+            except SystemExit as ex:
+                logger.warning(
+                    f"{table.name}: vnstock rate limited at {code} "
+                    f"({i}/{len(codes)} done): {ex}"
+                )
+                raise RateLimitedError(
+                    done=i, total=len(codes), df=_to_table_df(rows, table)
+                ) from ex
             except Exception as ex:  # pragma: no cover - network failure path
                 logger.warning(f"{table.name} fetch failed for {code}: {ex}")
                 continue
@@ -206,7 +418,13 @@ class StockMarketSource:
                 "news_id": str(news_id) if news_id is not None else "",
                 "title": _pick(r, "title", "news_title", "news_short_content"),
                 "published_at": str(published_at or ""),
-                "url": _pick(r, "url", "news_source_link", "link"),
+                # Verified across every stored VCI row: ``news_source_link`` is
+                # always null — the feed carries no article URL. Without the
+                # exclusion this falls through to ``news_image_url`` and every
+                # headline links to its own thumbnail; NULL is the honest answer.
+                "url": _pick(
+                    r, "news_source_link", "url", "link", exclude=_IMAGE_FIELDS
+                ),
                 "source": self.source,
                 "crawled_at": now,
                 # Native ``published_at`` is Vietnam-local; ``event_dt`` is its

@@ -25,6 +25,9 @@ export interface OHLCVParams {
 }
 
 export interface GoldHistoryParams {
+  /** Series identity is `(source, code)`. Omitting this returns every feed
+   *  serving the code interleaved — and spends `limit` across all of them. */
+  source?: string;
   start?: string;
   end?: string;
   limit?: number;

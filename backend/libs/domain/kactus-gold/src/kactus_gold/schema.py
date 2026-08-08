@@ -57,8 +57,14 @@ class GoldHistoryPointSchema(BaseSchema):
 
 
 class GoldHistoryCodeSchema(BaseSchema):
-    """Catalogue entry for one stored gold series."""
+    """Catalogue entry for one stored gold series.
 
+    Series identity is ``(source, code)``, not ``code``: SJC-999 and Mihong-999
+    are different products sharing a code, so one code can yield several
+    entries. Grouping the picker by ``source`` is what this field exists for.
+    """
+
+    source: str | None = None
     code: str
     unit: str
     points: FancyInt

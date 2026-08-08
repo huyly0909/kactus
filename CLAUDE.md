@@ -76,7 +76,7 @@ coordinates **processes**; it is never a source of truth and never a job queue.
 
 | Concern | Where | Why |
 |---|---|---|
-| Audit (`CrawlRun`, `NotificationLog`) | **Postgres** | Redis can be flushed or lost on failover |
+| Audit (`SyncJob`, `NotificationLog`) | **Postgres** | Redis can be flushed or lost on failover |
 | Commands between services | **HTTP** | status codes, timeouts, tracing |
 | Event fan-out that may be dropped (SSE nudges) | **Redis pub/sub** | client refetches; loss is harmless |
 | Delivery that must **not** be dropped | **Redis Streams** (not built yet) | pub/sub does not persist |
@@ -132,6 +132,48 @@ Rules that hold the split together:
 ### Portfolio feature (✅ implemented)
 
 Multi-asset watchlist (STOCK/GOLD; COIN deferred) + scheduled vnstock/mihong crawl + in-app SSE broadcast. Docs: [docs/04-portfolio-feature.md](docs/04-portfolio-feature.md) (see §16 As-built). ETL/cron/`AssetProvider` registry in `kactus-data`; API/SSE/scheduler wiring + admin in `kactus-fin` (`kactus_fin/portfolio/`); models + service + SSE broker + events in `kactus-common` (`kactus_common/portfolio/`, `kactus_common/sse/`); UI in `frontend/packages/bloom-app` (`modules/portfolio/`). Portfolios are **user-owned** (ownership in service, not Casbin `@permission`). SSE fan-out goes through the **Redis broker** (`coordination_backend=redis`) and the scheduler now lives in `kactus-data-plane`, so **`kactus-fin` is multi-worker again** (4 in prod, 2 in stag); the single-worker constraint moved with the scheduler (cờ `enable_portfolio_scheduler` is now the data plane's). vnstock key via `vnai.setup_api_key()` reading `KACTUS_VNSTOCK_API_KEY` (no `validation_alias`). **Gold quotes need no credential**: `SjcGoldSource` (sjc.com.vn, authoritative SJC reference, Cloudflare → `curl_cffi impersonate=chrome`) is tried first and `MihongGoldSource` (api.mihong.vn, `last=` trailing window) is the fallback — `KACTUS_MIHONG_XSRF_TOKEN` is legacy/unused. World gold (`XAU`) comes from `YahooGoldSource` (`GC=F` — `XAUUSD=X` is delisted; explicit `period1`/`period2` + `interval=1d`, since `range=max` degrades to monthly). `gold_price_board` therefore mixes units and every row carries an explicit **`unit`** (`VND/luong` vs `USD/oz`) — never assume VND. The board is keyed **`(code, source)`**, like `gold_price_history`: SJC and mihong both quote `999` (bar issuer vs dealer) and coexist as separate rows instead of the last writer silently owning `code`. The one place that must collapse to a single quote per code is a portfolio holding — that rule lives in `GoldAssetProvider.read()` (freshest wins, ties by `BOARD_SOURCE_PRIORITY`), never in the write path. Changing a DuckDB PK needs `manage.py data schema recreate <table>` (drops rows); `schema check` now reports PK drift. `DOJI`/`PNJ` stay in the catalog flagged `enabled: false` + tag `disabled` (no free feed wired). Source research + one-off history backfill scripts live in `labenry-lab/gold/`. Blocking calls wrapped in `asyncio.to_thread`; DuckDB writes use `conn.register(df)`.
+
+### Crawl queue & vnstock pacing (✅ implemented)
+
+**Every crawl is a `SyncJob`** — cron fire, admin run-now, portfolio refresh and
+`POST /internal/crawl` all *enqueue* into the shared Postgres `sync_jobs` table
+and the single data-plane dispatcher executes them FIFO. `CrawlRun` is
+**retired** (table kept for old history, no new writes; `GET
+/api/admin/portfolios/crawl-runs` is gone) — one system now captures the whole
+lifecycle: enqueue = PENDING ack (`create_time` = trigger instant, `params` =
+what + `trigger` + optional `portfolio_id`, `created_by` = who via AuditMixin),
+claim = RUNNING (`started_at`), finish = SUCCESS/FAILED with the full reason.
+Job naming lives in **`kactus_common/portfolio/crawl_queue.py`** (core, because
+both planes enqueue): `{asset}_{kind}` — `stock_quotes`, `gold_quotes`,
+`stock_news`, `stock_ratios`, `stock_events`, `stock_ohlcv`, plus
+`catalog_sync`. That prefix is what the queue UI's family filter (`gold\_%` /
+`stock\_%`) matches; the exact `job_type` is the `job` filter behind the
+Scheduler → Jobs "queue" chips. Dedup is the queue's active-unique `dedup_key`
+(`crawl:{asset}:{kind}`), which replaced `CrawlRun.has_inflight`. Handlers live
+in `kactus_data/jobs/crawl_handlers.py`; a job enqueued with `codes=None`
+resolves the **live** watchlist union at run time, not a snapshot.
+
+**`SystemExit` must never leave a worker thread.** vnai signals a rate limit
+with `sys.exit()`, and `SystemExit` is a `BaseException` that sails past every
+`except Exception` — it once killed the data plane's event loop (container up,
+serving nothing). Containment is three layers: the paced per-symbol loops raise
+`RateLimitedError` (carrying the partial DataFrame → the provider stores it
+before re-raising with `rows_stored`), `guarded_to_thread` converts any stray
+`SystemExit` to `RuntimeError`, and the dispatcher's `except Exception` fails
+just that job. A rate-limited crawl is therefore **FAILED with the full reason**
+(`… after 12/67 codes — stored N partial rows`) and the partial data is kept.
+
+**Pacing is tier-derived, so upgrading the account widens throughput with no
+code change.** `init_vnstock_auth()` logs the tier + budget at startup
+(`vnstock tier=free budget=60 req/min, 3600 req/h (source=detected)`).
+Detection uses **`vnai.get_user_tier()`** — *not* `vnai.get_tier_info()`, which
+imports a nonexistent module in the installed vnai and is why the tier used to
+read "unknown". Budget priority: `KACTUS_VNSTOCK_RPM_OVERRIDE` → detected
+`limits.per_minute` → static tier table (guest 20, free/community 60, bronze
+180, silver 300, golden 500, diamond 600) → authed/guest default.
+`vnstock_min_interval()` = `60 / (rpm × 0.8)` paces every per-code loop. Paid
+tiers are only *detected* with the sponsor-licensed `vnii` package — without it,
+pin the override.
 
 ### OLAP money columns & schema drift
 

@@ -64,16 +64,17 @@ export const GoldSeriesPanel: FC<GoldSeriesPanelProps> = ({ code, source, backfi
   const min = useMemo(() => resolveGoldBackfillMin(source), [source]);
 
   const params: GoldHistoryParams = {
+    // Two series can share a code (SJC `999` vs Mihong `999`). Filtering on the
+    // server rather than here also keeps `limit` meaning "points of *this*
+    // series" — client-side filtering spent half the budget on rows it threw
+    // away, silently shortening the window.
+    source,
     start: range.from || undefined,
     end: range.to || undefined,
     limit: rangeLimit(range),
   };
   const { data: points, isLoading } = useGoldHistory(code, params);
-
-  // One history endpoint can return two series sharing a code (SJC `999` vs
-  // Mihong `999`); keep only this panel's source so chart, table and the
-  // gap/today chips all agree on the same rows.
-  const rows = useMemo(() => (points ?? []).filter((p) => p.source === source), [points, source]);
+  const rows = useMemo(() => points ?? [], [points]);
 
   // Data-availability schedule (expected weekdays + holidays + market timezone)
   // drives the warning chips. `entity_id` is `source:code`; Mihong passes `999`.

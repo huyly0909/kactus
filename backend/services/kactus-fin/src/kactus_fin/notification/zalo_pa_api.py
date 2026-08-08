@@ -22,32 +22,7 @@ from kactus_common.router import KactusAPIRouter
 from kactus_common.schemas import Pagination
 from kactus_fin.dependencies import provide_session
 from kactus_fin.notification.api import _to_schema
-from kactus_notification.const import (
-    NotificationChannelType,
-    NotificationLogStatus,
-    NotificationTrigger,
-)
-from kactus_notification.model import NotificationChannel
-from kactus_notification.schema import (
-    NotificationChannelSchema,
-    NotificationEvent,
-    Recipient,
-    ZaloPAChannelConfig,
-    ZaloPAChannelCreateRequest,
-    ZaloPACompleteResponse,
-    ZaloPAQRGenerateResponse,
-    ZaloPAQRStatusResponse,
-    ZaloPAReauthRequest,
-    ZaloPARecipientsUpdateRequest,
-    ZaloPATestMessageResponse,
-    ZaloPATestMessageResult,
-    ZaloRecipientTarget,
-)
-from kactus_notification.service import (
-    NotificationChannelService,
-    NotificationLogService,
-)
-from kactus_notification.zalo_pa import (
+from kactus_notification.channels.zalo_pa.client import (
     TEST_GREETING,
     TEST_MESSAGE_TITLE,
     build_channel_config,
@@ -59,6 +34,33 @@ from kactus_notification.zalo_pa import (
     session_credentials,
     wait_for_confirm,
     wait_for_scan,
+)
+from kactus_notification.channels.zalo_pa.schema import (
+    ZaloPAChannelConfig,
+    ZaloPAChannelCreateRequest,
+    ZaloPACompleteResponse,
+    ZaloPAQRGenerateResponse,
+    ZaloPAQRStatusResponse,
+    ZaloPAReauthRequest,
+    ZaloPARecipientsUpdateRequest,
+    ZaloPATestMessageResponse,
+    ZaloPATestMessageResult,
+    ZaloRecipientTarget,
+)
+from kactus_notification.const import (
+    NotificationChannelType,
+    NotificationLogStatus,
+    NotificationTrigger,
+)
+from kactus_notification.model import NotificationChannel
+from kactus_notification.schema import (
+    NotificationChannelSchema,
+    NotificationEvent,
+    Recipient,
+)
+from kactus_notification.service import (
+    NotificationChannelService,
+    NotificationLogService,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 

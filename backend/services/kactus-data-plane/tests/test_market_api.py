@@ -78,6 +78,70 @@ async def test_gold_prices_are_exact_and_unit_tagged(client):
 
 
 @pytest.mark.asyncio
+async def test_gold_history_filters_by_source(client):
+    """``code`` alone is not a series — SJC-999 and Mihong-999 both answer to it.
+
+    Unfiltered, the endpoint returns both feeds interleaved (two points per
+    date), which is what made the chart draw a sawtooth between the two prices.
+    """
+    both = (
+        await client.get("/internal/market/gold/history", params={"code": "999"})
+    ).json()["data"]
+    assert len(both) == 8  # 3 mihong + 5 sjc
+    assert {r["source"] for r in both} == {"mihong", "sjc"}
+
+    mihong = (
+        await client.get(
+            "/internal/market/gold/history",
+            params={"code": "999", "source": "mihong"},
+        )
+    ).json()["data"]
+    assert [r["source"] for r in mihong] == ["mihong"] * 3
+    # Oldest → newest is preserved by the filter.
+    assert [r["date"] for r in mihong] == sorted(r["date"] for r in mihong)
+
+
+@pytest.mark.asyncio
+async def test_gold_history_limit_is_per_series_when_source_is_given(client):
+    """Regression: ``limit`` used to be spent across every source of a code.
+
+    Asking for 3 points of an unfiltered "999" yields the 3 newest rows of the
+    *combined* set — barely 2 days — so a chart requesting a year of one series
+    silently got a fraction of it. With ``source`` the budget is the series'.
+    """
+    mixed = (
+        await client.get(
+            "/internal/market/gold/history", params={"code": "999", "limit": 3}
+        )
+    ).json()["data"]
+    assert len({r["source"] for r in mixed}) == 2  # budget split across feeds
+
+    scoped = (
+        await client.get(
+            "/internal/market/gold/history",
+            params={"code": "999", "source": "sjc", "limit": 3},
+        )
+    ).json()["data"]
+    assert len(scoped) == 3
+    assert {r["source"] for r in scoped} == {"sjc"}
+
+
+@pytest.mark.asyncio
+async def test_gold_history_codes_are_one_per_source(client):
+    """The picker groups on ``source``; grouping on ``code`` alone merged the
+    two 999 series into one entry with a summed point count."""
+    rows = (await client.get("/internal/market/gold/history/codes")).json()["data"]
+
+    keys = [(r["source"], r["code"]) for r in rows]
+    assert keys == [("mihong", "999"), ("sjc", "999"), ("yahoo", "XAU")]
+    by_key = {(r["source"], r["code"]): r for r in rows}
+    # Point counts stay per-series rather than being summed into one 999 row.
+    assert int(by_key[("mihong", "999")]["points"]) == 3
+    assert int(by_key[("sjc", "999")]["points"]) == 5
+    assert by_key[("yahoo", "XAU")]["unit"] == "USD/oz"
+
+
+@pytest.mark.asyncio
 async def test_stock_search_by_symbol_and_name(client):
     all_rows = await client.get("/internal/market/stocks")
     assert [r["symbol"] for r in all_rows.json()["data"]] == ["FPT", "VNM"]

@@ -20,10 +20,11 @@ from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.exceptions import ExternalServiceError
 from kactus_notification import dispatcher
-from kactus_notification.channel import DeliveryTarget, TelegramChannel
+from kactus_notification.channel import DeliveryTarget
+from kactus_notification.channels.telegram import TelegramChannel, TelegramChannelConfig
 from kactus_notification.config import NotificationSettings
 from kactus_notification.const import NotificationLogStatus, NotificationTrigger
-from kactus_notification.schema import NotificationEvent, TelegramChannelConfig
+from kactus_notification.schema import NotificationEvent
 from kactus_notification.service import NotificationLogService
 
 TEST_DB_URL = "sqlite+aiosqlite://"

@@ -104,6 +104,14 @@ class CrawlJobSchema(BaseSchema):
     name: str | None = None
     #: Human-readable trigger/cadence (e.g. the cron expression), for display.
     cadence: str | None = None
+    #: The cron fields split out (``day_of_week`` / ``hour`` / ``minute`` / …),
+    #: so the client can build a sentence in its own language instead of
+    #: parsing ``str(trigger)``. ``None`` for a non-cron trigger — fall back to
+    #: ``cadence`` then.
+    cron: dict[str, str] | None = None
+    #: Timezone the cron fields are expressed in. They are **not** UTC: the
+    #: scheduler runs on VN local time, and an hour with no zone is a trap.
+    timezone: str | None = None
     next_run_time: str | None = None
     #: True when the scheduler is running but this job has no next fire time.
     paused: bool = False
@@ -118,9 +126,14 @@ class CrawlStatusSchema(BaseSchema):
 
 
 class CrawlTriggerResponse(BaseSchema):
-    """Result of a manual crawl trigger."""
+    """Result of a manual crawl trigger — the enqueue ack.
 
-    crawl_run_ids: list[FancyInt] = []
+    ``job_ids`` are the sync-queue jobs this trigger created; ``skipped`` means
+    every requested job was already PENDING/RUNNING (dedup hit), so nothing new
+    was queued.
+    """
+
+    job_ids: list[FancyInt] = []
     skipped: bool = False
     message: str = "ok"
 
@@ -137,5 +150,3 @@ class CrawlRequest(BaseSchema):
     codes_by_type: dict[str, list[str]] | None = None
     trigger: CrawlTrigger = CrawlTrigger.MANUAL
     portfolio_id: FancyInt | None = None
-    #: Skip if a crawl of the same (asset_type, kind) is already in flight.
-    dedup: bool = True

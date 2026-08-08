@@ -176,6 +176,28 @@ class SyncJobService:
         return list((await session.scalars(stmt)).all())
 
     @staticmethod
+    async def latest_finished_by_type(session: AsyncSession) -> list[SyncJob]:
+        """The most recent *finished* job of each ``job_type`` — one row per type.
+
+        Deliberately not derived from :meth:`list_recent`: that is a flat
+        newest-first window, so a burst of one job type (a gold backfill, say)
+        pushes every other type's last outcome out of it, and the caller would
+        silently render "never ran" for a job that ran this morning.
+
+        ``max(id)`` rather than a window function over ``finished_at``: ids are
+        monotonic so it means the same thing, and plain GROUP BY runs
+        identically on SQLite (unit tests) and Postgres.
+        """
+        newest = (
+            select(SyncJob.job_type, func.max(SyncJob.id).label("job_id"))
+            .where(SyncJob.finished_at.is_not(None))
+            .group_by(SyncJob.job_type)
+            .subquery()
+        )
+        stmt = select(SyncJob).join(newest, SyncJob.id == newest.c.job_id)
+        return list((await session.scalars(stmt)).all())
+
+    @staticmethod
     async def count_active(session: AsyncSession) -> int:
         """How many jobs are live right now, across the whole table.
 
@@ -191,6 +213,7 @@ class SyncJobService:
     def _search_filters(
         *,
         status: str | None = None,
+        job_type: str | None = None,
         job_family: str | None = None,
         source: str | None = None,
         created_from: datetime.datetime | None = None,
@@ -202,6 +225,9 @@ class SyncJobService:
             terms.append(SyncJob.status.in_(list(ACTIVE_SYNC_STATUSES)))
         elif status:
             terms.append(SyncJob.status == status)
+        if job_type:
+            # Exact job — "all tasks of this scheduler job" (the jobs-pane link).
+            terms.append(SyncJob.job_type == job_type)
         if job_family:
             # ``gold_backfill`` / ``gold_sync`` both belong to the "gold" family.
             # LIKE (not a JSON op) so the same SQL runs on SQLite and Postgres;
@@ -225,6 +251,7 @@ class SyncJobService:
         page: int = 1,
         page_size: int = 20,
         status: str | None = None,
+        job_type: str | None = None,
         job_family: str | None = None,
         source: str | None = None,
         created_from: datetime.datetime | None = None,
@@ -240,6 +267,7 @@ class SyncJobService:
         """
         terms = SyncJobService._search_filters(
             status=status,
+            job_type=job_type,
             job_family=job_family,
             source=source,
             created_from=created_from,

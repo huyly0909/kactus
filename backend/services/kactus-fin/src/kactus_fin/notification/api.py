@@ -23,13 +23,13 @@ from kactus_notification.const import NotificationChannelType
 from kactus_notification.dispatcher import Notifier
 from kactus_notification.model import NotificationChannel, NotificationLog
 from kactus_notification.queue import enqueue
+from kactus_notification.registry import mask_config
 from kactus_notification.schema import (
     NotificationChannelCreateRequest,
     NotificationChannelSchema,
     NotificationChannelUpdateRequest,
     NotificationEvent,
     NotificationLogSchema,
-    mask_config,
 )
 from kactus_notification.service import (
     NotificationChannelService,

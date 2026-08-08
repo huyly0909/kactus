@@ -19,11 +19,13 @@ import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   useNotificationChannels,
+  useTelegramTestMessage,
   useTestChannel,
   useZaloTestMessage,
 } from '@/hooks/useNotificationQuery';
 import { ChannelFormDialog } from '@modules/notification/components/ChannelFormDialog';
-import { ZaloPAQRDialog } from '@modules/notification/components/ZaloPAQRDialog';
+import { TelegramSetupDialog } from '@modules/notification/components/telegram/TelegramSetupDialog';
+import { ZaloPAQRDialog } from '@modules/notification/components/zalo/ZaloPAQRDialog';
 import type { NotificationChannel, NotificationChannelType } from '@/types/notification';
 
 const TYPE_ICON: Record<NotificationChannelType, React.ElementType> = {
@@ -68,9 +70,11 @@ export function NotificationListPage() {
   const navigate = useNavigate();
   const { data: channels, isLoading } = useNotificationChannels();
   const zaloTest = useZaloTestMessage();
+  const telegramTest = useTelegramTestMessage();
   const test = useTestChannel();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [reauthChannel, setReauthChannel] = useState<NotificationChannel | null>(null);
+  const [tgReauthChannel, setTgReauthChannel] = useState<NotificationChannel | null>(null);
 
   const columns: DataTableColumn<NotificationChannel>[] = [
     {
@@ -106,7 +110,10 @@ export function NotificationListPage() {
       className: 'text-right',
       render: (ch) => {
         const isZalo = ch.channel_type === 'zalo_pa';
-        const zapping = zaloTest.isPending && zaloTest.variables === ch.id;
+        const isTelegram = ch.channel_type === 'telegram';
+        const zapping =
+          (zaloTest.isPending && zaloTest.variables === ch.id) ||
+          (telegramTest.isPending && telegramTest.variables === ch.id);
         const testing = test.isPending && test.variables === ch.id;
         return (
           <div className="flex items-center justify-end gap-1">
@@ -142,6 +149,29 @@ export function NotificationListPage() {
               <RowAction
                 label={t('notification.zalo.reconnect')}
                 onClick={() => setReauthChannel(ch)}
+                icon={<RefreshCw className="h-3.5 w-3.5" />}
+              />
+            )}
+            {/* Telegram gets the same pair: ⚡ is the only probe that proves the
+                bot may post to the chat, and a @BotFather token can be revoked. */}
+            {isTelegram && (
+              <RowAction
+                label={t('notification.telegram.test_message')}
+                disabled={!ch.is_active || telegramTest.isPending}
+                onClick={() => telegramTest.mutate(ch.id)}
+                icon={
+                  zapping ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Zap className="h-3.5 w-3.5" />
+                  )
+                }
+              />
+            )}
+            {isTelegram && (
+              <RowAction
+                label={t('notification.telegram.reconnect')}
+                onClick={() => setTgReauthChannel(ch)}
                 icon={<RefreshCw className="h-3.5 w-3.5" />}
               />
             )}
@@ -185,6 +215,16 @@ export function NotificationListPage() {
       )}
 
       <ChannelFormDialog open={dialogOpen} onOpenChange={setDialogOpen} />
+
+      {tgReauthChannel && (
+        <TelegramSetupDialog
+          open={!!tgReauthChannel}
+          onOpenChange={(o) => !o && setTgReauthChannel(null)}
+          mode="reauth"
+          channelId={tgReauthChannel.id}
+          onDone={() => setTgReauthChannel(null)}
+        />
+      )}
 
       {reauthChannel && (
         <ZaloPAQRDialog

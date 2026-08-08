@@ -60,7 +60,8 @@ export interface MarketNews {
 }
 
 export interface CrawlTriggerResult {
-  crawl_run_ids: string[];
+  /** Sync-queue job ids the trigger enqueued (see /scheduler/queue). */
+  job_ids: string[];
   skipped: boolean;
   message: string;
 }

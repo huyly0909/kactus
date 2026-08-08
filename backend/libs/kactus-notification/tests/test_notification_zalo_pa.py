@@ -13,17 +13,18 @@ import types
 import pytest
 from kactus_common.config import CommonSettings, clear_settings, register_settings
 from kactus_common.exceptions import ExternalServiceError, ValidationError
-from kactus_notification import zalo_pa
-from kactus_notification.channel import RenderedMessage, ZaloPAChannel
-from kactus_notification.config import NotificationSettings
-from kactus_notification.const import NotificationChannelType
-from kactus_notification.registry import build_channel, get_template
-from kactus_notification.schema import (
-    NotificationEvent,
+from kactus_notification.channel import RenderedMessage
+from kactus_notification.channels.zalo_pa import ZaloPAChannel
+from kactus_notification.channels.zalo_pa import client as zalo_pa
+from kactus_notification.channels.zalo_pa import session_store
+from kactus_notification.channels.zalo_pa.schema import (
     ZaloPAChannelConfig,
     ZaloRecipientTarget,
-    mask_config,
 )
+from kactus_notification.config import NotificationSettings
+from kactus_notification.const import NotificationChannelType
+from kactus_notification.registry import build_channel, get_template, mask_config
+from kactus_notification.schema import NotificationEvent
 from zlapi.models import ZaloAPIException
 
 _SESSION_FIELDS = {
@@ -74,7 +75,7 @@ def _settings():
         _Settings(app_env="dev", zalo_pa_session_ttl_secs=300, zalo_pa_max_sessions=50)
     )
     yield
-    zalo_pa.reset_session_store()
+    session_store.reset_session_store()
     clear_settings()
 
 
@@ -350,7 +351,9 @@ async def test_send_greeting_requires_recipients():
 @pytest.mark.asyncio
 async def test_session_store_save_load_delete():
     store = zalo_pa.get_session_store()
-    assert isinstance(store, zalo_pa.InProcessZaloPASessionStore)  # default backend
+    assert isinstance(
+        store, session_store.InProcessZaloPASessionStore
+    )  # default backend
     await store.save("s1", {"code": "C"}, 300)
     assert await store.load("s1") == {"code": "C"}
     assert await store.count() == 1

@@ -17,8 +17,11 @@ from kactus_common.project.service import ProjectService
 from kactus_common.user import auth as auth_mod
 from kactus_common.user.context import set_current_project_id
 from kactus_common.user.model import User
+from kactus_notification.channels.zalo_pa.schema import (
+    ZaloPAChannelConfig,
+    ZaloRecipientTarget,
+)
 from kactus_notification.model import NotificationChannel
-from kactus_notification.schema import ZaloPAChannelConfig, ZaloRecipientTarget
 
 TEST_DB_URL = "sqlite+aiosqlite://"
 TEST_KEY = Fernet.generate_key().decode()

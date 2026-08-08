@@ -27,6 +27,7 @@ from kactus_common.portfolio.const import AssetType
 from kactus_data.portfolio.provider import StockAssetProvider
 from kactus_data.sources.company.tables import COMPANY_TABLE
 from kactus_data.sources.finance.tables import FINANCE_TABLE
+from kactus_data.sources.gold.history_tables import GOLD_PRICE_HISTORY_TABLE
 from kactus_data.sources.gold.portfolio_tables import GOLD_PRICE_BOARD_TABLE
 from kactus_data.sources.stock.market import StockMarketSource
 from kactus_data.sources.stock.portfolio_tables import (
@@ -81,6 +82,73 @@ class FakeMarket(StockMarketSource):
 
     def _raw_group(self, group):
         return ["FPT"]
+
+
+def _gold_history_frame(now: datetime) -> pd.DataFrame:
+    """Three series over ``gold_price_history``, all 15 columns, table order.
+
+    ``999`` is served by two feeds at different prices and different depths —
+    the shape that makes ``source`` part of the series identity rather than a
+    label. ``XAU`` fills ``close`` instead of ``buy``/``sell``, as the importer
+    does for world gold.
+    """
+    columns = [c.name for c in GOLD_PRICE_HISTORY_TABLE.columns]
+
+    def row(*, code, day, source, unit, buy=None, sell=None, close=None) -> dict:
+        date = f"2026-07-{day:02d}"
+        return {
+            "code": code,
+            "date": datetime.fromisoformat(date).date(),
+            "buy_price": buy,
+            "sell_price": sell,
+            "open": None,
+            "high": None,
+            "low": None,
+            "close": close,
+            "unit": unit,
+            "source": source,
+            "location": None,
+            "gold_type": None,
+            "updated_at": now,
+            "imported_at": now,
+            "event_dt": to_event_dt(date),
+        }
+
+    rows = (
+        [
+            row(
+                code="999",
+                day=20 + i,
+                source="mihong",
+                unit="VND/luong",
+                buy=118_000_000.0 + i,
+                sell=119_500_000.0 + i,
+            )
+            for i in range(3)
+        ]
+        + [
+            row(
+                code="999",
+                day=20 + i,
+                source="sjc",
+                unit="VND/luong",
+                buy=118_500_000.0 + i,
+                sell=120_000_000.0 + i,
+            )
+            for i in range(5)
+        ]
+        + [
+            row(
+                code="XAU",
+                day=20 + i,
+                source="yahoo",
+                unit="USD/oz",
+                close=4037.6999 + i,
+            )
+            for i in range(2)
+        ]
+    )
+    return pd.DataFrame(rows, columns=columns)
 
 
 @pytest.fixture
@@ -156,6 +224,15 @@ def storage(tmp_path) -> DuckDBStorage:
             ]
         ),
     )
+    # History: two series share code "999" (sjc vs mihong), which is what makes
+    # `source` load-bearing on both the filter and the catalogue. Mihong's
+    # window is deliberately shorter so a per-source point count is observable.
+    #
+    # Built through `_history_row` rather than sparse dicts: DuckDB inserts are
+    # positional (`INSERT … SELECT *`), so every row must carry all 15 columns
+    # in table order — a dict missing `open`/`high`/`low` does not become NULL,
+    # it shifts every following value one column left.
+    store.store(GOLD_PRICE_HISTORY_TABLE, _gold_history_frame(now))
     store.store(
         STOCK_LISTING_TABLE,
         pd.DataFrame(

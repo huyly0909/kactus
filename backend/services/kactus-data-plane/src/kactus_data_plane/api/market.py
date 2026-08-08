@@ -25,6 +25,8 @@ from kactus_gold.schema import (
     GoldPriceSchema,
 )
 from kactus_stock_vn.const import (
+    DEFAULT_DAILY_LIMIT,
+    DEFAULT_EVENTS_LIMIT,
     DEFAULT_FINANCE_LIMIT,
     DEFAULT_LIST_LIMIT,
     DEFAULT_NEWS_LIMIT,
@@ -32,14 +34,20 @@ from kactus_stock_vn.const import (
     OHLCVInterval,
     ReportPeriod,
     ReportType,
+    TechnicalInterval,
 )
 from kactus_stock_vn.schema import (
     FinanceReportSchema,
+    FundamentalRadarSchema,
     OHLCVSchema,
+    StockDailyListSchema,
     StockDetailSchema,
+    StockEventSchema,
     StockListingSchema,
     StockNewsSchema,
+    StockOverviewSchema,
     StockQuoteSchema,
+    TechnicalGaugeSchema,
 )
 
 router = KactusAPIRouter(
@@ -62,13 +70,23 @@ async def list_gold_prices(
 @router.get("/gold/history")
 async def list_gold_history(
     code: str,
+    source: str | None = None,
     start: datetime.date | None = None,
     end: datetime.date | None = None,
     limit: int = DEFAULT_GOLD_HISTORY_LIMIT,
 ) -> list[GoldHistoryPointSchema]:
-    """Daily points for one gold series, oldest → newest."""
+    """Daily points for one gold series, oldest → newest.
+
+    Series identity is ``(source, code)``; omitting ``source`` returns every
+    feed that serves the code, interleaved.
+    """
     return await MarketService.list_gold_history(
-        get_runtime().storage, code=code, start=start, end=end, limit=limit
+        get_runtime().storage,
+        code=code,
+        source=source,
+        start=start,
+        end=end,
+        limit=limit,
     )
 
 
@@ -153,3 +171,44 @@ async def list_finance_reports(
         period=period,
         limit=limit,
     )
+
+
+@router.get("/stocks/{symbol}/overview")
+async def get_stock_overview(symbol: str) -> StockOverviewSchema | None:
+    """Header + sidebar for the detail page, or ``null`` if wholly unknown."""
+    return await MarketService.get_overview(get_runtime().storage, symbol)
+
+
+@router.get("/stocks/{symbol}/events")
+async def list_stock_events(
+    symbol: str,
+    limit: int = DEFAULT_EVENTS_LIMIT,
+) -> list[StockEventSchema]:
+    """Corporate events for a symbol, newest first."""
+    return await MarketService.list_events(get_runtime().storage, symbol, limit=limit)
+
+
+@router.get("/stocks/{symbol}/daily")
+async def list_stock_daily(
+    symbol: str,
+    limit: int = DEFAULT_DAILY_LIMIT,
+) -> StockDailyListSchema:
+    """Per-session trading table with foreign flow, newest session first."""
+    return await MarketService.list_daily(get_runtime().storage, symbol, limit=limit)
+
+
+@router.get("/stocks/{symbol}/technical")
+async def get_stock_technical(
+    symbol: str,
+    interval: TechnicalInterval = TechnicalInterval.D1,
+) -> TechnicalGaugeSchema:
+    """Indicator consensus derived from stored candles."""
+    return await MarketService.get_technical(
+        get_runtime().storage, symbol, interval=interval
+    )
+
+
+@router.get("/stocks/{symbol}/fundamental")
+async def get_stock_fundamental(symbol: str) -> FundamentalRadarSchema:
+    """Five-axis fundamental score vs. comparable peers."""
+    return await MarketService.get_fundamental(get_runtime().storage, symbol)

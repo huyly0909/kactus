@@ -18,9 +18,15 @@ from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .const import NotificationChannelType, NotificationLogStatus, NotificationTrigger
+from .const import (
+    SECRET_MASK,
+    NotificationChannelType,
+    NotificationLogStatus,
+    NotificationTrigger,
+)
 from .model import NotificationChannel, NotificationLog
-from .schema import SECRET_FIELDS, SECRET_MASK, NotificationEvent, parse_channel_config
+from .registry import SECRET_FIELDS, parse_channel_config
+from .schema import NotificationEvent
 
 
 def _validate_config(channel_type: NotificationChannelType, config: dict) -> None:

@@ -31,6 +31,21 @@ export interface SyncJob {
   finished_at?: string | null;
 }
 
+/** Every known `job_type` — crawl jobs (`{asset}_{kind}`, mirrors
+ * `kactus_common.portfolio.crawl_queue`) plus the gold queue jobs. Drives the
+ * queue page's Job filter and the jobs-pane → queue links. */
+export const SYNC_JOB_TYPES = [
+  'stock_quotes',
+  'stock_news',
+  'stock_ratios',
+  'stock_events',
+  'stock_ohlcv',
+  'gold_quotes',
+  'catalog_sync',
+  'gold_backfill',
+  'gold_sync',
+] as const;
+
 export interface SyncJobList {
   /** Live jobs (pending/running), oldest first — the queue as it will run. */
   active: SyncJob[];
@@ -45,6 +60,8 @@ export interface SyncJobQuery {
   page_size?: number;
   /** A literal status, or `active` for pending-OR-running. */
   status?: SyncJobStatus | 'active';
+  /** Exact `job_type` (`stock_news`) — "all tasks of this scheduler job". */
+  job?: string;
   /** Job family — the first segment of `job_type` (`gold_backfill` → `gold`). */
   type?: string;
   source?: string;

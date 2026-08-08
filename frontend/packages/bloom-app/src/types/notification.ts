@@ -66,6 +66,22 @@ export interface SlackConfig {
   webhook_url: string;
 }
 
+/** `getMe` — proves the token is live before a channel row is created. */
+export interface TelegramBotInfo {
+  id: string;
+  username: string;
+  first_name: string;
+}
+
+/** A chat the bot can see. `type` matters: a channel needs the bot as admin
+ * with *Post messages*, a group does not. */
+export interface TelegramChat {
+  id: string;
+  title: string;
+  type: 'channel' | 'supergroup' | 'group' | 'private' | string;
+  username?: string | null;
+}
+
 export interface NotificationEvent {
   title: string;
   body?: string;

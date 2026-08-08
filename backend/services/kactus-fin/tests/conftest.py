@@ -81,6 +81,7 @@ class FakeDataPlane:
         @router.get("/market/gold/history")
         async def gold_history(
             code: str,
+            source: str | None = None,
             start: str | None = None,
             end: str | None = None,
             limit: int = 2500,
@@ -88,7 +89,13 @@ class FakeDataPlane:
             fake.calls.append(
                 (
                     "gold_history",
-                    {"code": code, "start": start, "end": end, "limit": limit},
+                    {
+                        "code": code,
+                        "source": source,
+                        "start": start,
+                        "end": end,
+                        "limit": limit,
+                    },
                 )
             )
             return fake.gold_history

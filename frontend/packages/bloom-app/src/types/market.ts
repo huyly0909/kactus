@@ -41,7 +41,11 @@ export interface GoldHistoryPoint {
   gold_type?: string | null;
 }
 
+/** One stored series in the history catalogue. Identity is `(source, code)`:
+ *  SJC-999 and Mihong-999 are different products sharing a code, so `code`
+ *  alone is not unique — key lists and group the picker on both. */
 export interface GoldHistoryCode {
+  source?: string | null;
   code: string;
   unit: string;
   points: string;

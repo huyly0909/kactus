@@ -269,6 +269,55 @@ async def test_list_jobs_returns_active_and_recent(admin_client):
     assert len(data["recent"]) == 2
 
 
+@pytest_asyncio.fixture
+async def finished(db):
+    """Two finished runs of one type plus one of another, and a live job.
+
+    The live job must not appear: the scheduler view asks "how did the last run
+    go", and a job that has not finished has no answer yet.
+    """
+    rows = [
+        ("stock_quotes", SyncJobStatus.FAILED, datetime.date(2026, 7, 1)),
+        ("stock_quotes", SyncJobStatus.SUCCESS, datetime.date(2026, 7, 2)),
+        ("gold_quotes", SyncJobStatus.SUCCESS, datetime.date(2026, 7, 3)),
+        ("stock_ohlcv", SyncJobStatus.RUNNING, None),
+    ]
+    async with db.get_session() as session:
+        for i, (job_type, status, day) in enumerate(rows):
+            session.add(
+                SyncJob.init(
+                    job_type=job_type,
+                    dedup_key=f"{job_type}:{i}",
+                    params={},
+                    status=str(status),
+                    finished_at=(
+                        datetime.datetime.combine(
+                            day, datetime.time(12, 0), tzinfo=datetime.UTC
+                        )
+                        if day
+                        else None
+                    ),
+                )
+            )
+        await session.commit()
+
+
+@pytest.mark.asyncio
+async def test_latest_returns_one_finished_job_per_type(admin_client, finished):
+    resp = await admin_client.get("/api/market/sync/jobs/latest")
+    assert resp.status_code == 200
+    by_type = {j["job_type"]: j for j in resp.json()["data"]}
+    # One row per type, the newer stock_quotes run wins, the live job is absent.
+    assert set(by_type) == {"stock_quotes", "gold_quotes"}
+    assert by_type["stock_quotes"]["status"] == str(SyncJobStatus.SUCCESS)
+
+
+@pytest.mark.asyncio
+async def test_latest_requires_superuser(user_client):
+    resp = await user_client.get("/api/market/sync/jobs/latest")
+    assert resp.status_code == 403
+
+
 @pytest.mark.asyncio
 async def test_cancel_job_marks_cancelled(admin_client):
     enq = await admin_client.post("/api/market/gold/sync", json={"source": "sjc"})
@@ -403,6 +452,21 @@ async def test_search_type_matches_the_job_family(admin_client, seeded):
     body = resp.json()["data"]
     assert body["total"] == 6
     assert all(j["job_type"].startswith("gold_") for j in body["items"])
+
+
+@pytest.mark.asyncio
+async def test_search_job_matches_one_exact_job_type(admin_client, seeded):
+    """``job`` is the jobs-pane link: the tasks of *this* scheduler job only.
+
+    Narrower than ``type`` on purpose — ``gold_sync`` must not drag in
+    ``gold_backfill`` just because they share a family prefix.
+    """
+    resp = await admin_client.get(
+        "/api/market/sync/jobs/search", params={"job": "gold_sync"}
+    )
+    body = resp.json()["data"]
+    assert body["total"] == 3
+    assert {j["job_type"] for j in body["items"]} == {"gold_sync"}
 
 
 @pytest.mark.asyncio

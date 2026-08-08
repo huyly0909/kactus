@@ -15,9 +15,11 @@ import json
 from abc import ABC, abstractmethod
 from datetime import date, datetime
 
+import pandas as pd
 from kactus_common.database.duckdb.schema import Table
 from kactus_common.datetimes import utcnow_naive
 from kactus_common.portfolio.const import AssetType, CrawlKind
+from kactus_data.exceptions import RateLimitedError
 from kactus_data.sources.gold.mihong import CHI_TO_LUONG as MIHONG_CHI_TO_LUONG
 from kactus_data.sources.gold.mihong import SUPPORTED_CODES as MIHONG_CODES
 from kactus_data.sources.gold.mihong import MihongGoldSource
@@ -32,8 +34,13 @@ from kactus_data.sources.gold.portfolio_tables import (
 from kactus_data.sources.gold.sjc import SjcGoldSource
 from kactus_data.sources.gold.yahoo import CODE as XAU_CODE
 from kactus_data.sources.gold.yahoo import YahooGoldSource
-from kactus_data.sources.stock.market import StockMarketSource, _to_table_df
+from kactus_data.sources.stock.market import (
+    StockMarketSource,
+    _to_table_df,
+    daily_snapshot,
+)
 from kactus_data.sources.stock.portfolio_tables import (
+    STOCK_DAILY_SNAPSHOT_TABLE,
     STOCK_EVENTS_TABLE,
     STOCK_NEWS_TABLE,
     STOCK_PRICE_BOARD_TABLE,
@@ -108,7 +115,11 @@ class StockAssetProvider(AssetProvider):
         }
 
     def supported_kinds(self) -> set[CrawlKind]:
-        return set(self._kind_table)
+        # OHLCV is deliberately absent from ``_kind_table``: it does not go
+        # through ``crawl()`` but through ``crawl_ohlcv_blocking`` (SyncPipeline
+        # + tier pacing, per code).  It still has to be advertised here, or the
+        # queue handler rejects every ``stock_ohlcv`` job at the gate.
+        return set(self._kind_table) | {CrawlKind.OHLCV}
 
     def fetch_catalog(self) -> list[dict]:
         return self.market.catalog()
@@ -122,10 +133,44 @@ class StockAssetProvider(AssetProvider):
             CrawlKind.RATIOS: self.decision_market.ratios,
             CrawlKind.EVENTS: self.decision_market.events,
         }[kind]
-        df = fetch(codes)
+        try:
+            df = fetch(codes)
+        except RateLimitedError as ex:
+            # Keep what the truncated fetch produced, then let the job layer
+            # finish FAILED with the full reason — partial data beats none.
+            stored = 0
+            if ex.df is not None and not ex.df.empty:
+                stored = self.storage.store(self._kind_table[kind], ex.df)
+            raise RateLimitedError(
+                done=ex.done, total=ex.total, rows_stored=stored
+            ) from ex
         if df.empty:
             return 0
-        return self.storage.store(self._kind_table[kind], df)
+        rows = self.storage.store(self._kind_table[kind], df)
+        if kind is CrawlKind.QUOTES:
+            rows += self._store_daily_snapshot(df)
+        return rows
+
+    def _store_daily_snapshot(self, board: pd.DataFrame) -> int:
+        """Persist the session row derived from a freshly-crawled price board.
+
+        Rides along with QUOTES rather than being its own crawl kind: the board
+        already carries every figure, so this costs no request and no extra
+        rate-limit exposure. The quotes cron fires hourly through the session
+        and the table upserts on ``(symbol, trade_date)``, so the row is
+        refined all day and ends up holding the close.
+
+        Never fatal — a snapshot failure must not fail the quotes crawl that
+        produced usable board rows.
+        """
+        try:
+            snap = daily_snapshot(board, source=self.market.source)
+            if snap.empty:
+                return 0
+            return self.storage.store(STOCK_DAILY_SNAPSHOT_TABLE, snap)
+        except Exception as ex:  # pragma: no cover - defensive
+            logger.warning(f"daily snapshot failed: {ex}")
+            return 0
 
     def read(self, kind: CrawlKind, codes: list[str]) -> list[dict]:
         table = self._kind_table.get(kind)

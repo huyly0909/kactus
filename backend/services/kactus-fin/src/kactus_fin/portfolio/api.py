@@ -19,6 +19,7 @@ from kactus_common.audit import audit
 from kactus_common.authorization.const import PermissionAct
 from kactus_common.authorization.decorator import permission
 from kactus_common.portfolio.const import AssetType, CrawlKind, CrawlTrigger
+from kactus_common.portfolio.crawl_queue import enqueue_crawl_jobs
 from kactus_common.portfolio.schema import (
     CrawlTriggerResponse,
     MarketRowSchema,
@@ -30,11 +31,7 @@ from kactus_common.portfolio.schema import (
     PortfolioUpdateRequest,
     SupportedAssetSchema,
 )
-from kactus_common.portfolio.service import (
-    CrawlRunService,
-    PortfolioService,
-    SupportedAssetService,
-)
+from kactus_common.portfolio.service import PortfolioService, SupportedAssetService
 from kactus_common.project.const import ProjectPermission
 from kactus_common.router import KactusAPIRouter
 from kactus_common.schemas import MessageResponse, Pagination
@@ -280,33 +277,33 @@ async def refresh_portfolio(
     session: AsyncSession,
     kind: CrawlKind = CrawlKind.QUOTES,
 ) -> CrawlTriggerResponse:
-    """Manually trigger a crawl for this portfolio (deduped vs in-flight runs)."""
+    """Manually trigger a crawl for this portfolio (deduped vs queued jobs)."""
     await PortfolioService.get_or_404(session, portfolio_id)
     grouped = await _items_by_type(session, portfolio_id)
     if not grouped:
         return CrawlTriggerResponse(skipped=True, message="Portfolio is empty")
 
-    for asset_type in grouped:
-        if await CrawlRunService.has_inflight(
-            session, asset_type=asset_type, kind=kind
-        ):
-            return CrawlTriggerResponse(
-                skipped=True, message="A refresh is already in progress"
-            )
-
-    # Awaited, not fired into a local BackgroundTasks: the data plane already
-    # returns as soon as it has queued the crawl, and awaiting means a data
-    # plane that is down surfaces as an error to the user instead of a
-    # "Refresh scheduled" that quietly never happened.
-    await data_client.trigger_crawl(
+    # Enqueue directly into the shared Postgres queue (PENDING ack; the data
+    # plane dispatcher executes).  The queue's active-unique dedup_key replaces
+    # the old CrawlRun in-flight probe: a live job for the same
+    # (asset_type, kind) makes this a no-op.
+    created, existing = await enqueue_crawl_jobs(
+        session,
         kind=kind,
         codes_by_type={str(at): codes for at, codes in grouped.items()},
         trigger=CrawlTrigger.MANUAL,
         portfolio_id=portfolio_id,
-        dedup=True,
     )
+    if not created:
+        return CrawlTriggerResponse(
+            skipped=True, message="A refresh is already in progress"
+        )
     audit("portfolio.refresh", "portfolio", portfolio_id, meta={"kind": str(kind)})
-    return CrawlTriggerResponse(skipped=False, message="Refresh scheduled")
+    return CrawlTriggerResponse(
+        job_ids=[j.id for j in created],
+        skipped=False,
+        message="Refresh queued",
+    )
 
 
 # --------------------------------------------------------------------------- #

@@ -19,8 +19,8 @@ from collections.abc import Awaitable, Callable
 
 from kactus_common.exceptions import InvalidArgumentError
 from kactus_common.portfolio.const import AssetType, CrawlKind, CrawlTrigger
+from kactus_common.portfolio.crawl_queue import enqueue_crawl_jobs
 from kactus_common.portfolio.service import PortfolioService
-from kactus_fin import data_client
 from kactus_notification.service import NotificationChannelService
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -71,15 +71,17 @@ async def _refresh(session: AsyncSession, user_id: int, params: dict) -> str:
     if not codes_by_type:
         return f"{portfolio.name} is empty — nothing to refresh"
 
-    # Same path as POST /portfolios/{id}/refresh: a command, so HTTP to the data
-    # plane, with dedup so an approval racing the scheduler costs one crawl.
-    await data_client.trigger_crawl(
+    # Same path as POST /portfolios/{id}/refresh: enqueue into the shared sync
+    # queue; the dedup_key means an approval racing the scheduler costs one crawl.
+    created, _ = await enqueue_crawl_jobs(
+        session,
         kind=CrawlKind.QUOTES,
         codes_by_type=codes_by_type,
         trigger=CrawlTrigger.MANUAL,
         portfolio_id=portfolio.id,
-        dedup=True,
     )
+    if not created:
+        return f"A refresh of {portfolio.name} is already in progress"
     return f"Refreshing market data for {portfolio.name}"
 
 

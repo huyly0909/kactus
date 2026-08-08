@@ -38,13 +38,30 @@ function rangeLimit(r: DateRange): number {
   return Math.min(10_000, days + 60);
 }
 
+/** Source groups in display order; anything else follows, alphabetically. */
+const SOURCE_ORDER = ['sjc', 'mihong', 'yahoo'];
+
+/** Select values must be unique, and `999` appears under more than one source.
+ *  Same shape the backend uses for a series id (`gold_schedule_entity_id`). */
+const seriesValue = (c: GoldHistoryCode) => `${c.source ?? ''}:${c.code}`;
+
+/** Split on the FIRST colon only — PNJ codes contain their own
+ *  (`pnj:PNJ:Hà Nội:Vàng 916`), so `split(':')` would mangle them. */
+function parseSeriesValue(v: string): { source: string; code: string } {
+  const i = v.indexOf(':');
+  return i < 0 ? { source: '', code: v } : { source: v.slice(0, i), code: v.slice(i + 1) };
+}
+
 /**
  * Historical price chart over the imported gold series.
  *
  * One series at a time: the catalogue mixes VND/lượng and USD/oz, and a single
- * selection is what guarantees the axis never mixes units. PNJ contributes
- * ~160 series, so they live in their own group sorted by depth (point count);
- * the Radix Select keeps them keyboard-typeahead searchable.
+ * selection is what guarantees the axis never mixes units. Series are grouped
+ * by **source**, because `code` alone is ambiguous — SJC and Mihong both quote
+ * `999` as different products. Groups come from the data, so a source with no
+ * stored history simply does not appear. PNJ contributes ~160 series, so that
+ * group is sorted by depth (point count) rather than by code; the Radix Select
+ * keeps them keyboard-typeahead searchable.
  */
 export const GoldHistoryCard: FC = () => {
   const { t } = useTranslation();
@@ -54,63 +71,77 @@ export const GoldHistoryCard: FC = () => {
   // calendar pick emit the same shape. Default: trailing 1 year.
   const [range, setRange] = useState<DateRange>(defaultRange);
 
+  // One group per source, each sorted by code — except PNJ, whose ~160 series
+  // are far more useful ordered by depth.
+  const groups = useMemo(() => {
+    const bySource = new Map<string, GoldHistoryCode[]>();
+    for (const c of codes ?? []) {
+      const s = c.source ?? '';
+      if (!bySource.has(s)) bySource.set(s, []);
+      bySource.get(s)!.push(c);
+    }
+    return [...bySource.entries()]
+      .sort(([a], [b]) => {
+        const ia = SOURCE_ORDER.indexOf(a);
+        const ib = SOURCE_ORDER.indexOf(b);
+        if (ia !== ib)
+          return (ia < 0 ? SOURCE_ORDER.length : ia) - (ib < 0 ? SOURCE_ORDER.length : ib);
+        return a.localeCompare(b);
+      })
+      .map(([source, items]) => ({
+        source,
+        items: [...items].sort((a, b) =>
+          source === 'pnj' ? Number(b.points) - Number(a.points) : a.code.localeCompare(b.code),
+        ),
+      }));
+  }, [codes]);
+
+  // Default to the first series of the first group once the list loads.
+  const first = groups[0]?.items[0];
+  const value = selected || (first ? seriesValue(first) : '');
+  const { source, code } = parseSeriesValue(value);
+  const unit =
+    (codes ?? []).find((c) => c.code === code && (c.source ?? '') === source)?.unit ?? '';
+
   const historyParams: GoldHistoryParams = {
+    source: source || undefined,
     start: range.from || undefined,
     end: range.to || undefined,
     limit: rangeLimit(range),
   };
-
-  const { primary, pnj } = useMemo(() => {
-    const all = codes ?? [];
-    const isPnj = (c: GoldHistoryCode) => c.code.startsWith('PNJ:');
-    return {
-      primary: all.filter((c) => !isPnj(c)),
-      pnj: all.filter(isPnj).sort((a, b) => Number(b.points) - Number(a.points)),
-    };
-  }, [codes]);
-
-  // Default to the first non-PNJ series (SJC in practice) once the list loads.
-  const code = selected || primary[0]?.code || '';
-  const unit = (codes ?? []).find((c) => c.code === code)?.unit ?? '';
 
   const { data: points, isLoading: pointsLoading } = useGoldHistory(code, historyParams);
 
   if (!codesLoading && (codes ?? []).length === 0) return null;
 
   const label = (c: GoldHistoryCode) =>
-    c.code.startsWith('PNJ:') ? `${c.gold_type ?? c.code} — ${c.location ?? ''}` : c.code;
+    c.source === 'pnj' ? `${c.gold_type ?? c.code} — ${c.location ?? ''}` : c.code;
 
   return (
     <Card className="mb-6">
       <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <CardTitle className="text-base">{t('market.gold.history.title')}</CardTitle>
         <div className="flex flex-wrap items-center gap-2">
-          <Select value={code} onValueChange={setSelected}>
+          <Select value={value} onValueChange={setSelected}>
             <SelectTrigger className="w-64">
               <SelectValue placeholder={t('market.gold.history.series')} />
             </SelectTrigger>
             <SelectContent>
-              {primary.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>{t('market.gold.history.group_main')}</SelectLabel>
-                  {primary.map((c) => (
-                    <SelectItem key={c.code} value={c.code}>
+              {groups.map((g) => (
+                <SelectGroup key={g.source}>
+                  <SelectLabel>
+                    {t(`market.gold.history.group_source.${g.source}`, {
+                      defaultValue: g.source,
+                    })}
+                  </SelectLabel>
+                  {g.items.map((c) => (
+                    <SelectItem key={seriesValue(c)} value={seriesValue(c)}>
                       {label(c)}
                       {c.unit === UNIT_USD_PER_OZ ? ' (USD/oz)' : ''}
                     </SelectItem>
                   ))}
                 </SelectGroup>
-              )}
-              {pnj.length > 0 && (
-                <SelectGroup>
-                  <SelectLabel>PNJ</SelectLabel>
-                  {pnj.map((c) => (
-                    <SelectItem key={c.code} value={c.code}>
-                      {label(c)}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              )}
+              ))}
             </SelectContent>
           </Select>
           <DateRangeControl

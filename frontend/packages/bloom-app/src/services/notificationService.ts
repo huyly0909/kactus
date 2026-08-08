@@ -5,6 +5,8 @@ import type {
   NotificationChannelType,
   NotificationEvent,
   NotificationLog,
+  TelegramBotInfo,
+  TelegramChat,
   ZaloCompleteResponse,
   ZaloQRGenerate,
   ZaloQRStatusResponse,
@@ -73,6 +75,67 @@ export const notificationService = {
       { params: { limit } },
     );
     return data.data.items;
+  },
+
+  // ------------------------------------------------------ Telegram onboarding
+  telegram: {
+    /** `getMe` — validate a token before any channel row exists. */
+    verify: async (botToken: string): Promise<TelegramBotInfo> => {
+      const { data } = await apiClient.post<ApiResponse<TelegramBotInfo>>(
+        `${BASE}/telegram/verify`,
+        { bot_token: botToken },
+      );
+      return data.data;
+    },
+
+    /** Chats the bot can see. An empty list is normal (nothing posted yet). */
+    discoverChats: async (botToken: string): Promise<TelegramChat[]> => {
+      const { data } = await apiClient.post<ApiResponse<ListEnvelope<TelegramChat>>>(
+        `${BASE}/telegram/chats`,
+        { bot_token: botToken },
+      );
+      return data.data.items;
+    },
+
+    /** Resolve a typed id or `@public_name` to a full chat (`getChat`). */
+    resolveChat: async (botToken: string, chatId: string): Promise<TelegramChat> => {
+      const { data } = await apiClient.post<ApiResponse<TelegramChat>>(
+        `${BASE}/telegram/chats/resolve`,
+        { bot_token: botToken, chat_id: chatId },
+      );
+      return data.data;
+    },
+
+    /** Chats reachable with the channel's stored token — no secret sent. */
+    listChannelChats: async (channelId: string): Promise<TelegramChat[]> => {
+      const { data } = await apiClient.get<ApiResponse<ListEnvelope<TelegramChat>>>(
+        `${BASE}/telegram/channels/${channelId}/chats`,
+      );
+      return data.data.items;
+    },
+
+    /** Repoint the channel at another chat (server-side merge keeps the token). */
+    updateChat: async (channelId: string, chatId: string): Promise<NotificationChannel> => {
+      const { data } = await apiClient.put<ApiResponse<NotificationChannel>>(
+        `${BASE}/telegram/channels/${channelId}/chat`,
+        { chat_id: chatId },
+      );
+      return data.data;
+    },
+
+    /** ⚡ Send a real message — proves the bot may post to *this* chat. */
+    testMessage: async (channelId: string): Promise<void> => {
+      await apiClient.post(`${BASE}/telegram/channels/${channelId}/test-message`);
+    },
+
+    /** Swap in a fresh bot token after @BotFather revoked the old one. */
+    reauth: async (channelId: string, botToken: string): Promise<NotificationChannel> => {
+      const { data } = await apiClient.put<ApiResponse<NotificationChannel>>(
+        `${BASE}/telegram/channels/${channelId}/reauth`,
+        { bot_token: botToken },
+      );
+      return data.data;
+    },
   },
 
   // ------------------------------------------------------- Zalo PA onboarding

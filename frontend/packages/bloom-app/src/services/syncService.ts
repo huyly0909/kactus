@@ -38,6 +38,14 @@ export const syncService = {
     return data.data;
   },
 
+  /** Last *finished* job per `job_type` — the Jobs tab's "last run" column.
+   *  Not derivable from {@link listJobs}: its `recent` window is flat and a
+   *  burst of one type buries every other type's last outcome. */
+  latestJobs: async (): Promise<SyncJob[]> => {
+    const { data } = await apiClient.get<ApiResponse<SyncJob[]>>('/api/market/sync/jobs/latest');
+    return data.data;
+  },
+
   /** One filtered, ordered page of the whole queue — filtering and paging both
    *  happen in SQL, so a narrow filter searches every row, not a recent window. */
   searchJobs: async (query: SyncJobQuery = {}): Promise<SyncJobPage> => {

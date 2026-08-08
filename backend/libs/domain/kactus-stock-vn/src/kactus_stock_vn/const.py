@@ -20,6 +20,63 @@ DEFAULT_OHLCV_LIMIT = 500
 DEFAULT_LIST_LIMIT = 50
 DEFAULT_NEWS_LIMIT = 20
 DEFAULT_FINANCE_LIMIT = 20
+DEFAULT_EVENTS_LIMIT = 20
+DEFAULT_DAILY_LIMIT = 20
+
+# A TTM figure is exactly four quarters; fewer means the window is incomplete
+# and the caller is told so rather than shown a short sum as if it were annual.
+TTM_QUARTERS = 4
+
+
+class TechnicalInterval(StrEnum):
+    """Candle aggregation a technical reading is computed over.
+
+    Deliberately narrower than :class:`OHLCVInterval`: weekly and monthly bars
+    are rolled up from stored dailies, and intraday intervals are not stored
+    deeply enough for a 200-period average to mean anything.
+    """
+
+    D1 = "1D"
+    W1 = "1W"
+    MO1 = "1M"
+
+
+class TechnicalSignal(StrEnum):
+    """Vote a single indicator casts."""
+
+    BUY = "BUY"
+    NEUTRAL = "NEUTRAL"
+    SELL = "SELL"
+
+
+class TechnicalConsensus(StrEnum):
+    """Aggregate reading across all indicators that had enough history."""
+
+    STRONG_BUY = "STRONG_BUY"
+    BUY = "BUY"
+    NEUTRAL = "NEUTRAL"
+    SELL = "SELL"
+    STRONG_SELL = "STRONG_SELL"
+    NO_DATA = "NO_DATA"
+
+
+class SignalGroup(StrEnum):
+    """Which family an indicator belongs to, for grouped display."""
+
+    OSCILLATOR = "oscillator"
+    MOVING_AVERAGE = "moving_average"
+
+
+class PeerBasis(StrEnum):
+    """What cohort a fundamental score was ranked against.
+
+    The UI must not caption a fallback as a sector comparison, so the basis
+    travels with the result rather than being inferred from the peer count.
+    """
+
+    SECTOR = "sector"
+    VN30_NONBANK = "vn30_nonbank"
+    VN30_BANKS = "vn30_banks"
 
 
 class ReportType(StrEnum):

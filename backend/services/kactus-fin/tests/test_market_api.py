@@ -337,12 +337,36 @@ async def test_gold_history_forwards_code_and_window(client, data_plane):
     assert sent["code"] == "SJC"
     assert sent["start"] == "2026-01-01"
     assert sent["limit"] == 100
+    # Omitted rather than sent as an empty string — the data plane reads a
+    # present-but-blank ``source`` as "match rows whose source is ''".
+    assert sent["source"] is None
+
+
+@pytest.mark.asyncio
+async def test_gold_history_forwards_source(client, data_plane):
+    """``code`` alone is not a series: Mihong-999 and SJC-999 share it.
+
+    Forwarding ``source`` is what keeps the control plane from having to filter
+    the response itself — and what makes ``limit`` a budget for one series
+    instead of one split across every feed quoting that code.
+    """
+    data_plane.gold_history = []
+    resp = await client.get(
+        "/api/market/gold/history",
+        params={"code": "999", "source": "mihong", "limit": 50},
+    )
+    assert resp.status_code == 200
+    sent = data_plane.last("gold_history")
+    assert sent["code"] == "999"
+    assert sent["source"] == "mihong"
+    assert sent["limit"] == 50
 
 
 @pytest.mark.asyncio
 async def test_gold_history_codes_passthrough(client, data_plane):
     data_plane.gold_history_codes = [
         GoldHistoryCodeSchema(
+            source="pnj",
             code="PNJ:TPHCM:SJC",
             unit="VND/luong",
             points=5321,
@@ -352,7 +376,11 @@ async def test_gold_history_codes_passthrough(client, data_plane):
     ]
     resp = await client.get("/api/market/gold/history/codes")
     assert resp.status_code == 200
-    assert resp.json()["data"][0]["code"] == "PNJ:TPHCM:SJC"
+    row = resp.json()["data"][0]
+    assert row["code"] == "PNJ:TPHCM:SJC"
+    # The picker groups on this; dropping it in the forwarder would flatten
+    # every source back into one list without anything failing.
+    assert row["source"] == "pnj"
 
 
 @pytest.mark.asyncio

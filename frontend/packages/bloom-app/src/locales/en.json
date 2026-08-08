@@ -113,7 +113,25 @@
       "run": "Run",
       "cancel": "Cancel",
       "tbd": "Not available yet (TBD)",
-      "empty": "No scheduled jobs."
+      "empty": "No scheduled jobs.",
+      "col_queue": "Queue",
+      "queue_tip": "{{pending}} pending · {{running}} running",
+      "col_last_run": "Last run",
+      "rows": "rows",
+      "next_in_min": "in {{n}} min",
+      "next_in_hour": "in {{n}} h",
+      "next_in_day": "in {{n}} d",
+      "next_due": "due now"
+    },
+    "cadence": {
+      "hourly_range_days": "{{days}} · hourly {{from}}–{{to}} (at :{{minute}}) · {{tz}}",
+      "hourly_range": "Daily · hourly {{from}}–{{to}} (at :{{minute}}) · {{tz}}",
+      "daily_days": "{{days}} · {{at}} · {{tz}}",
+      "daily": "Daily · {{at}} · {{tz}}",
+      "dow": {
+        "mon-fri": "Mon–Fri",
+        "sat-sun": "Sat–Sun"
+      }
     }
   },
   "settings": {
@@ -355,7 +373,12 @@
       "history": {
         "title": "Price history",
         "series": "Series",
-        "group_main": "Main",
+        "group_source": {
+          "sjc": "SJC",
+          "mihong": "Mihong",
+          "yahoo": "Yahoo",
+          "pnj": "PNJ"
+        },
         "date": "Date",
         "open": "Open",
         "high": "High",
@@ -411,7 +434,8 @@
       "type": {
         "gold": "Gold",
         "stock": "Stock",
-        "coin": "Coin"
+        "coin": "Coin",
+        "catalog": "Catalog"
       },
       "source": {
         "sjc": "SJC",
@@ -428,8 +452,16 @@
       },
       "job_type": {
         "gold_backfill": "Gold backfill",
-        "gold_sync": "Gold sync"
-      }
+        "gold_sync": "Gold sync",
+        "stock_quotes": "Stock quotes",
+        "stock_news": "Stock news",
+        "stock_ratios": "Stock ratios",
+        "stock_events": "Stock events",
+        "stock_ohlcv": "Stock OHLCV",
+        "gold_quotes": "Gold quotes",
+        "catalog_sync": "Catalog sync"
+      },
+      "filter_job": "Job"
     },
     "stock": {
       "title": "Stock Market",
@@ -528,7 +560,29 @@
     "deactivate": "Deactivate",
     "telegram": {
       "bot_token": "Bot token",
-      "chat_id": "Chat ID"
+      "chat_id": "Chat ID",
+      "connect": "Set up Telegram",
+      "create_hint": "Connecting Telegram asks for your bot token, then helps you find the channel or group to post to — Telegram does not show channel IDs anywhere in its app.",
+      "setup_title": "Set up Telegram",
+      "verify": "Verify & find chats",
+      "verify_failed": "Could not verify the bot token",
+      "bot_verified": "Connected as @{{name}}",
+      "token_hint": "Create a bot with @BotFather and paste the token it gives you.",
+      "find_chats": "Search again",
+      "search_chat": "Search chats…",
+      "manual_chat_id": "Or enter a chat ID / @username",
+      "use_id": "Look up",
+      "resolve_failed": "No chat found for that ID or username",
+      "no_chats_hint": "No chats yet. Add the bot to your channel as an administrator with the “Post messages” permission, post any message there, then search again. Telegram only keeps updates for 24 hours.",
+      "change_chat": "Change chat",
+      "chat_updated": "Target chat updated",
+      "back": "Back",
+      "test_message": "Send test message",
+      "test_sent_ok": "Test message delivered",
+      "test_message_failed": "Could not post to the chat — check the bot is an admin with “Post messages”",
+      "reconnect": "Replace bot token",
+      "reauth_hint": "Paste the new token from @BotFather. The target chat is kept.",
+      "token_updated": "Bot token updated"
     },
     "slack": {
       "webhook_url": "Webhook URL"

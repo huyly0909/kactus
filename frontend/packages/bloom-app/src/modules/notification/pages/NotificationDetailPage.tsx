@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Send, FlaskConical, Trash2, Save, Users, Pencil, Zap } from 'lucide-react';
+import { Send, FlaskConical, Trash2, Save, Users, Pencil, Zap, Hash } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,11 +14,13 @@ import {
   useUpdateChannel,
   useDeleteChannel,
   useTestChannel,
+  useTelegramTestMessage,
   useZaloTestMessage,
 } from '@/hooks/useNotificationQuery';
 import { ChannelLogTable } from '@modules/notification/components/ChannelLogTable';
 import { SendTestDialog } from '@modules/notification/components/SendTestDialog';
-import { ZaloRecipientsEditDialog } from '@modules/notification/components/ZaloRecipientsEditDialog';
+import { TelegramSetupDialog } from '@modules/notification/components/telegram/TelegramSetupDialog';
+import { ZaloRecipientsEditDialog } from '@modules/notification/components/zalo/ZaloRecipientsEditDialog';
 import type { ZaloPAConfig, ZaloRecipientTarget } from '@/types/notification';
 
 /** Saved conversations of a zalo_pa config, tolerating the legacy single shape. */
@@ -45,10 +47,12 @@ export function NotificationDetailPage() {
   const remove = useDeleteChannel();
   const test = useTestChannel();
   const zaloTest = useZaloTestMessage();
+  const telegramTest = useTelegramTestMessage();
 
   const [name, setName] = useState('');
   const [sendOpen, setSendOpen] = useState(false);
   const [editRecipientsOpen, setEditRecipientsOpen] = useState(false);
+  const [changeChatOpen, setChangeChatOpen] = useState(false);
   const nameValue = name || channel?.name || '';
 
   if (isLoading || !channel) {
@@ -71,6 +75,7 @@ export function NotificationDetailPage() {
   };
 
   const isZalo = channel.channel_type === 'zalo_pa';
+  const isTelegram = channel.channel_type === 'telegram';
   const targets = isZalo ? zaloTargets(channel.config as ZaloPAConfig) : [];
 
   return (
@@ -100,6 +105,23 @@ export function NotificationDetailPage() {
             >
               <Zap className="mr-1 h-4 w-4" />
               {t('notification.zalo.test_message')}
+            </Button>
+          )}
+          {isTelegram && (
+            <Button
+              variant="outline"
+              onClick={() => telegramTest.mutate(id)}
+              disabled={telegramTest.isPending || !channel.is_active}
+              title={t('notification.telegram.test_message')}
+            >
+              <Zap className="mr-1 h-4 w-4" />
+              {t('notification.telegram.test_message')}
+            </Button>
+          )}
+          {isTelegram && (
+            <Button variant="outline" onClick={() => setChangeChatOpen(true)}>
+              <Hash className="mr-1 h-4 w-4" />
+              {t('notification.telegram.change_chat')}
             </Button>
           )}
           <Button onClick={() => setSendOpen(true)}>
@@ -198,6 +220,14 @@ export function NotificationDetailPage() {
       </div>
 
       <SendTestDialog open={sendOpen} onOpenChange={setSendOpen} channelId={id} />
+      {isTelegram && (
+        <TelegramSetupDialog
+          open={changeChatOpen}
+          onOpenChange={setChangeChatOpen}
+          mode="edit-chat"
+          channelId={id}
+        />
+      )}
       {isZalo && (
         <ZaloRecipientsEditDialog
           open={editRecipientsOpen}

@@ -113,7 +113,25 @@
       "run": "Chạy",
       "cancel": "Hủy",
       "tbd": "Chưa hỗ trợ (TBD)",
-      "empty": "Chưa có công việc theo lịch."
+      "empty": "Chưa có công việc theo lịch.",
+      "col_queue": "Hàng đợi",
+      "queue_tip": "{{pending}} chờ · {{running}} đang chạy",
+      "col_last_run": "Lần chạy gần nhất",
+      "rows": "dòng",
+      "next_in_min": "trong {{n}} phút",
+      "next_in_hour": "trong {{n}} giờ",
+      "next_in_day": "trong {{n}} ngày",
+      "next_due": "sắp chạy"
+    },
+    "cadence": {
+      "hourly_range_days": "{{days}} · mỗi giờ {{from}}–{{to}} (phút :{{minute}}) · {{tz}}",
+      "hourly_range": "Hằng ngày · mỗi giờ {{from}}–{{to}} (phút :{{minute}}) · {{tz}}",
+      "daily_days": "{{days}} · {{at}} · {{tz}}",
+      "daily": "Hằng ngày · {{at}} · {{tz}}",
+      "dow": {
+        "mon-fri": "T2–T6",
+        "sat-sun": "T7–CN"
+      }
     }
   },
   "settings": {
@@ -355,7 +373,12 @@
       "history": {
         "title": "Lịch sử giá",
         "series": "Chuỗi giá",
-        "group_main": "Chính",
+        "group_source": {
+          "sjc": "SJC",
+          "mihong": "Mihong",
+          "yahoo": "Yahoo",
+          "pnj": "PNJ"
+        },
         "date": "Ngày",
         "open": "Mở cửa",
         "high": "Cao nhất",
@@ -410,7 +433,8 @@
       "type": {
         "gold": "Vàng",
         "stock": "Chứng khoán",
-        "coin": "Tiền số"
+        "coin": "Tiền số",
+        "catalog": "Danh mục"
       },
       "source": {
         "sjc": "SJC",
@@ -427,8 +451,16 @@
       },
       "job_type": {
         "gold_backfill": "Nạp vàng",
-        "gold_sync": "Đồng bộ vàng"
-      }
+        "gold_sync": "Đồng bộ vàng",
+        "stock_quotes": "Giá cổ phiếu",
+        "stock_news": "Tin cổ phiếu",
+        "stock_ratios": "Chỉ số tài chính",
+        "stock_events": "Sự kiện cổ phiếu",
+        "stock_ohlcv": "Nến OHLCV",
+        "gold_quotes": "Giá vàng",
+        "catalog_sync": "Đồng bộ danh mục"
+      },
+      "filter_job": "Công việc"
     },
     "stock": {
       "title": "Chứng khoán",
@@ -527,7 +559,29 @@
     "deactivate": "Vô hiệu hoá",
     "telegram": {
       "bot_token": "Bot token",
-      "chat_id": "Chat ID"
+      "chat_id": "Chat ID",
+      "connect": "Thiết lập Telegram",
+      "create_hint": "Kết nối Telegram sẽ hỏi bot token, rồi giúp bạn tìm channel hoặc nhóm để gửi tin — Telegram không hiển thị channel ID ở bất kỳ đâu trong ứng dụng.",
+      "setup_title": "Thiết lập Telegram",
+      "verify": "Xác minh & tìm chat",
+      "verify_failed": "Không xác minh được bot token",
+      "bot_verified": "Đã kết nối với @{{name}}",
+      "token_hint": "Tạo bot bằng @BotFather rồi dán token bot trả về.",
+      "find_chats": "Tìm lại",
+      "search_chat": "Tìm chat…",
+      "manual_chat_id": "Hoặc nhập chat ID / @username",
+      "use_id": "Tra cứu",
+      "resolve_failed": "Không tìm thấy chat với ID hoặc username đó",
+      "no_chats_hint": "Chưa thấy chat nào. Hãy thêm bot vào channel với quyền quản trị viên và bật “Gửi tin nhắn”, đăng một tin bất kỳ trong channel, rồi tìm lại. Telegram chỉ giữ update trong 24 giờ.",
+      "change_chat": "Đổi chat",
+      "chat_updated": "Đã cập nhật chat nhận tin",
+      "back": "Quay lại",
+      "test_message": "Gửi tin thử",
+      "test_sent_ok": "Đã gửi tin thử",
+      "test_message_failed": "Không gửi được vào chat — kiểm tra bot đã là admin và có quyền “Gửi tin nhắn”",
+      "reconnect": "Đổi bot token",
+      "reauth_hint": "Dán token mới từ @BotFather. Chat đang chọn được giữ nguyên.",
+      "token_updated": "Đã cập nhật bot token"
     },
     "slack": {
       "webhook_url": "Webhook URL"

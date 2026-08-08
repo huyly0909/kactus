@@ -100,13 +100,7 @@ def build_runtime(settings) -> DataRuntime:
 
     scheduler = None
     if getattr(settings, "enable_portfolio_scheduler", True):
-        scheduler = build_scheduler(
-            db=db,
-            providers=providers,
-            symbol_provider=symbol_provider,
-            storage=storage,
-            data_source=settings.data_source,
-        )
+        scheduler = build_scheduler(db=db)
         try:
             scheduler.start()
         except Exception as ex:  # pragma: no cover - defensive
@@ -139,13 +133,18 @@ def start_dispatcher(runtime: DataRuntime) -> asyncio.Event:
 
     Runs unconditionally (independent of the crawl scheduler): this process is
     the sole DuckDB writer, so it is the only place a queued write can execute.
-    Gold handlers register themselves on import of ``kactus_data.jobs.gold_sync``.
+    Gold handlers register on import of ``kactus_data.jobs.gold_sync``; crawl
+    handlers on import of ``kactus_data.jobs.crawl_handlers``.
     """
+    import kactus_data.jobs.crawl_handlers  # noqa: F401 — registers crawl handlers
     import kactus_data.jobs.gold_sync  # noqa: F401 — registers GOLD_* handlers
 
     stop_event = asyncio.Event()
     deps = SyncJobDeps(
-        db=runtime.db, storage=runtime.storage, providers=runtime.providers
+        db=runtime.db,
+        storage=runtime.storage,
+        providers=runtime.providers,
+        symbol_provider=runtime.symbol_provider,
     )
     runtime.sync_dispatcher = asyncio.create_task(
         run_dispatcher(deps, stop_event=stop_event)

@@ -9,14 +9,12 @@ from __future__ import annotations
 
 import pytest
 import requests
-from kactus_notification.channel import RenderedMessage, SlackChannel, TelegramChannel
+from kactus_notification.channel import RenderedMessage
+from kactus_notification.channels.slack import SlackChannel, SlackChannelConfig
+from kactus_notification.channels.telegram import TelegramChannel, TelegramChannelConfig
 from kactus_notification.const import NotificationChannelType, NotificationLevel
 from kactus_notification.registry import build_channel, get_template
-from kactus_notification.schema import (
-    NotificationEvent,
-    SlackChannelConfig,
-    TelegramChannelConfig,
-)
+from kactus_notification.schema import NotificationEvent
 from pydantic import ValidationError
 
 

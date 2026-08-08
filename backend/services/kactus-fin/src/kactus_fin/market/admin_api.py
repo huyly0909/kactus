@@ -160,6 +160,20 @@ async def list_sync_jobs(
     )
 
 
+@router.get("/sync/jobs/latest")
+@provide_session
+async def latest_sync_jobs(
+    request: Request, session: AsyncSession
+) -> list[SyncJobSchema]:
+    """Last finished job per ``job_type`` — the scheduler view's "last run".
+
+    Declared before ``/sync/jobs/{job_id}``-shaped routes so "latest" is never
+    matched as a job id.
+    """
+    jobs = await SyncJobService.latest_finished_by_type(session)
+    return [SyncJobSchema.model_validate(j) for j in jobs]
+
+
 @router.get("/sync/jobs/search")
 @provide_session
 async def search_sync_jobs(
@@ -168,6 +182,7 @@ async def search_sync_jobs(
     page: int = Query(1, ge=1),
     page_size: int = Query(DEFAULT_QUEUE_PAGE_SIZE, ge=1, le=MAX_QUEUE_PAGE_SIZE),
     status: str | None = None,
+    job: str | None = None,
     type: str | None = None,
     source: str | None = None,
     created_from: datetime.date | None = None,
@@ -177,10 +192,11 @@ async def search_sync_jobs(
     """One filtered page of the queue, newest first, + the global live count.
 
     ``status`` takes a literal ``SyncJobStatus`` or ``"active"`` (pending OR
-    running); ``type`` is the job family (``gold``), ``source`` matches
-    ``params.source``. ``created_from`` / ``created_to`` are the *user's*
-    calendar days — resolved to UTC instants here, so picking "today" means
-    their today, not UTC's.
+    running); ``job`` is an exact ``job_type`` (``stock_news``) — the
+    jobs-pane "tasks of this job" link; ``type`` is the job family (``gold``),
+    ``source`` matches ``params.source``. ``created_from`` / ``created_to``
+    are the *user's* calendar days — resolved to UTC instants here, so picking
+    "today" means their today, not UTC's.
     """
     tz = _user_tz(request)
     created_from_dt = (
@@ -199,6 +215,7 @@ async def search_sync_jobs(
         page=page,
         page_size=page_size,
         status=status,
+        job_type=job,
         job_family=type,
         source=source,
         created_from=created_from_dt,

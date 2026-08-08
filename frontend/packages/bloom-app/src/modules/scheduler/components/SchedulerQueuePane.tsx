@@ -14,7 +14,7 @@ import { useFormatDateTime } from '@/hooks/useFormatDateTime';
 import { useTableQueryState } from '@/hooks/useTableQueryState';
 import { useCancelSyncJob, useSyncJobPage, useSyncStream } from '@/hooks/useSyncQuery';
 import { cn } from '@/lib/utils';
-import { isActiveStatus, type SyncJob, type SyncJobQuery } from '@/types/sync';
+import { isActiveStatus, SYNC_JOB_TYPES, type SyncJob, type SyncJobQuery } from '@/types/sync';
 import { SyncProgressBar, syncStatusBadge } from '@modules/market/components/SyncProgressBar';
 import { RefreshCountdown } from './RefreshCountdown';
 
@@ -29,6 +29,7 @@ const STATUS_OPTIONS = [
   'cancelled',
 ] as const;
 const TYPE_OPTIONS = ['all', 'gold', 'stock', 'coin'] as const;
+const JOB_OPTIONS = ['all', ...SYNC_JOB_TYPES] as const;
 const SOURCE_OPTIONS = ['all', 'yahoo', 'sjc', 'mihong'] as const;
 
 /** Asset family — the first segment of `job_type` (`gold_backfill` → `gold`). */
@@ -73,6 +74,7 @@ export const SchedulerQueuePane: FC = () => {
   const { page, setPage, pageSize, sort, setSort, filters, setFilter } = useTableQueryState({
     defaultFilters: {
       status: 'all',
+      job: 'all',
       type: 'all',
       source: 'all',
       created: EMPTY_RANGE as DateRange,
@@ -88,6 +90,7 @@ export const SchedulerQueuePane: FC = () => {
     page_size: pageSize,
     order: sort?.desc === false ? 'asc' : 'desc',
     ...(filters.status !== 'all' && { status: filters.status as SyncJobQuery['status'] }),
+    ...(filters.job !== 'all' && { job: filters.job as string }),
     ...(filters.type !== 'all' && { type: filters.type as string }),
     ...(filters.source !== 'all' && { source: filters.source as string }),
     ...(created.from && { created_from: created.from }),
@@ -108,6 +111,16 @@ export const SchedulerQueuePane: FC = () => {
             : o === 'active'
               ? t('market.sync.status_active')
               : t(`market.sync.status.${o}`),
+      })),
+    },
+    {
+      id: 'job',
+      kind: 'select',
+      label: t('market.sync.filter_job'),
+      options: JOB_OPTIONS.map((o) => ({
+        value: o,
+        label:
+          o === 'all' ? t('market.sync.all') : t(`market.sync.job_type.${o}`, { defaultValue: o }),
       })),
     },
     {

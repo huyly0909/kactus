@@ -15,6 +15,7 @@ import { marketKeys } from './useMarketQuery';
 export const syncKeys = {
   all: ['sync'] as const,
   jobs: () => [...syncKeys.all, 'jobs'] as const,
+  latest: () => [...syncKeys.all, 'latest'] as const,
   page: (query: SyncJobQuery) => [...syncKeys.all, 'page', query] as const,
 };
 
@@ -51,6 +52,22 @@ export function useSyncJobPage(query: SyncJobQuery) {
     placeholderData: (prev) => prev, // keep the old page visible while paging
     refetchInterval: (q: Query<SyncJobPage>) =>
       (q.state.data?.active_count ?? 0) > 0 ? 1500 : false,
+  });
+}
+
+/**
+ * Last finished job per `job_type`, for the Jobs tab's "last run" column.
+ *
+ * Deliberately no `refetchInterval`: the Jobs pane already refetches on its 5s
+ * `RefreshCountdown`, and this data only changes when a job finishes — a third
+ * independent clock on the page would buy nothing and cost a request every
+ * 1.5s. `useSyncStream` invalidates `syncKeys.all`, so a redis deployment
+ * refreshes it the moment a job completes anyway.
+ */
+export function useLatestSyncJobs() {
+  return useQuery({
+    queryKey: syncKeys.latest(),
+    queryFn: () => syncService.latestJobs(),
   });
 }
 

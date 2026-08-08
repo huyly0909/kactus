@@ -20,6 +20,7 @@ export const notificationKeys = {
   recipients: (sid: string) => [...notificationKeys.all, 'zalo-recipients', sid] as const,
   channelRecipients: (id: string) =>
     [...notificationKeys.all, 'zalo-channel-recipients', id] as const,
+  telegramChats: (id: string) => [...notificationKeys.all, 'telegram-chats', id] as const,
 };
 
 // ----------------------------------------------------------------- queries
@@ -131,6 +132,94 @@ export function useSendChannel(id: string) {
       toast.success(t('notification.send_ok'));
     },
     onError: () => toast.error(t('notification.send_failed')),
+  });
+}
+
+// ---------------------------------------------------------------- Telegram
+/** `getMe` on a not-yet-saved token. A mutation, not a query: the wizard fires
+ * it on a button press and needs the result before it can advance a step. */
+export function useTelegramVerify() {
+  const { t } = useTranslation();
+  return useMutation({
+    mutationFn: (botToken: string) => notificationService.telegram.verify(botToken),
+    onError: () => toast.error(t('notification.telegram.verify_failed')),
+  });
+}
+
+/** Chat discovery for a token the server has not stored yet. */
+export function useTelegramDiscoverChats() {
+  return useMutation({
+    mutationFn: (botToken: string) => notificationService.telegram.discoverChats(botToken),
+    // No toast: an empty result is the expected first run and the dialog
+    // explains it far better than a toast could. Real failures surface inline.
+  });
+}
+
+/** Resolve a hand-typed chat id or `@public_name`. */
+export function useTelegramResolveChat() {
+  const { t } = useTranslation();
+  return useMutation({
+    mutationFn: ({ botToken, chatId }: { botToken: string; chatId: string }) =>
+      notificationService.telegram.resolveChat(botToken, chatId),
+    onError: () => toast.error(t('notification.telegram.resolve_failed')),
+  });
+}
+
+/** Chats reachable with an existing channel's stored token (re-pick picker). */
+export function useTelegramChannelChats(channelId: string, enabled = true) {
+  return useQuery({
+    queryKey: notificationKeys.telegramChats(channelId),
+    queryFn: () => notificationService.telegram.listChannelChats(channelId),
+    enabled: !!channelId && enabled,
+    retry: false, // a dead token errors — retrying only delays the hint
+  });
+}
+
+/** Repoint a channel at a different chat (the bot token stays server-side). */
+export function useTelegramUpdateChat(channelId: string) {
+  const qc = useQueryClient();
+  const { t } = useTranslation();
+  return useMutation({
+    mutationFn: (chatId: string) => notificationService.telegram.updateChat(channelId, chatId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: notificationKeys.lists() });
+      void qc.invalidateQueries({ queryKey: notificationKeys.detail(channelId) });
+      toast.success(t('notification.telegram.chat_updated'));
+    },
+    onError: () => toast.error(t('common.error_generic')),
+  });
+}
+
+/** ⚡ Send a real message to the configured chat. */
+export function useTelegramTestMessage() {
+  const qc = useQueryClient();
+  const { t } = useTranslation();
+  return useMutation({
+    mutationFn: (channelId: string) => notificationService.telegram.testMessage(channelId),
+    // Recorded in the send history either way — a failure is the interesting case.
+    onSettled: (_data, _err, channelId) => {
+      void qc.invalidateQueries({ queryKey: notificationKeys.logs(channelId) });
+    },
+    onSuccess: (_data, channelId) => {
+      void qc.invalidateQueries({ queryKey: notificationKeys.detail(channelId) });
+      toast.success(t('notification.telegram.test_sent_ok'));
+    },
+    onError: () => toast.error(t('notification.telegram.test_message_failed')),
+  });
+}
+
+/** Replace the bot token (verified server-side before it is stored). */
+export function useTelegramReauth(channelId: string) {
+  const qc = useQueryClient();
+  const { t } = useTranslation();
+  return useMutation({
+    mutationFn: (botToken: string) => notificationService.telegram.reauth(channelId, botToken),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: notificationKeys.lists() });
+      void qc.invalidateQueries({ queryKey: notificationKeys.detail(channelId) });
+      toast.success(t('notification.telegram.token_updated'));
+    },
+    onError: () => toast.error(t('notification.telegram.verify_failed')),
   });
 }
 

@@ -42,12 +42,14 @@ async def test_import_and_reimport_is_idempotent(client):
     again = await _import(client, SJC_CSV)
     assert again.json()["data"]["rows_imported"] == "3"
 
+    # Looked up by (source, code), not by "the only entry": the fixture seeds
+    # other series, and the point of the re-import is that this one holds 3
+    # points rather than 6 — a count that would be invisible in a total.
     codes = (await client.get("/internal/market/gold/history/codes")).json()["data"]
-    assert len(codes) == 1
-    assert codes[0]["code"] == "SJC"
-    assert codes[0]["points"] == "3"
-    assert codes[0]["first_date"] == "2026-07-22"
-    assert codes[0]["last_date"] == "2026-07-24"
+    entry = next(c for c in codes if (c["source"], c["code"]) == ("sjc", "SJC"))
+    assert entry["points"] == "3"
+    assert entry["first_date"] == "2026-07-22"
+    assert entry["last_date"] == "2026-07-24"
 
 
 @pytest.mark.asyncio

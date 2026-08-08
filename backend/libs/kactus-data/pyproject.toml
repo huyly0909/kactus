@@ -9,6 +9,9 @@ dependencies = [
     "kactus-common",
     "kactus-gold",
     "kactus-stock-vn",
+    # Indicator/percentile maths in market/analytics.py. Arrives transitively
+    # with pandas, but declared because we import it directly.
+    "numpy>=1.26",
     "pandas>=2.2,<3",
     "pytz>=2026.2",
     "requests>=2.32.5",

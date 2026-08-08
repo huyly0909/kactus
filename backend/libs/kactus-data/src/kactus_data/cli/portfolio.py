@@ -13,9 +13,9 @@ import asyncio
 import typer
 from kactus_common.cli import AsyncTyper
 from kactus_common.database.oltp.session import get_db
-from kactus_common.portfolio.const import AssetType, CrawlKind, CrawlTrigger
+from kactus_common.portfolio.const import AssetType, CrawlKind
 from kactus_data.config import get_settings
-from kactus_data.jobs.crawl import run_crawl, sync_catalog
+from kactus_data.jobs.crawl import sync_catalog
 from kactus_data.portfolio.provider import build_providers
 from kactus_data.sources.stock.auth import init_vnstock_auth
 from kactus_data.storage.duckdb import DuckDBStorage
@@ -57,19 +57,19 @@ def crawl(
     ),
     asset_type: str = typer.Option("stock", "--asset-type", "-a", help="stock | gold"),
 ):
-    """Crawl a dataset for an explicit set of codes (bypasses the watchlist union)."""
-    db, providers = _bootstrap()
+    """Crawl a dataset for an explicit set of codes (bypasses the watchlist union).
+
+    Runs the provider inline — no queue, no dispatcher — so it works standalone.
+    """
+    _, providers = _bootstrap()
     code_list = [c.strip().upper() for c in codes.split(",") if c.strip()]
     if not code_list:
         typer.secho("No codes given", fg=typer.colors.RED)
         raise typer.Exit(1)
-    run_ids = asyncio.run(
-        run_crawl(
-            db=db,
-            providers=providers,
-            kind=CrawlKind(kind),
-            codes_by_type={asset_type.upper(): code_list},
-            trigger=CrawlTrigger.MANUAL,
-        )
-    )
-    typer.secho(f"✓ Crawl runs: {run_ids}", fg=typer.colors.GREEN)
+    provider = providers.get(AssetType(asset_type.upper()))
+    crawl_kind = CrawlKind(kind)
+    if provider is None or crawl_kind not in provider.supported_kinds():
+        typer.secho(f"No provider crawls {asset_type}:{kind}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    rows = provider.crawl(crawl_kind, code_list)
+    typer.secho(f"✓ Crawled {rows} rows", fg=typer.colors.GREEN)
