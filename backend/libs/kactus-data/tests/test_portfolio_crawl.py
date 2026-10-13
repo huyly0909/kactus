@@ -131,6 +131,9 @@ def test_provider_crawl_quotes_roundtrip(storage):
     assert rows[0]["symbol"] == "FPT"
     assert rows[0]["match_price"] == 10.0
     assert rows[0]["source"] == "VCI"
+    # The daily snapshot rides along with the board but is not counted in ``n``.
+    snap = storage.query("SELECT symbol FROM stock_daily_snapshot ORDER BY symbol")
+    assert snap["symbol"].tolist() == ["FPT", "VCB"]
 
 
 def test_provider_crawl_news_is_text_safe(storage):

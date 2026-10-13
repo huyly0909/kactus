@@ -148,7 +148,9 @@ class StockAssetProvider(AssetProvider):
             return 0
         rows = self.storage.store(self._kind_table[kind], df)
         if kind is CrawlKind.QUOTES:
-            rows += self._store_daily_snapshot(df)
+            # Derived from the same board rows — counting it too would report
+            # every quotes crawl at twice the rows it actually fetched.
+            self._store_daily_snapshot(df)
         return rows
 
     def _store_daily_snapshot(self, board: pd.DataFrame) -> int:

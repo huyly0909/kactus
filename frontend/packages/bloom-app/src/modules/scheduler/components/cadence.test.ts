@@ -6,7 +6,7 @@ import { describeCadence, tzLabel } from './cadence';
 const VN = 'Asia/Ho_Chi_Minh';
 
 /** The six triggers `build_scheduler` actually registers. */
-const REAL_CRONS = [
+const REAL_CRONS: Record<string, string>[] = [
   { day_of_week: 'mon-fri', hour: '9-15', minute: '0' },
   { day_of_week: 'mon-fri', hour: '9-15', minute: '5' },
   { day_of_week: 'mon-fri', hour: '15', minute: '35' },
