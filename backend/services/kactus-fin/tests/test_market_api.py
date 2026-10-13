@@ -24,6 +24,7 @@ from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.user import auth as auth_mod
+from kactus_common.user.const import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 from kactus_common.user.model import User
 from kactus_gold.schema import (
     GoldHistoryCodeSchema,
@@ -94,6 +95,7 @@ async def client(app, seed_user):
         )
         assert login.status_code == 200
         c.cookies.update(dict(login.cookies))
+        c.headers[CSRF_HEADER_NAME] = login.cookies[CSRF_COOKIE_NAME]
         yield c
 
 
@@ -309,6 +311,7 @@ async def admin_client(app, db):
             json={"email": "admin@kactus.io", "password": "Admin123!"},
         )
         c.cookies.update(dict(login.cookies))
+        c.headers[CSRF_HEADER_NAME] = login.cookies[CSRF_COOKIE_NAME]
         yield c
 
 

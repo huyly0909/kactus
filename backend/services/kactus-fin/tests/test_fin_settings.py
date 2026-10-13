@@ -33,6 +33,8 @@ class TestFinSettings:
         assert s.session_cookie_secure is False
         assert s.session_expiry == 7 * 24 * 3600
         assert s.session_remember_expiry == 365 * 24 * 3600
+        # Same-origin only: the SPA reaches /api through the vite proxy / nginx.
+        assert s.cors_allow_origins == []
 
     def test_inherited_common_defaults(self):
         """CommonSettings fields are available via inheritance."""

@@ -25,6 +25,7 @@ from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.sync.const import SyncJobStatus
 from kactus_common.sync.model import SyncJob  # noqa: F401 — register on Base.metadata
 from kactus_common.user import auth as auth_mod
+from kactus_common.user.const import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 from kactus_common.user.model import User
 from kactus_gold.sync import GOLD_BACKFILL_MIN
 
@@ -77,6 +78,7 @@ async def _login(app, *, email: str, password: str, **init) -> AsyncClient:
     login = await c.post("/api/auth/login", json={"email": email, "password": password})
     assert login.status_code == 200, login.text
     c.cookies.update(dict(login.cookies))
+    c.headers[CSRF_HEADER_NAME] = login.cookies[CSRF_COOKIE_NAME]
     return c
 
 

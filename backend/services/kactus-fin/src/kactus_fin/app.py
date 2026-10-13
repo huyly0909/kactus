@@ -8,8 +8,10 @@ from kactus_common.app_registry import AppManager
 from kactus_common.exceptions import PermissionDeniedError, install_exception_handlers
 from kactus_common.redis.client import close_redis
 from kactus_common.sse.broker import get_sse_broker, reset_sse_broker
+from kactus_common.user.csrf import verify_csrf
 from kactus_fin.action.app import action_app
 from kactus_fin.admin.app import admin_app
+from kactus_fin.api.docs import router as docs_router
 from kactus_fin.api.health import router as health_router
 from kactus_fin.auth.app import auth_app
 from kactus_fin.config import get_settings
@@ -58,6 +60,7 @@ app_manager.register(action_app)
 app_manager.set_auth_dependencies(
     session_dep=_session_auth,
     superuser_dep=_superuser_auth,
+    csrf_dep=verify_csrf,
 )
 
 
@@ -161,22 +164,28 @@ def create_app() -> FastAPI:
         title=settings.app_name,
         version=settings.app_version,
         lifespan=lifespan,
+        docs_url=None,  # replaced by docs_router: Swagger that sends the CSRF header
     )
 
     # Exception handlers
     install_exception_handlers(app)
 
-    # CORS
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    # CORS — same-origin only unless origins are listed. The SPA never needs it
+    # (vite proxy in dev, nginx in stag/prod), and `allow_origins=["*"]` with
+    # credentials makes Starlette echo *any* Origin back, which let every
+    # same-site page read the API with the user's cookies.
+    if settings.cors_allow_origins:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_allow_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
-    # Health check (no feature, standalone)
+    # Health check + Swagger UI (no feature, standalone)
     app.include_router(health_router)
+    app.include_router(docs_router)
 
     # Wire all feature apps (routes, middleware, background)
     app_manager.init_fastapi(app)

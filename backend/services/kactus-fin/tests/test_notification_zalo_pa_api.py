@@ -15,6 +15,7 @@ from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.project.service import ProjectService
 from kactus_common.user import auth as auth_mod
+from kactus_common.user.const import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 from kactus_common.user.context import set_current_project_id
 from kactus_common.user.model import User
 from kactus_notification.channels.zalo_pa.schema import (
@@ -105,6 +106,7 @@ async def client(app, seed_user):
         )
         assert login.status_code == 200
         c.cookies.update(dict(login.cookies))
+        c.headers[CSRF_HEADER_NAME] = login.cookies[CSRF_COOKIE_NAME]
         # Select the personal project (backend reads the kactus_project_id cookie).
         c.cookies.set("kactus_project_id", str(seed_user._project_id))
         yield c

@@ -25,6 +25,7 @@ from kactus_common.sse.broker import get_sse_broker
 from kactus_common.sync.const import SyncJobStatus
 from kactus_common.sync.model import SyncJob
 from kactus_common.user import auth as auth_mod
+from kactus_common.user.const import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 from kactus_common.user.model import User
 from sqlalchemy import select
 
@@ -92,6 +93,7 @@ async def client(app, seed_user):
         )
         assert login.status_code == 200
         c.cookies.update(dict(login.cookies))
+        c.headers[CSRF_HEADER_NAME] = login.cookies[CSRF_COOKIE_NAME]
         # Select the personal project (backend reads the kactus_project_id cookie).
         c.cookies.set("kactus_project_id", str(seed_user._project_id))
         yield c
@@ -381,6 +383,7 @@ async def admin_client(app, db):
             json={"email": "admin@kactus.io", "password": "Admin123!"},
         )
         c.cookies.update(dict(login.cookies))
+        c.headers[CSRF_HEADER_NAME] = login.cookies[CSRF_COOKIE_NAME]
         yield c
 
 

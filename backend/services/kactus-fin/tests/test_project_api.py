@@ -35,6 +35,7 @@ from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.project.const import PERSONAL_PROJECT_NAME, DefaultRole
 from kactus_common.project.service import ProjectService
 from kactus_common.user import auth as auth_mod
+from kactus_common.user.const import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 from kactus_common.user.model import User
 
 TEST_DB_URL = "sqlite+aiosqlite://"
@@ -100,6 +101,7 @@ async def _client(app, email: str, *, project_id: int | None = None) -> AsyncCli
     login = await c.post("/api/auth/login", json={"email": email, "password": PASSWORD})
     assert login.status_code == 200, login.text
     c.cookies.update(dict(login.cookies))
+    c.headers[CSRF_HEADER_NAME] = login.cookies[CSRF_COOKIE_NAME]
     if project_id is not None:
         c.cookies.set("kactus_project_id", str(project_id))
     return c

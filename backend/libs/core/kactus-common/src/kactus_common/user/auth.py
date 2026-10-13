@@ -13,6 +13,7 @@ from kactus_common.database.oltp.session import get_db
 from kactus_common.exceptions import AuthenticationError
 
 from .const import PROJECT_COOKIE_NAME, SESSION_COOKIE_NAME
+from .csrf import delete_csrf_cookie, set_csrf_cookie
 from .model import User
 from .service import UserService
 
@@ -119,6 +120,8 @@ class AuthDependency:
             samesite="lax",
             path="/",
         )
+        # The CSRF token is derived from the session id, so it rotates here too.
+        set_csrf_cookie(response, user_session.session_id, max_age=expiry_seconds)
         return user_session.session_id
 
     async def logout_user(self, request: Request, response: Response) -> None:
@@ -137,6 +140,7 @@ class AuthDependency:
             samesite="lax",
             path="/",
         )
+        delete_csrf_cookie(response)
 
 
 # ---------------------------------------------------------------------------

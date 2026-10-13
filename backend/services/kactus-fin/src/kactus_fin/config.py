@@ -54,6 +54,13 @@ class Settings(CommonSettings, NotificationSettings):
     host: str = "0.0.0.0"
     port: int = 17600
 
+    # CORS allow-list (KACTUS_CORS_ALLOW_ORIGINS, a JSON list). Empty = no CORS
+    # middleware = same-origin only, which is how every env runs: the browser
+    # reaches /api through the vite proxy or nginx. Listing an origin lets it
+    # *read*; it still cannot *write*, because it cannot read the kactus_xsrf_token
+    # cookie that every unsafe session request must echo.
+    cors_allow_origins: list[str] = []
+
     # Action links (kactus_fin/action/) — the signed one-time URLs that ride in
     # a notification. The secret fails closed: unset means action links cannot
     # be issued *or* verified, which is the right default for a link that

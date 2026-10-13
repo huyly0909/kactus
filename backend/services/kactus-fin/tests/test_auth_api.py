@@ -12,6 +12,7 @@ from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.user import auth as auth_mod
+from kactus_common.user.const import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 from kactus_common.user.model import User, UserSession
 
 # ---------------------------------------------------------------------------
@@ -171,6 +172,7 @@ async def test_logout(client, seed_user):
 
     # Logout
     client.cookies.update(cookies)
+    client.headers[CSRF_HEADER_NAME] = cookies[CSRF_COOKIE_NAME]
     logout_resp = await client.post("/api/auth/logout")
     assert logout_resp.status_code == 200
 
@@ -204,6 +206,7 @@ async def test_me_defaults_prefs_null(client, seed_user):
         json={"email": "test@kactus.io", "password": "Test123!"},
     )
     client.cookies.update(dict(login_resp.cookies))
+    client.headers[CSRF_HEADER_NAME] = login_resp.cookies[CSRF_COOKIE_NAME]
     resp = await client.get("/api/auth/me")
     assert resp.status_code == 200
     data = resp.json()["data"]
@@ -220,6 +223,7 @@ async def test_update_me_persists_preferences(client, seed_user):
         json={"email": "test@kactus.io", "password": "Test123!"},
     )
     client.cookies.update(dict(login_resp.cookies))
+    client.headers[CSRF_HEADER_NAME] = login_resp.cookies[CSRF_COOKIE_NAME]
 
     resp = await client.patch(
         "/api/auth/me",
@@ -246,6 +250,7 @@ async def test_update_me_partial(client, seed_user):
         json={"email": "test@kactus.io", "password": "Test123!"},
     )
     client.cookies.update(dict(login_resp.cookies))
+    client.headers[CSRF_HEADER_NAME] = login_resp.cookies[CSRF_COOKIE_NAME]
 
     await client.patch(
         "/api/auth/me",
