@@ -22,10 +22,10 @@ Kactus uses **session-based authentication** (not JWT). On login, the server cre
 2. Frontend sends `POST /api/auth/login` with `{ email, password, remember }`
 3. Server looks up user by email in `users` table
 4. Server verifies password using bcrypt (`verify_password(input, hash)`)
-5. Server creates a `UserSession` row:
-   - `session_id` = UUID v4
+5. Server generates a random token (UUID v4 hex) and creates a `UserSession` row:
+   - `session_hash` = `sha256(token)` — the raw token is never stored
    - `expires_at` = `now + 7 days` (or `now + 1 year` if `remember=True`)
-6. Server sets cookie: `kactus_session_id=<uuid>`
+6. Server sets cookie: `kactus_session_id=<token>`
    - `httpOnly=True` — JavaScript cannot read it (XSS protection)
    - `SameSite=Lax` — sent with same-site and top-level navigations
    - `Secure=True` in production (HTTPS only)
@@ -46,8 +46,8 @@ Kactus uses **session-based authentication** (not JWT). On login, the server cre
 ### Steps
 
 1. Browser automatically includes `kactus_session_id` cookie
-2. Auth middleware reads `session_id` from cookie
-3. Looks up `UserSession` row in database
+2. Auth middleware reads the token from the cookie
+3. Looks up the `UserSession` row by `session_hash = sha256(token)`
 4. Checks `if session.expires_at < now()`:
    - **Expired** → delete session row, return HTTP 401
    - **Valid** → load associated `User`, continue
@@ -56,8 +56,8 @@ Kactus uses **session-based authentication** (not JWT). On login, the server cre
 ## Logout Flow
 
 1. Frontend sends `POST /api/auth/logout`
-2. Server reads `session_id` from cookie
-3. Server deletes `UserSession` row from database
+2. Server reads the token from the cookie
+3. Server deletes the `UserSession` row matching `sha256(token)`
 4. Server clears the cookie (set `max-age=0`)
 5. Frontend redirects to `/login`
 
@@ -92,6 +92,22 @@ is_valid = verify_password("user_input", user.password_hash)
 ```
 
 > **Why not Fernet?** Fernet is reversible encryption — if the key leaks, all passwords are compromised. Bcrypt is a one-way hash; even with full database access, passwords cannot be recovered.
+
+## Session Token Storage
+
+The cookie carries the raw session token; `user_sessions` stores only its
+SHA-256 (`session_hash`). The token is a bearer credential, so a stored raw
+value would let anyone who can read the table (a dump, a backup, a replica) log
+in as every user with a live session. The server never needs the token back —
+it only compares — so each request hashes the cookie and looks up the hash.
+
+- **Plain SHA-256, no bcrypt or salt**: those defend low-entropy passwords
+  against guessing; the token is 122 random bits, and a slow hash would cost
+  every request.
+- **Not Fernet**: the token never needs decrypting, and Fernet's output is
+  randomized, so it could not be looked up by index.
+- This protects against a *read* of the database only. A stolen cookie still
+  works — that is what `httpOnly` / `Secure` are for.
 
 ## Cookie Security Flags
 
@@ -137,7 +153,7 @@ Swagger UI works natively with session cookies:
 |--------|------|-------|
 | `id` | BIGINT (snowflake) | Primary key |
 | `user_id` | BIGINT | FK → users.id |
-| `session_id` | VARCHAR | UUID v4, unique index |
+| `session_hash` | VARCHAR(64) | SHA-256 (hex) of the cookie token, unique index |
 | `expires_at` | TIMESTAMP | Server-side expiration |
 | `is_remember` | BOOLEAN | Remember-me flag |
 | `create_time` | TIMESTAMP | Auto |

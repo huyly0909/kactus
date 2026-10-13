@@ -89,14 +89,14 @@ class AuthDependency:
         user: User,
         remember: bool = False,
     ) -> str:
-        """Create session, set cookie, return session_id."""
+        """Create session, set cookie, return the raw session token."""
         from kactus_common.config import settings
 
         ip_address = request.client.host if request.client else None
         user_agent = request.headers.get("user-agent")
 
         async with get_db().get_session() as session:
-            user_session = await UserService.create_session(
+            token = await UserService.create_session(
                 session,
                 user.id,
                 remember=remember,
@@ -113,7 +113,7 @@ class AuthDependency:
         )
         response.set_cookie(
             key=self._config.cookie_name,
-            value=user_session.session_id,
+            value=token,
             max_age=expiry_seconds,
             httponly=True,
             secure=settings.session_cookie_secure,
@@ -121,8 +121,8 @@ class AuthDependency:
             path="/",
         )
         # The CSRF token is derived from the session id, so it rotates here too.
-        set_csrf_cookie(response, user_session.session_id, max_age=expiry_seconds)
-        return user_session.session_id
+        set_csrf_cookie(response, token, max_age=expiry_seconds)
+        return token
 
     async def logout_user(self, request: Request, response: Response) -> None:
         """Delete session from DB and clear cookie."""

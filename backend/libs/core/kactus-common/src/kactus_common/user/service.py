@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import hashlib
 import uuid
 
 from kactus_common.database.oltp.models import utcnow
@@ -11,6 +12,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .const import SESSION_EXPIRY_SECONDS, SESSION_REMEMBER_EXPIRY_SECONDS
 from .model import User, UserSession
+
+
+def hash_session_id(raw: str) -> str:
+    """SHA-256 (hex) of a session token — what ``user_sessions`` stores.
+
+    The cookie carries the raw token; the table only ever sees its hash, so a
+    read of the table (dump, backup, replica) cannot be replayed as a login.
+    A fast unsalted hash is enough: the token is 122 random bits, not a
+    guessable password.
+    """
+    return hashlib.sha256(raw.encode()).hexdigest()
 
 
 class UserService:
@@ -58,31 +70,38 @@ class UserService:
         user_agent: str | None = None,
         session_expiry: int = SESSION_EXPIRY_SECONDS,
         remember_expiry: int = SESSION_REMEMBER_EXPIRY_SECONDS,
-    ) -> UserSession:
-        """Create a new user session and persist it."""
+    ) -> str:
+        """Create a new user session, persist its hash, return the raw token.
+
+        This is the only moment the raw token exists server-side — it goes
+        into the cookie and nowhere else.
+        """
         expiry_seconds = remember_expiry if remember else session_expiry
         now = utcnow()
+        token = uuid.uuid4().hex
 
         user_session = UserSession.init(
             user_id=user_id,
-            session_id=uuid.uuid4().hex,
+            session_hash=hash_session_id(token),
             expires_at=now + datetime.timedelta(seconds=expiry_seconds),
             is_remember=remember,
             ip_address=ip_address,
             user_agent=user_agent,
         )
         await user_session.save(session)
-        return user_session
+        return token
 
     @staticmethod
     async def get_by_session_id(
         session: AsyncSession, session_id: str
     ) -> tuple[UserSession | None, User | None]:
-        """Look up a session and its associated user.
+        """Look up a session (by the raw cookie token) and its associated user.
 
         Returns ``(user_session, user)`` or ``(None, None)`` if not found / expired.
         """
-        user_session = await UserSession.first(session, session_id=session_id)
+        user_session = await UserSession.first(
+            session, session_hash=hash_session_id(session_id)
+        )
         if user_session is None:
             return None, None
 
@@ -97,8 +116,10 @@ class UserService:
 
     @staticmethod
     async def delete_session(session: AsyncSession, session_id: str) -> None:
-        """Delete a single session by its session_id."""
-        stmt = delete(UserSession).where(UserSession.session_id == session_id)
+        """Delete a single session by its raw cookie token."""
+        stmt = delete(UserSession).where(
+            UserSession.session_hash == hash_session_id(session_id)
+        )
         await session.execute(stmt)
         await session.commit()
 

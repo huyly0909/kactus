@@ -14,6 +14,8 @@ from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.user import auth as auth_mod
 from kactus_common.user.const import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
 from kactus_common.user.model import User, UserSession
+from kactus_common.user.service import hash_session_id
+from sqlalchemy import select
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -92,6 +94,12 @@ async def client(app):
         yield c
 
 
+async def _stored_session_hashes(db) -> list[str]:
+    async with db.get_session() as session:
+        result = await session.execute(select(UserSession.session_hash))
+        return list(result.scalars())
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -161,7 +169,7 @@ async def test_me_with_session(client, seed_user):
 
 
 @pytest.mark.asyncio
-async def test_logout(client, seed_user):
+async def test_logout(client, seed_user, db):
     """Logout clears the session."""
     # Login
     login_resp = await client.post(
@@ -175,9 +183,40 @@ async def test_logout(client, seed_user):
     client.headers[CSRF_HEADER_NAME] = cookies[CSRF_COOKIE_NAME]
     logout_resp = await client.post("/api/auth/logout")
     assert logout_resp.status_code == 200
+    assert await _stored_session_hashes(db) == []
 
     # /me should now fail
     client.cookies.update(cookies)
+    resp = await client.get("/api/auth/me")
+    assert resp.status_code == 401
+    client.cookies.clear()
+
+
+@pytest.mark.asyncio
+async def test_session_stored_as_hash(client, seed_user, db):
+    """The table holds the SHA-256 of the cookie token, never the token."""
+    login_resp = await client.post(
+        "/api/auth/login",
+        json={"email": "test@kactus.io", "password": "Test123!"},
+    )
+    token = login_resp.cookies["kactus_session_id"]
+
+    stored = await _stored_session_hashes(db)
+    assert stored == [hash_session_id(token)]
+    assert token not in stored
+
+
+@pytest.mark.asyncio
+async def test_stored_hash_is_not_a_valid_cookie(client, seed_user, db):
+    """A value read out of user_sessions (e.g. a DB dump) cannot log in."""
+    await client.post(
+        "/api/auth/login",
+        json={"email": "test@kactus.io", "password": "Test123!"},
+    )
+    (stored_hash,) = await _stored_session_hashes(db)
+
+    client.cookies.clear()
+    client.cookies.set("kactus_session_id", stored_hash)
     resp = await client.get("/api/auth/me")
     assert resp.status_code == 401
     client.cookies.clear()

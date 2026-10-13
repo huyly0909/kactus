@@ -42,7 +42,9 @@ class UserSession(Base, ModelMixin):
     __tablename__ = "user_sessions"
 
     user_id: Mapped[UnsignedBigInt] = mapped_column(index=True)
-    session_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    # SHA-256 (hex) of the cookie token, never the token itself — see
+    # ``service.hash_session_id``.
+    session_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     expires_at: Mapped[datetime.datetime]
     is_remember: Mapped[bool] = mapped_column(default=False)
 
@@ -51,5 +53,5 @@ class UserSession(Base, ModelMixin):
     user_agent: Mapped[str | None] = mapped_column(Text, default=None)
 
     __table_args__ = (
-        Index("ix_user_sessions_user_id_session_id", "user_id", "session_id"),
+        Index("ix_user_sessions_user_id_session_hash", "user_id", "session_hash"),
     )
