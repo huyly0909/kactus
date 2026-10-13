@@ -15,7 +15,8 @@ from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.portfolio.const import AssetType, CrawlKind
 from kactus_common.portfolio.service import SupportedAssetService
 from kactus_data.config import DataSettings
-from kactus_data.jobs.crawl import crawl_ohlcv, sync_catalog
+from kactus_data.exceptions import RateLimitedError
+from kactus_data.jobs.crawl import crawl_ohlcv_blocking, sync_catalog
 from kactus_data.jobs.scheduler import build_scheduler
 from kactus_data.portfolio.provider import (
     GoldAssetProvider,
@@ -89,6 +90,15 @@ class TransposedRatioMarket(FullFakeMarket):
                 {"item": "P/B", "item_id": "pb", "2025-Q1": 4.2, "2025-Q2": 4.0},
             ]
         )
+
+
+@pytest.fixture(autouse=True)
+def _no_pacing(monkeypatch):
+    """Zero the vnstock pacing sleep so the suite stays fast."""
+    monkeypatch.setattr(
+        "kactus_data.sources.stock.market.vnstock_min_interval", lambda: 0.0
+    )
+    monkeypatch.setattr("kactus_data.jobs.crawl.vnstock_min_interval", lambda: 0.0)
 
 
 @pytest_asyncio.fixture
@@ -241,6 +251,21 @@ class LiveSjc(DeadSjc):
         return {"buy_price": 134500000.0, "sell_price": 139500000.0, "raw": {}}
 
 
+class DualSjc(LiveSjc):
+    """SJC quoting both its products — the bar (SJC) and the ring (999).
+
+    Real sjc.com.vn does this; mihong quotes 999 too, which is exactly the
+    pair the ``(code, source)`` board keys must keep apart.
+    """
+
+    def quote(self, code, board=None):
+        if str(code).upper() == "SJC":
+            return {"buy_price": 134500000.0, "sell_price": 139500000.0, "raw": {}}
+        if str(code).upper() == "999":
+            return {"buy_price": 138500000.0, "sell_price": 142500000.0, "raw": {}}
+        return None
+
+
 class FakeYahoo:
     """World-gold stub — quotes USD/oz, so the row must NOT be scaled."""
 
@@ -298,6 +323,62 @@ def test_gold_provider_no_token_required(monkeypatch, storage):
     )
 
 
+def test_gold_board_keeps_both_sources_for_999(monkeypatch, storage):
+    """SJC-999 and Mihong-999 are different products — the board keeps both.
+
+    Regression: with PK ``code`` alone the upsert deleted by code, so a
+    mihong sync was silently overwritten by SJC and users saw ``source=sjc``
+    on a row they had just synced from mihong.
+    """
+    _patch_gold(monkeypatch, DualSjc)
+    provider = GoldAssetProvider(storage)
+    assert provider.crawl(CrawlKind.QUOTES, ["999"]) == 2
+
+    board = storage.query("SELECT * FROM gold_price_board")
+    assert set(zip(board["code"], board["source"])) == {
+        ("999", "sjc"),
+        ("999", "mihong"),
+    }
+    by_source = {r["source"]: r for r in board.to_dict(orient="records")}
+    assert float(by_source["sjc"]["buy_price"]) == 138500000.0
+    assert float(by_source["mihong"]["buy_price"]) == 136571420.0  # ×10 scaled
+
+
+def test_gold_read_collapses_to_one_quote_per_code(monkeypatch, storage):
+    """A portfolio holding of "999" is one position — read() returns one row.
+
+    Ties on ``crawled_at`` (the normal case: one crawl stamps every row with
+    the same instant) go to SJC, the issuer reference.
+    """
+    _patch_gold(monkeypatch, DualSjc)
+    provider = GoldAssetProvider(storage)
+    provider.crawl(CrawlKind.QUOTES, ["999"])
+
+    rows = provider.read(CrawlKind.QUOTES, ["999"])
+    assert len(rows) == 1
+    assert rows[0]["source"] == "sjc"
+
+
+def test_gold_read_prefers_the_fresher_source(monkeypatch, storage):
+    """Freshest wins — that is what keeps mihong acting as the SJC fallback.
+
+    mihong no longer overwrites SJC's row, so "SJC is stale because Cloudflare
+    blocked us" has to be expressed by ``crawled_at`` instead.
+    """
+    _patch_gold(monkeypatch, DualSjc)
+    provider = GoldAssetProvider(storage)
+    provider.crawl(CrawlKind.QUOTES, ["999"])
+    # Age SJC's row by an hour, leaving mihong's as the only recent quote.
+    storage.query(
+        "UPDATE gold_price_board SET crawled_at = crawled_at - INTERVAL 1 HOUR "
+        "WHERE code = '999' AND source = 'sjc'"
+    )
+
+    rows = provider.read(CrawlKind.QUOTES, ["999"])
+    assert len(rows) == 1
+    assert rows[0]["source"] == "mihong"
+
+
 def test_gold_provider_skips_unsupported_and_kinds(monkeypatch, storage):
     """DOJI/PNJ have no feed on either source; NEWS is not a gold kind."""
     _patch_gold(monkeypatch, DeadSjc)
@@ -341,26 +422,19 @@ def test_gold_provider_survives_yahoo_outage(monkeypatch, storage):
     ]
 
 
-def test_gold_catalog_flags_sourceless_codes_disabled(monkeypatch, storage):
-    """DOJI/PNJ stay listed so the UI can show them greyed out, not hidden."""
+def test_gold_catalog_lists_enabled_codes(monkeypatch, storage):
+    """The catalog is exactly the three wired codes — DOJI/PNJ were dropped."""
     _patch_gold(monkeypatch, LiveSjc)
     catalog = {e["code"]: e for e in GoldAssetProvider(storage).fetch_catalog()}
 
-    assert set(catalog) == {"SJC", "999", "XAU", "DOJI", "PNJ"}
+    assert set(catalog) == {"SJC", "999", "XAU"}
     for code in ("SJC", "999", "XAU"):
         assert catalog[code]["meta_json"]["enabled"] is True
         assert "disabled" not in catalog[code]["tags"]
-    for code in ("DOJI", "PNJ"):
-        assert catalog[code]["meta_json"]["enabled"] is False
-        assert catalog[code]["tags"] == ["disabled"]
-        assert catalog[code]["meta_json"]["disabled_reason"]
+        assert catalog[code]["is_crawlable"] is True
 
     assert catalog["XAU"]["meta_json"]["unit"] == "USD/oz"
     assert catalog["SJC"]["meta_json"]["unit"] == "VND/luong"
-
-    # is_crawlable is the flag the asset picker reads to grey a row out.
-    assert catalog["SJC"]["is_crawlable"] is True
-    assert catalog["DOJI"]["is_crawlable"] is False
 
 
 def test_build_providers_registry(storage):
@@ -371,17 +445,8 @@ def test_build_providers_registry(storage):
 
 # ------------------------------------------------------------------- scheduler
 @pytest.mark.asyncio
-async def test_build_scheduler_registers_jobs(db, storage):
-    class SP:
-        async def get_codes_by_type(self):
-            return {}
-
-    scheduler = build_scheduler(
-        db=db,
-        providers=build_providers(storage),
-        symbol_provider=SP(),
-        storage=storage,
-    )
+async def test_build_scheduler_registers_jobs(db):
+    scheduler = build_scheduler(db=db)
     ids = {j.id for j in scheduler.get_jobs()}
     assert {
         "crawl_quotes",
@@ -406,8 +471,7 @@ async def test_sync_catalog_upserts(db, storage):
     assert {a.code for a in found} == {"FPT", "VCB"}
 
 
-@pytest.mark.asyncio
-async def test_crawl_ohlcv(monkeypatch, db, storage):
+def test_crawl_ohlcv_blocking(monkeypatch, storage):
     def fake_sync(self, start, end, code):
         return SyncDataResponse(
             success=True,
@@ -434,9 +498,47 @@ async def test_crawl_ohlcv(monkeypatch, db, storage):
     monkeypatch.setattr(
         "kactus_data.sources.stock.vnstock.VnstockOHLCVSource.sync", fake_sync
     )
-    run_id = await crawl_ohlcv(db=db, storage=storage, codes=["FPT"], days=3)
-    assert run_id is not None
-    assert await crawl_ohlcv(db=db, storage=storage, codes=[]) is None
+    assert crawl_ohlcv_blocking(storage, ["FPT"], days=3) == 1
+    assert crawl_ohlcv_blocking(storage, []) == 0
+
+
+def test_crawl_ohlcv_blocking_rate_limit_keeps_partial(monkeypatch, storage):
+    """SystemExit on the 2nd code → RateLimitedError carrying the stored count."""
+    calls = {"n": 0}
+
+    def fake_sync(self, start, end, code):
+        calls["n"] += 1
+        if calls["n"] > 1:
+            raise SystemExit("Rate limit exceeded")
+        return SyncDataResponse(
+            success=True,
+            data_source="vnstock_ohlcv",
+            code=code,
+            start_date="",
+            end_date="",
+            data=[
+                {
+                    "symbol": code,
+                    "time": "2026-01-01 00:00:00",
+                    "interval": "1D",
+                    "open": 1.0,
+                    "high": 2.0,
+                    "low": 0.5,
+                    "close": 1.5,
+                    "volume": 1000.0,
+                    "source": "VCI",
+                }
+            ],
+            timestamp="",
+        )
+
+    monkeypatch.setattr(
+        "kactus_data.sources.stock.vnstock.VnstockOHLCVSource.sync", fake_sync
+    )
+    with pytest.raises(RateLimitedError) as exc_info:
+        crawl_ohlcv_blocking(storage, ["FPT", "VCB"], days=3)
+    ex = exc_info.value
+    assert (ex.done, ex.total, ex.rows_stored) == (1, 2, 1)
 
 
 # ------------------------------------------------------------------- auth
@@ -444,61 +546,91 @@ def test_init_vnstock_auth_with_key(monkeypatch):
     fake = types.ModuleType("vnai")
     captured = {}
     fake.setup_api_key = lambda k: captured.setdefault("key", k)
-    fake.get_tier_info = lambda: {"tier": "paid"}
+    fake.get_user_tier = lambda: {
+        "tier": "free",
+        "limits": {"per_minute": 60, "per_hour": 3600},
+    }
     monkeypatch.setitem(sys.modules, "vnai", fake)
     register_settings(DataSettings(vnstock_api_key="secret-key"))
     import kactus_data.sources.stock.auth as auth
-    from kactus_data.sources.stock.auth import (
-        _safe_tier_name,
-        init_vnstock_auth,
-        vnstock_max_concurrency,
-    )
 
     try:
-        assert init_vnstock_auth() is True
+        assert auth.init_vnstock_auth() is True
         assert captured["key"] == "secret-key"
-        assert _safe_tier_name() == "paid"
-        assert vnstock_max_concurrency() == 8  # paid 180//20=9, capped at 8
+        assert auth._safe_tier_name() == "free"
+        assert auth._active_rpm() == 60  # detected via get_user_tier
+        assert auth.vnstock_max_concurrency() == 3  # 60 // 20
     finally:
         auth._AUTHENTICATED = False
         clear_settings()
 
 
-def test_concurrency_authenticated_unnamed_tier(monkeypatch):
-    """Community key authenticates but vnstock won't name the tier → assume 60rpm.
-
-    Without this, the unnamed tier collapses to guest=1 (issue #3).
-    """
+def test_rpm_override_beats_detection(monkeypatch):
+    """KACTUS_VNSTOCK_RPM_OVERRIDE pins the budget over anything detected."""
     import kactus_data.sources.stock.auth as auth
 
-    monkeypatch.setattr(auth, "_AUTHENTICATED", True)
-    monkeypatch.setattr(auth, "_safe_tier_name", lambda: None)
-    assert auth.vnstock_max_concurrency() == 3  # 60 // 20
-
-
-def test_concurrency_guest_when_unauthenticated(monkeypatch):
-    """No key, no tier name → guest budget of 1 (safe default preserved)."""
-    import kactus_data.sources.stock.auth as auth
-
-    monkeypatch.setattr(auth, "_AUTHENTICATED", False)
-    monkeypatch.setattr(auth, "_safe_tier_name", lambda: None)
-    assert auth.vnstock_max_concurrency() == 1
-
-
-def test_concurrency_community_named_tier(monkeypatch):
-    """Named 'community' tier resolves to its 60rpm budget."""
-    import kactus_data.sources.stock.auth as auth
-
-    monkeypatch.setattr(auth, "_safe_tier_name", lambda: "Community")
-    assert auth.vnstock_max_concurrency() == 3  # 60 // 20
-
-
-def test_init_vnstock_auth_no_key():
-    register_settings(DataSettings(vnstock_api_key=""))
-    from kactus_data.sources.stock.auth import init_vnstock_auth
-
+    monkeypatch.setattr(
+        auth, "_tier_info", lambda: {"tier": "free", "limits": {"per_minute": 60}}
+    )
+    register_settings(DataSettings(vnstock_rpm_override=300))
     try:
-        assert init_vnstock_auth() is False
+        rpm, source = auth._resolve_rpm(auth._tier_info())
+        assert (rpm, source) == (300, "override")
+        assert auth.vnstock_max_concurrency() == 8  # 300//20=15, capped at 8
+        # Pacing widens with the budget: 60/(300*0.8) = 0.25s between calls.
+        assert auth.vnstock_min_interval() == pytest.approx(0.25)
+    finally:
+        clear_settings()
+
+
+def test_rpm_falls_back_to_static_tier_table(monkeypatch):
+    """Detection names a paid tier but gives no limits → static table."""
+    import kactus_data.sources.stock.auth as auth
+
+    register_settings(DataSettings())
+    try:
+        rpm, source = auth._resolve_rpm({"tier": "Bronze"})
+        assert (rpm, source) == (180, "fallback")
+    finally:
+        clear_settings()
+
+
+def test_rpm_authenticated_unnamed_tier(monkeypatch):
+    """Key applied but vnai unavailable → assume the 60rpm authed budget."""
+    import kactus_data.sources.stock.auth as auth
+
+    register_settings(DataSettings())
+    monkeypatch.setattr(auth, "_AUTHENTICATED", True)
+    monkeypatch.setattr(auth, "_tier_info", lambda: None)
+    try:
+        assert auth._active_rpm() == 60
+        assert auth.vnstock_max_concurrency() == 3
+    finally:
+        clear_settings()
+
+
+def test_rpm_guest_when_unauthenticated(monkeypatch):
+    """No key, no tier info → guest budget (20 rpm, concurrency 1, ~3.75s gap)."""
+    import kactus_data.sources.stock.auth as auth
+
+    register_settings(DataSettings())
+    monkeypatch.setattr(auth, "_AUTHENTICATED", False)
+    monkeypatch.setattr(auth, "_tier_info", lambda: None)
+    try:
+        assert auth._active_rpm() == 20
+        assert auth.vnstock_max_concurrency() == 1
+        assert auth.vnstock_min_interval() == pytest.approx(3.75)
+    finally:
+        clear_settings()
+
+
+def test_init_vnstock_auth_no_key(monkeypatch):
+    import kactus_data.sources.stock.auth as auth
+
+    register_settings(DataSettings(vnstock_api_key=""))
+    monkeypatch.setattr(auth, "_tier_info", lambda: None)
+    try:
+        assert auth.init_vnstock_auth() is False
     finally:
         clear_settings()
 
@@ -508,24 +640,32 @@ def test_cli_crawl_and_sync(monkeypatch):
     import kactus_data.cli.portfolio as pcli
     from typer.testing import CliRunner
 
-    async def fake_run_crawl(**kwargs):
-        return [123]
+    class FakeProvider:
+        def supported_kinds(self):
+            return {CrawlKind.QUOTES}
+
+        def crawl(self, kind, codes):
+            return len(codes)
 
     async def fake_sync_catalog(**kwargs):
         return {"STOCK": 5}
 
-    monkeypatch.setattr(pcli, "_bootstrap", lambda: (None, {}))
-    monkeypatch.setattr(pcli, "run_crawl", fake_run_crawl)
+    providers = {AssetType.STOCK: FakeProvider()}
+    monkeypatch.setattr(pcli, "_bootstrap", lambda: (None, providers))
     monkeypatch.setattr(pcli, "sync_catalog", fake_sync_catalog)
 
     runner = CliRunner()
     r = runner.invoke(pcli.cli, ["crawl", "--kind", "quotes", "--codes", "FPT,VCB"])
     assert r.exit_code == 0
-    assert "123" in r.stdout
+    assert "2" in r.stdout
 
     r = runner.invoke(pcli.cli, ["sync-catalog", "--asset-type", "stock"])
     assert r.exit_code == 0
 
     # Empty codes is rejected.
     r = runner.invoke(pcli.cli, ["crawl", "--codes", " "])
+    assert r.exit_code == 1
+
+    # Unsupported kind for the provider is rejected.
+    r = runner.invoke(pcli.cli, ["crawl", "--kind", "news", "--codes", "FPT"])
     assert r.exit_code == 1

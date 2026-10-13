@@ -16,7 +16,7 @@ Manual deployment guide for Kactus services using Docker Compose.
 | `redis` | `redis:7-alpine` | 6379 | Redis cache |
 | `kactus-fin` | Built from `Dockerfile.fin` | 17600 | Main API server (control plane) |
 | `kactus-fin-gw` | Built from `Dockerfile.fin-gw` | 17601 | Gateway API server |
-| `kactus-data-server` | Built from `Dockerfile.data-server` | 17602 | ETL + DuckDB + crawl scheduler (data plane) |
+| `kactus-data-plane` | Built from `Dockerfile.data-plane` | 17602 | ETL + DuckDB + crawl scheduler (data plane) |
 | `bloom-app` | Built from `Dockerfile.bloom-app` | 17630 (prod: 80) | Frontend SPA (nginx) + `/api` reverse proxy |
 
 ## Environment Comparison
@@ -25,8 +25,8 @@ Manual deployment guide for Kactus services using Docker Compose.
 |---|---|---|---|
 | `kactus-fin` workers | 1 (reload) | 2 | 4 |
 | `kactus-fin-gw` workers | 1 (reload) | 2 | 4 |
-| `kactus-data-server` workers | **1** (reload) | **1** | **1** |
-| `kactus-data-server` port published | ✅ 17602 | ❌ | ❌ |
+| `kactus-data-plane` workers | **1** (reload) | **1** | **1** |
+| `kactus-data-plane` port published | ✅ 17602 | ❌ | ❌ |
 | `bloom-app` port | 17630 | 17630 | 80 |
 | Log level | debug | info | warning |
 | Restart | no | unless-stopped | always |
@@ -46,7 +46,7 @@ In dev, day-to-day frontend work runs on the host instead:
 Don't run that while the dev compose `bloom-app` container is up — both claim
 port 17630.
 
-### Why `kactus-data-server` is pinned to one worker and one replica
+### Why `kactus-data-plane` is pinned to one worker and one replica
 
 It holds the only read-write DuckDB handle in the deployment and runs the crawl
 APScheduler in-process. A second process of either kind means
@@ -64,7 +64,7 @@ completions go to its own in-process broker and no browser ever sees them.
 All three reasons are gone. `KACTUS_COORDINATION_BACKEND=redis` (set in every
 compose file) shares the SSE broker and the Zalo QR session store across
 processes, and the scheduler plus the DuckDB handle now live in
-`kactus-data-server`. The control plane holds no OLAP state and reads market
+`kactus-data-plane`. The control plane holds no OLAP state and reads market
 data over HTTP.
 
 ## Deploy Steps
@@ -118,7 +118,7 @@ KACTUS_DEBUG=false
 # Generate with: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 KACTUS_ENCRYPTION_KEY=<fernet-key>
 
-# Shared secret between kactus-fin and kactus-data-server. Every /internal
+# Shared secret between kactus-fin and kactus-data-plane. Every /internal
 # route on the data plane requires it in an X-Service-Token header, and an
 # unset value fails every request rather than waving them through.
 # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
@@ -167,7 +167,7 @@ docker compose exec kactus-fin python manage.py fin db upgrade
 docker compose exec kactus-fin-gw python manage.py fin-gw db upgrade
 ```
 
-`kactus-data-server` ships no Alembic config on purpose: it declares no ORM
+`kactus-data-plane` ships no Alembic config on purpose: it declares no ORM
 models of its own and shares kactus-fin's migration head on the same Postgres.
 Two services migrating one database is how you get two heads.
 
@@ -179,7 +179,7 @@ curl http://localhost:17600/health    # kactus-fin
 curl http://localhost:17601/health    # kactus-fin-gateway
 
 # The data plane is only published in dev; elsewhere, from inside the network:
-docker compose exec kactus-fin curl -s http://kactus-data-server:17602/health
+docker compose exec kactus-fin curl -s http://kactus-data-plane:17602/health
 ```
 
 The data plane reports the three things that make it useful, and answers
@@ -194,11 +194,11 @@ the service token:
 
 ```bash
 # 403 — no token
-docker compose exec kactus-fin curl -s http://kactus-data-server:17602/internal/market/gold
+docker compose exec kactus-fin curl -s http://kactus-data-plane:17602/internal/market/gold
 # 200
 docker compose exec kactus-fin curl -s \
   -H "X-Service-Token: $KACTUS_INTERNAL_SERVICE_TOKEN" \
-  http://kactus-data-server:17602/internal/market/gold
+  http://kactus-data-plane:17602/internal/market/gold
 ```
 
 `kactus-fin` reports Redis whenever it depends on it:

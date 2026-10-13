@@ -45,32 +45,33 @@ class PortfolioService:
 
     @staticmethod
     async def get_or_404(session: AsyncSession, portfolio_id: int) -> Portfolio:
-        """Fetch a portfolio by id or raise ``NotFoundError``."""
-        return await Portfolio.get_or_404(session, portfolio_id)
+        """Fetch a portfolio in the current project, or raise ``NotFoundError``.
 
-    @staticmethod
-    async def get_owned_or_404(
-        session: AsyncSession, *, portfolio_id: int, owner_id: int
-    ) -> Portfolio:
-        """Fetch a portfolio and assert ``owner_id`` owns it.
-
-        Raises ``NotFoundError`` if missing or owned by someone else — we do not
-        leak existence of other users' portfolios.
+        Uses a ``SELECT`` (not ``session.get``) so the global project filter
+        applies — a portfolio in another project reads as missing, never leaking
+        its existence across projects.
         """
-        portfolio = await Portfolio.get(session, portfolio_id)
-        if portfolio is None or portfolio.owner_id != owner_id:
-            raise NotFoundError(f"Portfolio record, pk: {portfolio_id}")
-        return portfolio
+        return await Portfolio.first_or_404(session, id=portfolio_id)
 
     @staticmethod
-    async def list_for_owner(session: AsyncSession, owner_id: int) -> list[Portfolio]:
-        """All non-deleted portfolios owned by ``owner_id``."""
-        return await Portfolio.all(session, owner_id=owner_id)
+    async def list_for_project(session: AsyncSession) -> list[Portfolio]:
+        """All non-deleted portfolios in the current project.
+
+        The active project is applied transparently by the global
+        ``ProjectScopedMixin`` SELECT filter, so a member sees every portfolio in
+        the selected project regardless of who created it.
+        """
+        return await Portfolio.all(session)
 
     @staticmethod
     async def list_all(session: AsyncSession) -> list[Portfolio]:
-        """All non-deleted portfolios (admin)."""
-        return await Portfolio.all(session)
+        """All non-deleted portfolios across every project (admin oversight).
+
+        Bypasses the global project filter so a superuser who happens to hold a
+        project cookie still sees the whole system, not just one project.
+        """
+        stmt = select(Portfolio).execution_options(skip_project_filter=True)
+        return list((await session.scalars(stmt)).all())
 
     @staticmethod
     async def update(
@@ -180,6 +181,9 @@ class PortfolioService:
             )
             .where(SupportedAsset.is_crawlable.is_(True))
             .distinct()
+            # Intentionally cross-project: the crawl union must see every
+            # project's watchlist items, so bypass the global project filter.
+            .execution_options(skip_project_filter=True)
         )
         rows = (await session.execute(stmt)).all()
         result: dict[AssetType, list[str]] = {}

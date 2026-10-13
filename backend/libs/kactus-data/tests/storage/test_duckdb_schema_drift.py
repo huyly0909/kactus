@@ -45,6 +45,27 @@ NEW = _table(
 )
 
 
+#: Same columns and types as ``NEW`` — only the key differs, which is exactly
+#: what a column-only diff cannot see.
+NEW_COMPOSITE_PK = _table(
+    [
+        Column(
+            name="code",
+            data_type=DataType.STRING,
+            is_primary_key=True,
+            is_nullable=False,
+        ),
+        Column(name="buy_price", data_type=DataType.DECIMAL),
+        Column(
+            name="unit",
+            data_type=DataType.STRING,
+            is_primary_key=True,
+            is_nullable=False,
+        ),
+    ]
+)
+
+
 @pytest.fixture
 def storage(tmp_path) -> DuckDBStorage:
     return DuckDBStorage(str(tmp_path / "drift.duckdb"))
@@ -85,6 +106,43 @@ def test_detects_removed_column(storage):
     drift = storage.schema_drift(OLD)
 
     assert any(d.startswith("extra column unit") for d in drift)
+
+
+def test_detects_primary_key_change(storage):
+    """A widened PK is invisible in the column diff but breaks the UPSERT.
+
+    The DELETE half of the upsert is built from the *definition*'s key while
+    the on-disk constraint is still the old one, so the INSERT hits a
+    duplicate-key error. ``schema check`` has to surface that.
+    """
+    storage.store(
+        NEW, pd.DataFrame([{"code": "SJC", "buy_price": 1.0, "unit": "VND/luong"}])
+    )
+    drift = storage.schema_drift(NEW_COMPOSITE_PK)
+
+    assert "primary key (code) → (code, unit)" in drift
+    # Nothing else drifted — the columns and types are identical.
+    assert len(drift) == 1
+
+
+def test_recreate_clears_primary_key_drift(storage):
+    storage.store(
+        NEW, pd.DataFrame([{"code": "SJC", "buy_price": 1.0, "unit": "VND/luong"}])
+    )
+    storage.recreate_table(NEW_COMPOSITE_PK)
+
+    assert storage.schema_drift(NEW_COMPOSITE_PK) == []
+    # And the widened key now actually keeps both rows apart.
+    storage.store(
+        NEW_COMPOSITE_PK,
+        pd.DataFrame(
+            [
+                {"code": "SJC", "buy_price": 1.0, "unit": "VND/luong"},
+                {"code": "SJC", "buy_price": 2.0, "unit": "USD/oz"},
+            ]
+        ),
+    )
+    assert storage.query("SELECT COUNT(*) AS n FROM prices")["n"][0] == 2
 
 
 def test_recreate_clears_drift_and_applies_decimal(storage):

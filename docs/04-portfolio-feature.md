@@ -242,7 +242,7 @@ Stack: React 18 + Vite + TanStack Query v5 + Zustand + shadcn/ui + i18next + **s
 | 6 | Manual refresh **dedup** qua `CrawlRunService.has_inflight` (cửa sổ 15'). ✅ |
 | 7 | Cột `price_board` khác nhau KBS vs VCI → source normalize defensive (`_pick` nhiều tên cột) + cột `raw_json` catch-all. ✅ |
 | 8 | DuckDB INSERT đã chuyển sang **`conn.register(df)`** (5 chỗ) — an toàn text tiếng Việt + nhanh hơn. ✅ (đã test round-trip) |
-| 9 | ~~**Single-worker** là điều kiện nền~~ → **đã gỡ**. Scheduler + DuckDB đã chuyển sang `services/kactus-data-server` (1 worker, 1 replica); `kactus-fin` chạy multi-worker trở lại (4 prod / 2 stag). Cờ `enable_portfolio_scheduler` bây giờ là của data plane. ✅ |
+| 9 | ~~**Single-worker** là điều kiện nền~~ → **đã gỡ**. Scheduler + DuckDB đã chuyển sang `services/kactus-data-plane` (1 worker, 1 replica); `kactus-fin` chạy multi-worker trở lại (4 prod / 2 stag). Cờ `enable_portfolio_scheduler` bây giờ là của data plane. ✅ |
 
 ---
 
@@ -250,7 +250,7 @@ Stack: React 18 + Vite + TanStack Query v5 + Zustand + shadcn/ui + i18next + **s
 
 - ~~**Hôm nay (v1)**: 1 process fin~~ → **đã xong cả 3 bước dưới đây.** Trạng thái hiện tại:
   1. **SSE cross-process** ✅ — `RedisSSEBroker` (`KACTUS_COORDINATION_BACKEND=redis`), interface không đổi.
-  2. **Scheduler** ✅ — chuyển sang `services/kactus-data-server`, service riêng **1 worker / 1 replica**. Không dùng Celery: throughput bị chặn bởi rate-limit vnstock chứ không phải số worker, và job args là object sống (session manager, provider registry) nên không serialize được. Không cần leader-lock vì chỉ có đúng 1 replica.
+  2. **Scheduler** ✅ — chuyển sang `services/kactus-data-plane`, service riêng **1 worker / 1 replica**. Không dùng Celery: throughput bị chặn bởi rate-limit vnstock chứ không phải số worker, và job args là object sống (session manager, provider registry) nên không serialize được. Không cần leader-lock vì chỉ có đúng 1 replica.
   3. **DuckDB single-writer** ✅ — writer duy nhất nằm trong data plane; `kactus-fin` **không mở file OLAP nữa**, mọi read đi qua HTTP (`kactus_fin/data_client.py`). Đây là chi phí thật của việc tách: DuckDB cho phép *hoặc* 1 process read-write *hoặc* nhiều process read-only, không có đường "đọc thẳng cho nhẹ".
 - Chi phí crawl scale theo **số mã distinct** (union dedup), không theo số portfolio: 10k portfolio cùng giữ VN30 ⇒ vẫn chỉ ~30 mã.
 

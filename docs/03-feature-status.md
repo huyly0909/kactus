@@ -171,7 +171,7 @@
 REST API đọc thẳng các bảng OLAP (DuckDB) do ETL kactus-data ghi — không có ETL mới, không có bảng mới. 366 backend tests pass (12 test riêng cho market); frontend `tsc -b` + `vite build` + vitest xanh. Chưa live-smoke với DuckDB có dữ liệu thật.
 
 - [x] **kactus-common/data** — `DatabaseClient.execute(sql, params)` + `DuckDBStorage.query(sql, params)` nhận positional params (hết nội suy chuỗi cho giá trị từ client)
-- [x] **kactus-fin** — `market/` (`api`/`app`), `KactusApp(name="market", session_routes=[router])`. Sau khi tách data plane: `olap.py` bị xoá, `const`/`schema` lên `kactus_common/market/`, `service.py` xuống `kactus_data/market/`; mỗi endpoint chỉ `await data_client.X(...)`
+- [x] **kactus-fin** — `market/` (`api`/`app`), `KactusApp(name="market", session_routes=[router])`. Sau khi tách data plane: `olap.py` bị xoá, `const`/`schema` chuyển vào domain libs `kactus_gold`/`kactus_stock_vn` (libs/domain), `service.py` xuống `kactus_data/market/`; mỗi endpoint chỉ `await data_client.X(...)`
 - [x] **Endpoints** — `GET /api/market/gold`, `/stocks` (search), `/stocks/quotes`, `/stocks/{symbol}`, `/stocks/{symbol}/ohlcv`, `/stocks/{symbol}/news`, `/stocks/{symbol}/finance`
 - [x] **Đọc blocking → `asyncio.to_thread`**, limit bị chặn trần (`MAX_LIMIT=2000`), bảng chưa crawl = list rỗng chứ không 500
 - [x] **kactus-bloom** — `modules/market/` (Gold board, Stock list + detail có chart recharts + news, Finance pivot theo kỳ) + `useMarketQuery` + i18n vi+en + route/sidebar
@@ -256,16 +256,16 @@ REST API đọc thẳng các bảng OLAP (DuckDB) do ETL kactus-data ghi — kh�
 ### `kactus-data` — ✅ Core Done, 🚧 Needs More Sources
 - SyncPipeline framework hoạt động
 - 5 data sources implemented (Gold, Stock OHLCV, Stock Listing, Finance, Company)
-- DuckDB storage operational (chỉ được mở read-write bởi `kactus-data-server`)
+- DuckDB storage operational (chỉ được mở read-write bởi `kactus-data-plane`)
 - ❌ Coin source chưa implement
-- ✅ Scheduled sync — APScheduler trong `services/kactus-data-server`
+- ✅ Scheduled sync — APScheduler trong `services/kactus-data-plane`
 - ❌ Sync history/retry chưa có
 
 #### Data plane / control plane split ✅
 
-Tách `services/kactus-data-server` (port 17602) khỏi `kactus-fin`. 479 backend tests pass; `uv run lint-imports` KEPT cả 2 contract. ⚠️ **Chưa build được Docker image** (Docker daemon không chạy trên máy dev) — compose chỉ mới validate bằng `docker compose config`.
+Tách `services/kactus-data-plane` (port 17602) khỏi `kactus-fin`. 479 backend tests pass; `uv run lint-imports` KEPT cả 2 contract. ⚠️ **Chưa build được Docker image** (Docker daemon không chạy trên máy dev) — compose chỉ mới validate bằng `docker compose config`.
 
-- [x] **kactus-data-server** — `config`/`app`/`runtime` (`DataRuntime`: DuckDB + providers + scheduler)/`security` (`X-Service-Token`, `hmac.compare_digest`, unset token = fail closed)/`symbol_provider` (`WatchlistSymbolProvider` đọc thẳng Postgres) + CLI (**không có** `--workers`, cố định 1)
+- [x] **kactus-data-plane** — `config`/`app`/`runtime` (`DataRuntime`: DuckDB + providers + scheduler)/`security` (`X-Service-Token`, `hmac.compare_digest`, unset token = fail closed)/`symbol_provider` (`WatchlistSymbolProvider` đọc thẳng Postgres) + CLI (**không có** `--workers`, cố định 1)
 - [x] **`/internal` API** — `market/*` (7 endpoint ↔ 7 method `MarketService`), `assets/{asset_type}/{kind}` (thay cả 3 chỗ `provider.read`), `crawl`, `catalog/sync`, `scheduler/status`. `/health` là route duy nhất không cần token
 - [x] **kactus-fin** — `data_client.py` (httpx pool + token + timeout, lỗi → `ExternalServiceError`/502, **không** trả `[]`), bỏ dependency `kactus-data`, xoá `olap.py`/`portfolio/runtime.py`/`portfolio/symbol_provider.py`/`portfolio/sse.py`
 - [x] **import-linter** — thêm contract `forbidden`: `kactus_fin` ✗→ `kactus_data`, `duckdb` (contract `layers` một mình vẫn cho services → libs)
@@ -276,7 +276,7 @@ Tách `services/kactus-data-server` (port 17602) khỏi `kactus-fin`. 479 backen
 
 - [x] **`kactus_notification/queue.py`** — Redis **Streams** (`XADD` → group `notifiers` → `XACK`), **không** pub/sub vì mất một alert là lỗi thật. Handler raise ⇒ **không ack** ⇒ `reclaim_stale()` (XPENDING + XCLAIM) replay; quá `notification_queue_max_deliveries` ⇒ ack + log ERROR (chống poison loop)
 - [x] **`POST /{channel_id}/send` → 202 ngay** (đo được <100ms với channel treo 30s). `POST /{channel_id}/test` giữ **đồng bộ** — user đang chờ kết quả credential
-- [x] **Consumer chạy ở kactus-fin, mỗi worker một cái** (lệch plan: consumer group *chia* việc nên N worker = N sender + failover; và kactus-data-server cố ý không phụ thuộc kactus-notification, đặt ở đó là kéo `zlapi` vào image ETL)
+- [x] **Consumer chạy ở kactus-fin, mỗi worker một cái** (lệch plan: consumer group *chia* việc nên N worker = N sender + failover; và kactus-data-plane cố ý không phụ thuộc kactus-notification, đặt ở đó là kéo `zlapi` vào image ETL)
 - [x] **`kactus_fin/action/`** — `ActionToken` (Postgres, TTL 15', consume bằng **conditional UPDATE** nên 2 click đồng thời chỉ 1 chạy), HMAC ký id+user+action+params, secret **fail closed**
 - [x] ⚠️ **`GET /api/actions/{token}` không đổi state** — chỉ render trang xác nhận; chỉ `POST` mới consume + thực thi (Telegram/Slack/Zalo prefetch link để render preview)
 - [x] **Mã lỗi** — sai chữ ký / token người khác → 403, dùng lại → 409, hết hạn → 410 (`GoneError` mới trong kactus-common)

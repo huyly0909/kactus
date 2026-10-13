@@ -20,8 +20,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { useFormatDateTime } from '@/hooks/useFormatDateTime';
 import { useFinanceReports } from '@/hooks/useMarketQuery';
-import { fmtCompact, fmtDateTime, num } from '@/lib/format';
+import { fmtCompact, num } from '@/lib/format';
 import type { FinanceReport, ReportPeriod, ReportType } from '@/types/market';
 
 const REPORT_TYPES: ReportType[] = ['income_statement', 'balance_sheet', 'cash_flow', 'ratio'];
@@ -46,6 +47,7 @@ function cellValue(v: unknown): string {
 export function FinancePage() {
   const { t } = useTranslation();
   const [params, setParams] = useSearchParams();
+  const fmtDateTime = useFormatDateTime();
 
   const symbol = (params.get('symbol') ?? '').toUpperCase();
   const [input, setInput] = useState(symbol);

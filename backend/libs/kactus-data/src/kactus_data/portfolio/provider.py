@@ -15,21 +15,32 @@ import json
 from abc import ABC, abstractmethod
 from datetime import date, datetime
 
+import pandas as pd
 from kactus_common.database.duckdb.schema import Table
+from kactus_common.datetimes import utcnow_naive
 from kactus_common.portfolio.const import AssetType, CrawlKind
+from kactus_data.exceptions import RateLimitedError
 from kactus_data.sources.gold.mihong import CHI_TO_LUONG as MIHONG_CHI_TO_LUONG
 from kactus_data.sources.gold.mihong import SUPPORTED_CODES as MIHONG_CODES
 from kactus_data.sources.gold.mihong import MihongGoldSource
 from kactus_data.sources.gold.portfolio_tables import (
+    BOARD_SOURCE_PRIORITY,
     GOLD_PRICE_BOARD_TABLE,
+    GOLD_PRICE_TICK_TABLE,
+    MIHONG_BOARD_CODES,
     UNIT_USD_PER_OZ,
     UNIT_VND_PER_LUONG,
 )
 from kactus_data.sources.gold.sjc import SjcGoldSource
 from kactus_data.sources.gold.yahoo import CODE as XAU_CODE
 from kactus_data.sources.gold.yahoo import YahooGoldSource
-from kactus_data.sources.stock.market import StockMarketSource, _to_table_df
+from kactus_data.sources.stock.market import (
+    StockMarketSource,
+    _to_table_df,
+    daily_snapshot,
+)
 from kactus_data.sources.stock.portfolio_tables import (
+    STOCK_DAILY_SNAPSHOT_TABLE,
     STOCK_EVENTS_TABLE,
     STOCK_NEWS_TABLE,
     STOCK_PRICE_BOARD_TABLE,
@@ -104,7 +115,11 @@ class StockAssetProvider(AssetProvider):
         }
 
     def supported_kinds(self) -> set[CrawlKind]:
-        return set(self._kind_table)
+        # OHLCV is deliberately absent from ``_kind_table``: it does not go
+        # through ``crawl()`` but through ``crawl_ohlcv_blocking`` (SyncPipeline
+        # + tier pacing, per code).  It still has to be advertised here, or the
+        # queue handler rejects every ``stock_ohlcv`` job at the gate.
+        return set(self._kind_table) | {CrawlKind.OHLCV}
 
     def fetch_catalog(self) -> list[dict]:
         return self.market.catalog()
@@ -118,10 +133,46 @@ class StockAssetProvider(AssetProvider):
             CrawlKind.RATIOS: self.decision_market.ratios,
             CrawlKind.EVENTS: self.decision_market.events,
         }[kind]
-        df = fetch(codes)
+        try:
+            df = fetch(codes)
+        except RateLimitedError as ex:
+            # Keep what the truncated fetch produced, then let the job layer
+            # finish FAILED with the full reason — partial data beats none.
+            stored = 0
+            if ex.df is not None and not ex.df.empty:
+                stored = self.storage.store(self._kind_table[kind], ex.df)
+            raise RateLimitedError(
+                done=ex.done, total=ex.total, rows_stored=stored
+            ) from ex
         if df.empty:
             return 0
-        return self.storage.store(self._kind_table[kind], df)
+        rows = self.storage.store(self._kind_table[kind], df)
+        if kind is CrawlKind.QUOTES:
+            # Derived from the same board rows — counting it too would report
+            # every quotes crawl at twice the rows it actually fetched.
+            self._store_daily_snapshot(df)
+        return rows
+
+    def _store_daily_snapshot(self, board: pd.DataFrame) -> int:
+        """Persist the session row derived from a freshly-crawled price board.
+
+        Rides along with QUOTES rather than being its own crawl kind: the board
+        already carries every figure, so this costs no request and no extra
+        rate-limit exposure. The quotes cron fires hourly through the session
+        and the table upserts on ``(symbol, trade_date)``, so the row is
+        refined all day and ends up holding the close.
+
+        Never fatal — a snapshot failure must not fail the quotes crawl that
+        produced usable board rows.
+        """
+        try:
+            snap = daily_snapshot(board, source=self.market.source)
+            if snap.empty:
+                return 0
+            return self.storage.store(STOCK_DAILY_SNAPSHOT_TABLE, snap)
+        except Exception as ex:  # pragma: no cover - defensive
+            logger.warning(f"daily snapshot failed: {ex}")
+            return 0
 
     def read(self, kind: CrawlKind, codes: list[str]) -> list[dict]:
         table = self._kind_table.get(kind)
@@ -131,16 +182,23 @@ class StockAssetProvider(AssetProvider):
 
 
 class GoldAssetProvider(AssetProvider):
-    """GOLD provider — SJC-official quotes with a mihong.vn fallback.
+    """GOLD provider — SJC-official quotes plus mihong.vn.
 
-    sjc.com.vn is the issuer of the SJC bar reference price, so it is tried
-    first; mihong covers the same two codes and takes over whenever the SJC
-    board is unreachable (it sits behind Cloudflare).  Every price stored in
-    ``gold_price_board`` is **VND per lượng** — mihong quotes per chỉ and is
-    scaled on the way in, so rows stay comparable across sources.
+    sjc.com.vn is the issuer of the domestic reference price, so it leads.
+    mihong plays **two** roles: an independent series for
+    ``MIHONG_BOARD_CODES`` (SJC and mihong both quote 999, as different
+    products), and the fallback for any domestic code whenever the SJC board
+    is unreachable (it sits behind Cloudflare).  ``gold_price_board`` is keyed
+    ``(code, source)`` and keeps every series side by side; choosing one quote
+    per code happens at read time, in :func:`_preferred_gold_rows`.
 
-    DOJI/PNJ remain in the seeded catalog but have no free daily feed wired yet,
-    so they are skipped rather than crawled.
+    Every price stored in ``gold_price_board`` is **VND per lượng** — mihong
+    quotes per chỉ and is scaled on the way in, so rows stay comparable
+    across sources.
+
+    The catalog is the three codes with a wired feed — SJC bar, 999 ring, and
+    world gold (XAU). DOJI/PNJ were dropped: no free daily feed, and the SJC
+    board already publishes the authoritative domestic reference.
     """
 
     asset_type = AssetType.GOLD
@@ -149,13 +207,11 @@ class GoldAssetProvider(AssetProvider):
         "SJC": "Vàng miếng SJC",
         "999": "Vàng nhẫn 99,99%",
         XAU_CODE: "Vàng thế giới (XAU/USD)",
-        "DOJI": "DOJI",
-        "PNJ": "PNJ",
     }
-    #: Codes with a working daily feed.  DOJI/PNJ stay in the catalog so the UI
-    #: can list them, but are flagged disabled until a source is wired.
+    #: Codes with a working daily feed — every seeded code is crawlable now that
+    #: DOJI/PNJ are gone; ``_ENABLED`` still gates ``fetch_catalog`` for clarity.
     _ENABLED = frozenset({"SJC", "999", XAU_CODE})
-    _SEED = ["SJC", "999", XAU_CODE, "DOJI", "PNJ"]
+    _SEED = ["SJC", "999", XAU_CODE]
 
     def __init__(self, storage: DuckDBStorage, xsrf_token: str | None = None) -> None:
         self.storage = storage
@@ -195,7 +251,7 @@ class GoldAssetProvider(AssetProvider):
 
         wanted = [str(c).upper() for c in codes]
         today = date.today()
-        now = datetime.now()
+        now = utcnow_naive()
 
         # Only reach for the domestic sources if a domestic code was asked for;
         # one SJC request prices every code SJC publishes.
@@ -207,20 +263,39 @@ class GoldAssetProvider(AssetProvider):
         rows: list[dict] = []
         for code in wanted:
             if code == XAU_CODE:
-                row = self._yahoo_row(YahooGoldSource(), now)
+                got = [self._yahoo_row(YahooGoldSource(), now)]
             else:
-                row = self._sjc_row(sjc, code, sjc_board, now) or self._mihong_row(
-                    mihong, code, today, now
+                sjc_row = self._sjc_row(sjc, code, sjc_board, now)
+                # Not a short-circuit any more: with the board keyed
+                # (code, source), mihong's 999 is its own series and must be
+                # refreshed by every crawl or it goes permanently stale. It is
+                # still *also* the fallback when SJC yields nothing.
+                mihong_row = (
+                    self._mihong_row(mihong, code, today, now)
+                    if code in MIHONG_BOARD_CODES or sjc_row is None
+                    else None
                 )
-            if row is None:
+                got = [sjc_row, mihong_row]
+            fetched = [r for r in got if r is not None]
+            if not fetched:
                 logger.debug("No gold quote available for {code}", code=code)
                 continue
-            rows.append(row)
+            rows.extend(fetched)
 
         df = _to_table_df(rows, GOLD_PRICE_BOARD_TABLE)
         if df.empty:
             return 0
-        return self.storage.store(GOLD_PRICE_BOARD_TABLE, df)
+        stored = self.storage.store(GOLD_PRICE_BOARD_TABLE, df)
+        # Every crawl also logs a tick (decision #6): the board rows already
+        # carry every tick column, so the hourly scheduler accumulates an
+        # intraday trail with no extra fetch. PK (code, source, crawled_at)
+        # keeps each crawl distinct; the board keeps only the latest per
+        # (code, source). ``stored`` can exceed ``len(codes)`` — a dual-sourced
+        # code writes one row per source.
+        self.storage.store(
+            GOLD_PRICE_TICK_TABLE, _to_table_df(rows, GOLD_PRICE_TICK_TABLE)
+        )
+        return stored
 
     @staticmethod
     def _sjc_row(
@@ -291,7 +366,8 @@ class GoldAssetProvider(AssetProvider):
     def read(self, kind: CrawlKind, codes: list[str]) -> list[dict]:
         if kind != CrawlKind.QUOTES:
             return []
-        return self._read_by_column(self.storage, GOLD_PRICE_BOARD_TABLE, "code", codes)
+        rows = self._read_by_column(self.storage, GOLD_PRICE_BOARD_TABLE, "code", codes)
+        return _preferred_gold_rows(rows)
 
     @staticmethod
     def _latest_point(data) -> dict:
@@ -318,6 +394,44 @@ def _safe_float(v) -> float | None:
         return None if v is None else float(v)
     except (TypeError, ValueError):
         return None
+
+
+#: Floor for a missing ``crawled_at``. Not ``datetime.min``: comparing a
+#: ``pd.Timestamp`` against year 1 raises ``OutOfBoundsDatetime`` (outside the
+#: nanosecond range).
+_EPOCH = datetime(1970, 1, 1)
+
+
+def _gold_rank(row: dict) -> tuple[datetime, int]:
+    """Sort key for picking one board row per code: freshest, then authority."""
+    crawled = row.get("crawled_at")
+    if crawled is None or crawled != crawled:  # None or NaT
+        crawled = _EPOCH
+    source = row.get("source")
+    try:
+        priority = BOARD_SOURCE_PRIORITY.index(source)
+    except ValueError:
+        # An unrecognised feed ranks last rather than blowing up the read.
+        priority = len(BOARD_SOURCE_PRIORITY)
+    return (crawled, -priority)
+
+
+def _preferred_gold_rows(rows: list[dict]) -> list[dict]:
+    """Collapse a ``(code, source)`` board to one row per code.
+
+    The board deliberately keeps SJC-999 and Mihong-999 side by side, but a
+    portfolio holding of "999" is one position and must show one price.
+    Freshest wins — that is what keeps mihong acting as the SJC fallback now
+    that it no longer overwrites SJC's row. Ties (the normal case: one crawl
+    stamps every row with the same instant) go to the higher-authority source.
+    """
+    best: dict[str, dict] = {}
+    for row in rows:
+        code = row.get("code")
+        current = best.get(code)
+        if current is None or _gold_rank(row) > _gold_rank(current):
+            best[code] = row
+    return list(best.values())
 
 
 def build_providers(

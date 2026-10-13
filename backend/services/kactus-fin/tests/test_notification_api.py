@@ -17,8 +17,11 @@ from httpx import ASGITransport, AsyncClient
 from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
+from kactus_common.project.service import ProjectService
 from kactus_common.redis import client as redis_client_mod
 from kactus_common.user import auth as auth_mod
+from kactus_common.user.const import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
+from kactus_common.user.context import set_current_project_id
 from kactus_common.user.model import User
 from kactus_fin.notification.consumer import deliver
 from kactus_notification import dispatcher
@@ -108,6 +111,10 @@ async def seed_user(db) -> User:
         session.add(user)
         await session.commit()
         await session.refresh(user)
+        # A non-admin user gets a personal project on creation; the API is now
+        # project-scoped, so tests need one selected. Stash its id for the cookie.
+        project = await ProjectService.ensure_personal_project(session, user=user)
+        user._project_id = project.id
     return user
 
 
@@ -121,6 +128,9 @@ async def client(app, seed_user):
         )
         assert login.status_code == 200
         c.cookies.update(dict(login.cookies))
+        c.headers[CSRF_HEADER_NAME] = login.cookies[CSRF_COOKIE_NAME]
+        # Select the personal project (backend reads the kactus_project_id cookie).
+        c.cookies.set("kactus_project_id", str(seed_user._project_id))
         yield c
 
 
@@ -198,7 +208,7 @@ async def test_test_endpoint(client, monkeypatch):
         "id"
     ]
 
-    async def _ok(channel):
+    async def _ok(channel, session=None):
         return True
 
     monkeypatch.setattr(dispatcher.Notifier, "test", staticmethod(_ok))
@@ -208,12 +218,39 @@ async def test_test_endpoint(client, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_test_endpoint_records_history(client, monkeypatch):
+    """The real Notifier.test writes a trigger=test row so a dead probe is visible."""
+    cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
+        "id"
+    ]
+
+    class _Impl:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return None
+
+        def test_connection(self):
+            return False
+
+    monkeypatch.setattr(dispatcher, "build_channel", lambda t, c: _Impl())
+    resp = await client.post(f"/api/notifications/{cid}/test")
+    assert resp.status_code == 502
+
+    logs = (await client.get(f"/api/notifications/{cid}/logs")).json()["data"]
+    assert logs["total"] == 1
+    assert logs["items"][0]["trigger"] == "test"
+    assert logs["items"][0]["status"] == "failed"
+
+
+@pytest.mark.asyncio
 async def test_test_endpoint_failure_is_502(client, monkeypatch):
     cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
         "id"
     ]
 
-    async def _fail(channel):
+    async def _fail(channel, session=None):
         return False
 
     monkeypatch.setattr(dispatcher.Notifier, "test", staticmethod(_fail))
@@ -249,6 +286,42 @@ async def test_send_endpoint_inline_on_the_memory_backend(client, monkeypatch):
     assert resp.json()["data"]["message"] == "sent"
     assert captured["title"] == "Giá vàng"
     assert str(captured["channel_id"]) == str(cid)
+
+
+@pytest.mark.asyncio
+async def test_send_blocked_on_inactive_channel(client):
+    """Deactivate must mean silence — /send fast-fails with 409 before enqueue."""
+    cid = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()["data"][
+        "id"
+    ]
+    await client.put(f"/api/notifications/{cid}", json={"is_active": False})
+    resp = await client.post(f"/api/notifications/{cid}/send", json={"title": "nope"})
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "CONFLICT"
+
+
+@pytest.mark.asyncio
+async def test_masked_config_update_keeps_stored_secrets(client, db, seed_user):
+    """PUT-ing back a fetched (masked) config must not clobber real secrets."""
+    created = (await client.post("/api/notifications", json=TELEGRAM_BODY)).json()[
+        "data"
+    ]
+    cid = created["id"]
+    masked = created["config"]  # bot_token is "***" here
+    assert masked["bot_token"] == "***"
+    masked["chat_id"] = "999"  # a legitimate non-secret edit
+    resp = await client.put(f"/api/notifications/{cid}", json={"config": masked})
+    assert resp.status_code == 200
+    assert resp.json()["data"]["config"]["chat_id"] == "999"
+
+    set_current_project_id(seed_user._project_id)
+    try:
+        async with db.get_session() as session:
+            channel = await NotificationChannelService.get_or_404(session, int(cid))
+            assert channel.config["bot_token"] == "secret-token"  # survived the mask
+            assert channel.config["chat_id"] == "999"
+    finally:
+        set_current_project_id(None)
 
 
 @pytest.mark.asyncio
@@ -394,7 +467,7 @@ async def test_test_endpoint_stays_synchronous(client, redis_queue, monkeypatch)
     they work; a 202 there answers nothing.
     """
 
-    async def _test(channel):
+    async def _test(channel, session=None):
         return True
 
     monkeypatch.setattr(dispatcher.Notifier, "test", staticmethod(_test))
@@ -420,8 +493,8 @@ async def test_logs_endpoint(client, db, seed_user):
 
     # Seed two audit rows directly (mirrors what Notifier.send_event writes).
     async with db.get_session() as session:
-        channel = await NotificationChannelService.get_owned_or_404(
-            session, channel_id=int(cid), owner_id=seed_user.id
+        channel = await NotificationChannelService.get_or_404(
+            session, channel_id=int(cid)
         )
         await NotificationLogService.record(
             session,

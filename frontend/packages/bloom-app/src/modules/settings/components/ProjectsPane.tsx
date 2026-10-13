@@ -1,0 +1,75 @@
+import { useTranslation } from 'react-i18next';
+import { Badge } from '@/components/ui/badge';
+import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
+import { useAdminProjects } from '@/hooks/useAdminQuery';
+import { projectDisplayName, projectMemberCount } from '@/lib/project';
+import { ProjectOwner } from '@modules/project/components/ProjectOwner';
+import type { Project } from '@/types/project';
+
+/** Read-only list of every project in the system (superuser only). */
+export function ProjectsPane() {
+  const { t } = useTranslation();
+  const { data, isLoading } = useAdminProjects();
+
+  const columns: DataTableColumn<Project>[] = [
+    {
+      key: 'name',
+      title: t('admin.projects.name'),
+      className: 'font-medium',
+      sortable: true,
+      render: projectDisplayName,
+    },
+    {
+      key: 'code',
+      title: t('admin.projects.code'),
+      render: (p) => <code className="font-mono text-xs text-muted-foreground">{p.code}</code>,
+    },
+    {
+      key: 'owner_name',
+      title: t('admin.projects.owner'),
+      sortable: true,
+      exportValue: (p) =>
+        p.has_owner ? (p.owner_name ?? p.owner_email ?? '') : t('projects.owner_unassigned'),
+      render: (p) => <ProjectOwner project={p} className="text-muted-foreground" />,
+    },
+    {
+      key: 'member_count',
+      title: t('admin.projects.members'),
+      align: 'right',
+      className: 'tabular-nums',
+      sortable: true,
+      sortAccessor: projectMemberCount,
+      render: projectMemberCount,
+    },
+    {
+      key: 'description',
+      title: t('admin.projects.description'),
+      render: (p) => <span className="text-muted-foreground">{p.description || '—'}</span>,
+    },
+    {
+      key: 'status',
+      title: t('admin.projects.status'),
+      render: (p) => (
+        <Badge variant={p.status === 'active' ? 'success' : 'secondary'}>{p.status}</Badge>
+      ),
+    },
+  ];
+
+  return (
+    <div className="animate-in fade-in slide-in-from-bottom-2 p-6 duration-300 md:p-8">
+      <div className="mb-6">
+        <p className="text-sm text-muted-foreground">{t('admin.projects.subtitle')}</p>
+      </div>
+
+      <DataTable
+        columns={columns}
+        data={data?.items ?? []}
+        loading={isLoading}
+        searchable
+        searchPlaceholder={t('common.search')}
+        emptyMessage={t('admin.projects.empty')}
+        getRowKey={(p) => p.id}
+      />
+    </div>
+  );
+}

@@ -66,6 +66,17 @@ class DateTimeTzAware(TypeDecorator):
             return dialect.type_descriptor(TIMESTAMP(timezone=True))
         return dialect.type_descriptor(DateTime())
 
+    def process_bind_param(
+        self,
+        value: datetime.datetime | None,
+        dialect: "Dialect",
+    ) -> datetime.datetime | None:
+        # Coerce to UTC on write so a caller passing a naive datetime cannot
+        # store an ambiguous, un-zoned value (read already coerces to UTC).
+        if not value:
+            return value
+        return _to_utc(value)
+
     def process_result_value(
         self,
         value: datetime.datetime,

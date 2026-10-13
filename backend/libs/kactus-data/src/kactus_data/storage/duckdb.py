@@ -80,6 +80,10 @@ class DuckDBStorage:
         already has the table. Since the INSERT is positional, drift is not
         cosmetic: it misaligns values or fails outright. Returns an empty list
         when the table matches or does not exist yet.
+
+        Columns **and primary keys** are compared; nullability deliberately is
+        not — every table predating the current definitions would light up and
+        turn ``schema check`` into noise.
         """
         if not self._client.table_exists(table.name):
             return []
@@ -101,6 +105,21 @@ class DuckDBStorage:
         drift.extend(
             f"extra column {n} ({t})" for n, t in actual.items() if n not in expected
         )
+
+        # A PK change is invisible in the column diff (same names, same types)
+        # yet breaks the UPSERT: the DELETE is built from the *definition*'s key
+        # while the on-disk constraint is the old one. Compare as sets —
+        # DESCRIBE lists columns in table order, not key order.
+        info = self._client.get_table_info(table.name)
+        actual_pk = {
+            name for name, key in zip(info["column_name"], info["key"]) if key == "PRI"
+        }
+        expected_pk = table.get_primary_key_columns()
+        if actual_pk != set(expected_pk):
+            drift.append(
+                f"primary key ({', '.join(sorted(actual_pk)) or 'none'}) → "
+                f"({', '.join(expected_pk) or 'none'})"
+            )
         return drift
 
     def recreate_table(self, table: Table) -> None:

@@ -145,13 +145,45 @@ class TestPermissionDecorator:
         with pytest.raises(PermissionDeniedError, match="Cannot resolve"):
             _run(endpoint(session=MagicMock()))
 
-    def test_no_session_raises(self):
-        """Should raise if session is missing (wrong decorator order)."""
+    def test_opens_own_session_when_not_injected(self):
+        """Order-independent: with no injected session the decorator opens its own.
+
+        ``@permission`` is the outer wrapper and runs before ``@provide_session``
+        injects a session, so it must resolve the member role via its own
+        short-lived session rather than depending on decorator order.
+        """
 
         @permission(PROJECT, PermissionAct.read)
         async def endpoint(request):
             return "ok"
 
         request = _make_request()
-        with pytest.raises(PermissionDeniedError, match="Session not available"):
-            _run(endpoint(request=request))
+        own_session = AsyncMock()
+
+        class _CM:
+            async def __aenter__(self):
+                return own_session
+
+            async def __aexit__(self, *exc):
+                return False
+
+        fake_db = MagicMock()
+        fake_db.get_session.return_value = _CM()
+        mock_casbin = _make_casbin_svc(enforce_result=True)
+
+        with (
+            patch("kactus_common.database.oltp.session.get_db", return_value=fake_db),
+            patch("kactus_common.project.service.ProjectService") as mock_ps,
+            patch(
+                "kactus_common.authorization.casbin_service.get_casbin_service",
+                return_value=mock_casbin,
+            ),
+        ):
+            mock_ps.get_member_role = AsyncMock(return_value="member")
+            result = _run(endpoint(request=request))
+
+        assert result == "ok"
+        fake_db.get_session.assert_called_once()
+        mock_ps.get_member_role.assert_awaited_once_with(
+            own_session, project_id=42, user_id=1
+        )

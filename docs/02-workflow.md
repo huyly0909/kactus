@@ -85,6 +85,8 @@ Client (Browser)                  Backend (kactus-fin)
      │                                  │  3. Tạo session record trong DB
      │                                  │  4. Set-Cookie: kactus_session_id
      │◄─────────────────────────────────┤     (httpOnly, secure, samesite=lax)
+     │                                  │  5. Set-Cookie: kactus_xsrf_token
+     │                                  │     (KHÔNG httpOnly — SPA đọc để gửi lại)
      │  Response: { user: UserInfo }    │
      │                                  │
 ```
@@ -94,8 +96,9 @@ Client (Browser)                  Backend (kactus-fin)
 ```
 Client                             Backend
   │                                  │
-  │  GET /api/projects               │
+  │  POST /api/projects              │
   │  Cookie: kactus_session_id=xxx   │
+  │  X-XSRF-TOKEN: <token>           │  (chỉ method unsafe; axios tự gửi)
   ├─────────────────────────────────►│
   │                                  │  1. Đọc session cookie
   │                                  │  2. Tìm UserSession trong DB
@@ -104,6 +107,8 @@ Client                             Backend
   │                                  │  5. Set request.state.project_id
   │                                  │     (từ kactus_project_id cookie)
   │                                  │  6. Set ContextVar cho AuditMixin
+  │                                  │  7. verify_csrf: header ==
+  │                                  │     HMAC(session_id) — sai → 403
   │◄─────────────────────────────────┤
   │  Response data                   │
 ```
@@ -112,6 +117,11 @@ Client                             Backend
 - **Session-based auth** (không phải JWT) — session ID lưu trong httpOnly cookie
 - Cookie `kactus_session_id` — httpOnly, secure (prod), samesite=lax
 - Cookie `kactus_project_id` — client-managed, dùng js-cookie, lưu project đang chọn
+- Cookie `kactus_xsrf_token` — CSRF token = `HMAC-SHA256(session_id)`, JS đọc được; mọi
+  request POST/PUT/PATCH/DELETE trên session route phải gửi lại qua header
+  `X-XSRF-TOKEN` (axios làm tự động), thiếu/sai → 403 `CSRF_FAILED`. Public route
+  (login) được miễn. Request GET tự cấp lại cookie nếu thiếu/cũ.
+- CORS: mặc định same-origin (không CORS middleware) — `KACTUS_CORS_ALLOW_ORIGINS`
 - Session expiry: 7 ngày (default), 1 năm (remember me)
 
 ---
@@ -231,7 +241,7 @@ EventSource clients (browser)  →  TanStack Query invalidate  →  refetch REST
 
 **Khác với Data Pipeline thường**: union mã được tính ở `kactus-fin` (biết portfolio) rồi inject `list[str]` xuống `kactus-data` (không biết portfolio) — giữ dependency một chiều. Manual refresh dùng **cùng** code path (one-shot job) + dedup qua `crawl_runs`.
 
-**Lưu ý deploy (đã cập nhật)**: SSE broker fan-out qua **Redis pub/sub**, scheduler + DuckDB nằm trong `services/kactus-data-server` (**1 worker / 1 replica**, không đổi được). `kactus-fin` do đó multi-worker bình thường. Union mã bây giờ tính ở data plane (`WatchlistSymbolProvider` đọc thẳng Postgres) — crawl không phụ thuộc kactus-fin còn sống hay không.
+**Lưu ý deploy (đã cập nhật)**: SSE broker fan-out qua **Redis pub/sub**, scheduler + DuckDB nằm trong `services/kactus-data-plane` (**1 worker / 1 replica**, không đổi được). `kactus-fin` do đó multi-worker bình thường. Union mã bây giờ tính ở data plane (`WatchlistSymbolProvider` đọc thẳng Postgres) — crawl không phụ thuộc kactus-fin còn sống hay không.
 
 ---
 

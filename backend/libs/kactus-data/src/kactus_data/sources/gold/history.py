@@ -21,8 +21,8 @@ from enum import StrEnum
 from io import BytesIO
 
 import pandas as pd
+from kactus_common.datetimes import utcnow_naive
 from kactus_common.exceptions import ValidationError
-from kactus_common.market.schema import GoldImportResultSchema
 from kactus_data.sources.gold.history_tables import GOLD_PRICE_HISTORY_TABLE
 from kactus_data.sources.gold.portfolio_tables import (
     UNIT_USD_PER_OZ,
@@ -31,6 +31,8 @@ from kactus_data.sources.gold.portfolio_tables import (
 from kactus_data.sources.gold.yahoo import CODE as XAU_CODE
 from kactus_data.sources.stock.market import _to_table_df
 from kactus_data.storage.duckdb import DuckDBStorage
+from kactus_data.util.time import to_event_dt
+from kactus_gold.schema import GoldImportResultSchema
 
 
 class GoldHistoryDataset(StrEnum):
@@ -111,7 +113,7 @@ def parse_history_csv(
             data={"columns": list(raw.columns)},
         )
 
-    imported_at = datetime.datetime.now(datetime.UTC)
+    imported_at = utcnow_naive()
     source = _SOURCES[dataset]
     rows: list[dict] = []
     errors: list[str] = []
@@ -119,11 +121,15 @@ def parse_history_csv(
 
     for line, record in enumerate(raw.to_dict("records"), start=2):
         try:
+            row_date = datetime.date.fromisoformat(record["date"].strip())
             row = {
-                "date": datetime.date.fromisoformat(record["date"].strip()),
+                "date": row_date,
                 "unit": UNIT_VND_PER_LUONG,
                 "source": source,
                 "imported_at": imported_at,
+                # Native ``date`` stays the Vietnam trading day; ``event_dt`` is
+                # its canonical UTC instant (midnight VN → UTC).
+                "event_dt": to_event_dt(row_date),
             }
             if dataset == GoldHistoryDataset.SJC:
                 row["code"] = SJC_CODE

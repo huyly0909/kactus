@@ -13,6 +13,11 @@ audience is a browser opened from a chat app, not the SPA.
 Both verbs require a session.  The token is a *pre-authorisation*, not a
 credential — anyone who ends up holding the link (forwarded message, group chat,
 shoulder surf) still has to be signed in as the user it was issued for.
+
+A session alone does not stop that holder from making the *user's* browser
+submit the form (CSRF), so the page also carries the session's CSRF token in a
+hidden ``csrf_token`` field — a plain form cannot set the ``X-XSRF-TOKEN``
+header the SPA uses, and ``verify_csrf`` accepts the field instead.
 """
 
 from __future__ import annotations
@@ -21,7 +26,13 @@ import html
 
 from fastapi import Request
 from fastapi.responses import HTMLResponse
+from kactus_common.audit import audit
+from kactus_common.authorization.const import PermissionAct
+from kactus_common.authorization.decorator import permission
+from kactus_common.project.const import ProjectPermission
 from kactus_common.router import KactusAPIRouter
+from kactus_common.user.const import CSRF_FORM_FIELD, SESSION_COOKIE_NAME
+from kactus_common.user.csrf import csrf_token_for
 from kactus_fin.dependencies import provide_session
 from loguru import logger
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,7 +75,7 @@ def _page(title: str, body: str, *, status_code: int = 200) -> HTMLResponse:
     )
 
 
-def _confirmation_page(token: str, row: ActionToken) -> HTMLResponse:
+def _confirmation_page(token: str, row: ActionToken, csrf: str) -> HTMLResponse:
     label = ACTION_LABELS.get(ActionType(row.action), row.action)
     details = "".join(
         f"<dt>{html.escape(str(k))}</dt><dd>{html.escape(str(v))}</dd>"
@@ -76,11 +87,13 @@ def _confirmation_page(token: str, row: ActionToken) -> HTMLResponse:
         f"<dl>{details}</dl>"
         f"<p>This link can be used once and expires at {expires}.</p>"
         f"<form method='post' action='/api/actions/{html.escape(token)}'>"
+        f"<input type='hidden' name='{CSRF_FORM_FIELD}' value='{html.escape(csrf)}'>"
         "<button type='submit'>Confirm</button></form>",
     )
 
 
 @router.post("")
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def issue_action(
     body: ActionIssueRequest, request: Request, session: AsyncSession
@@ -110,6 +123,7 @@ async def issue_action(
 
 
 @router.get("/{token}", response_class=HTMLResponse)
+@permission(ProjectPermission.project, PermissionAct.read)
 @provide_session
 async def show_action(
     token: str, request: Request, session: AsyncSession
@@ -121,10 +135,12 @@ async def show_action(
     row = await ActionTokenService.resolve(
         session, token, user_id=request.state.user.id
     )
-    return _confirmation_page(token, row)
+    csrf = csrf_token_for(request.cookies.get(SESSION_COOKIE_NAME, ""))
+    return _confirmation_page(token, row, csrf)
 
 
 @router.post("/{token}", response_class=HTMLResponse)
+@permission(ProjectPermission.project, PermissionAct.write)
 @provide_session
 async def run_action(
     token: str, request: Request, session: AsyncSession
@@ -134,4 +150,5 @@ async def run_action(
     row = await ActionTokenService.resolve(session, token, user_id=user.id)
     message = await ActionTokenService.execute(session, row)
     logger.info(f"Action {row.action} executed by user {user.id} via token {row.id}")
+    audit("action.run", "action_token", row.id, meta={"action": str(row.action)})
     return _page("Done", f"<p>{html.escape(message)}</p>")

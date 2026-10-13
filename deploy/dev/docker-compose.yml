@@ -37,7 +37,7 @@ services:
       # so a Redis-only bug (a key that never expires, an unencrypted payload)
       # shows up here rather than first appearing in staging.
       KACTUS_COORDINATION_BACKEND: redis
-      KACTUS_DATA_PLANE_URL: http://kactus-data-server:17602
+      KACTUS_DATA_PLANE_URL: http://kactus-data-plane:17602
     ports:
       - "17600:17600"
     depends_on:
@@ -48,6 +48,8 @@ services:
     volumes:
       # No kactus-data mount: the control plane does not import it any more.
       - ../../backend/libs/core/kactus-common/src:/app/libs/core/kactus-common/src
+      - ../../backend/libs/domain/kactus-gold/src:/app/libs/domain/kactus-gold/src
+      - ../../backend/libs/domain/kactus-stock-vn/src:/app/libs/domain/kactus-stock-vn/src
       - ../../backend/libs/kactus-notification/src:/app/libs/kactus-notification/src
       - ../../backend/services/kactus-fin/src:/app/services/kactus-fin/src
     # Migrations run on every start — one fin replica in every env, so there is
@@ -57,11 +59,11 @@ services:
       uvicorn kactus_fin.app:app --host 0.0.0.0 --port 17600 --reload --log-level debug"
 
   # The data plane. Owns the DuckDB write handle and the crawl scheduler, so it
-  # runs exactly one worker and one replica — see Dockerfile.data-server.
-  kactus-data-server:
+  # runs exactly one worker and one replica — see Dockerfile.data-plane.
+  kactus-data-plane:
     build:
       context: ../../
-      dockerfile: deploy/Dockerfile.data-server
+      dockerfile: deploy/Dockerfile.data-plane
     env_file: .env
     environment:
       KACTUS_REDIS_URL: redis://redis:6379/0
@@ -82,25 +84,40 @@ services:
     volumes:
       - duckdb_data:/data
       - ../../backend/libs/core/kactus-common/src:/app/libs/core/kactus-common/src
+      - ../../backend/libs/domain/kactus-gold/src:/app/libs/domain/kactus-gold/src
+      - ../../backend/libs/domain/kactus-stock-vn/src:/app/libs/domain/kactus-stock-vn/src
       - ../../backend/libs/kactus-data/src:/app/libs/kactus-data/src
-      - ../../backend/services/kactus-data-server/src:/app/services/kactus-data-server/src
+      - ../../backend/services/kactus-data-plane/src:/app/services/kactus-data-plane/src
     command: >
-      uvicorn kactus_data_server.app:app --host 0.0.0.0 --port 17602 --reload --log-level debug
+      uvicorn kactus_data_plane.app:app --host 0.0.0.0 --port 17602 --reload --log-level debug
 
-  # Frontend SPA + reverse proxy. In dev this is for full-stack smoke tests;
-  # day-to-day frontend work runs on the host (`cd frontend && bun run dev`,
-  # vite on 17630 proxying to localhost:17600) — don't run both at once, they
-  # claim the same port.
+  # Frontend SPA — vite dev server with HMR (the `dev` stage of the Dockerfile,
+  # not the nginx build stag/prod use). Source is bind-mounted, so edits on the
+  # host hot-reload in the browser. Running `cd frontend && bun run dev` on the
+  # host still works for standalone frontend work, but don't run both at once —
+  # they claim the same port (17630).
   bloom-app:
     build:
       context: ../../
       dockerfile: deploy/Dockerfile.bloom-app
+      target: dev
+    environment:
+      # Vite runs inside the compose network: reach kactus-fin by service name
+      # (the host default localhost:17600 would resolve to this container), and
+      # flip on the container-only server tweaks (poll, listen-all, no-open).
+      VITE_DOCKER: "1"
+      VITE_PROXY_TARGET: http://kactus-fin:17600
     ports:
-      - "17630:80"
-    # Startup ordering only — nginx proxies per request, so a kactus-fin
-    # restart doesn't require restarting this container.
+      - "17630:17630"
+    # Startup ordering only — vite proxies per request, so a kactus-fin restart
+    # doesn't require restarting this container.
     depends_on:
       - kactus-fin
+    # Only src/ is mounted (not the whole package) so the image's linux
+    # node_modules are never shadowed by the host's darwin ones.
+    volumes:
+      - ../../frontend/packages/bloom-app/src:/app/packages/bloom-app/src
+      - ../../frontend/packages/bloom-ui/src:/app/packages/bloom-ui/src
 
   kactus-fin-gw:
     build:
@@ -123,7 +140,7 @@ services:
 volumes:
   postgres_data:
   redis_data:
-  # Mounted by kactus-data-server ONLY. DuckDB allows one read-write process or
+  # Mounted by kactus-data-plane ONLY. DuckDB allows one read-write process or
   # several read-only ones, never both across processes — a second service
   # mounting this would take the whole OLAP side down with a lock IOException.
   duckdb_data:

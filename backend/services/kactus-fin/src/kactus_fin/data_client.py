@@ -1,7 +1,7 @@
 """HTTP client for the data plane — the replacement for direct DuckDB access.
 
 DuckDB permits one read-write process or several read-only ones, never both
-across processes. Once kactus-data-server owns the write handle, kactus-fin
+across processes. Once kactus-data-plane owns the write handle, kactus-fin
 cannot open the file at all, so every market read became a network call. There
 is no "read it directly, just for this one cheap query" option; that is the real
 cost of the split, and this module is where it is paid.
@@ -24,24 +24,26 @@ from typing import Any
 import httpx
 from kactus_common.config import settings
 from kactus_common.exceptions import ExternalServiceError, ValidationError
-from kactus_common.market.schema import (
-    FinanceReportSchema,
+from kactus_common.portfolio.const import AssetType, CrawlKind
+from kactus_common.portfolio.schema import CrawlStatusSchema, MarketRowSchema
+from kactus_gold.schema import (
     GoldHistoryCodeSchema,
     GoldHistoryPointSchema,
     GoldImportResultSchema,
     GoldPriceSchema,
+)
+from kactus_stock_vn.schema import (
+    FinanceReportSchema,
+    FundamentalRadarSchema,
     OHLCVSchema,
+    StockDailyListSchema,
     StockDetailSchema,
+    StockEventSchema,
     StockListingSchema,
     StockNewsSchema,
+    StockOverviewSchema,
     StockQuoteSchema,
-)
-from kactus_common.portfolio.const import AssetType, CrawlKind, CrawlTrigger
-from kactus_common.portfolio.schema import (
-    CrawlRequest,
-    CrawlStatusSchema,
-    CrawlTriggerResponse,
-    MarketRowSchema,
+    TechnicalGaugeSchema,
 )
 from loguru import logger
 
@@ -138,6 +140,7 @@ async def list_gold(*, codes: list[str] | None = None) -> list[GoldPriceSchema]:
 async def list_gold_history(
     *,
     code: str,
+    source: str | None = None,
     start: datetime.date | None = None,
     end: datetime.date | None = None,
     limit: int | None = None,
@@ -147,6 +150,7 @@ async def list_gold_history(
         _clean(
             {
                 "code": code,
+                "source": source,
                 "start": start.isoformat() if start else None,
                 "end": end.isoformat() if end else None,
                 "limit": limit,
@@ -259,6 +263,33 @@ async def list_finance(
     return [FinanceReportSchema.model_validate(r) for r in rows]
 
 
+async def get_stock_overview(symbol: str) -> StockOverviewSchema | None:
+    row = await _get(f"/internal/market/stocks/{symbol}/overview")
+    return StockOverviewSchema.model_validate(row) if row else None
+
+
+async def list_events(symbol: str, *, limit: int = 20) -> list[StockEventSchema]:
+    rows = await _get(f"/internal/market/stocks/{symbol}/events", {"limit": limit})
+    return [StockEventSchema.model_validate(r) for r in rows]
+
+
+async def list_daily(symbol: str, *, limit: int = 20) -> StockDailyListSchema:
+    row = await _get(f"/internal/market/stocks/{symbol}/daily", {"limit": limit})
+    return StockDailyListSchema.model_validate(row)
+
+
+async def get_technical(symbol: str, *, interval: str = "1D") -> TechnicalGaugeSchema:
+    row = await _get(
+        f"/internal/market/stocks/{symbol}/technical", {"interval": interval}
+    )
+    return TechnicalGaugeSchema.model_validate(row)
+
+
+async def get_fundamental(symbol: str) -> FundamentalRadarSchema:
+    row = await _get(f"/internal/market/stocks/{symbol}/fundamental")
+    return FundamentalRadarSchema.model_validate(row)
+
+
 # --------------------------------------------------------------------------- #
 # Asset rows — mirrors provider.read(kind, codes)
 # --------------------------------------------------------------------------- #
@@ -273,33 +304,11 @@ async def read_assets(
 
 
 # --------------------------------------------------------------------------- #
-# Crawl control — mirrors run_crawl / sync_catalog / the scheduler half of
-# crawl_status
+# Scheduler status — the one crawl-control read left over HTTP. Triggers no
+# longer travel through here: every crawl is *enqueued* into the shared
+# Postgres sync queue (kactus_common.portfolio.crawl_queue) and executed by
+# the data-plane dispatcher.
 # --------------------------------------------------------------------------- #
-async def trigger_crawl(
-    *,
-    kind: CrawlKind,
-    codes_by_type: dict[str, list[str]] | None = None,
-    trigger: CrawlTrigger = CrawlTrigger.MANUAL,
-    portfolio_id: int | None = None,
-    dedup: bool = True,
-) -> CrawlTriggerResponse:
-    body = CrawlRequest(
-        kind=kind,
-        codes_by_type=codes_by_type,
-        trigger=trigger,
-        portfolio_id=portfolio_id,
-        dedup=dedup,
-    )
-    data = await _request("POST", "/internal/crawl", json=body.model_dump(mode="json"))
-    return CrawlTriggerResponse.model_validate(data)
-
-
-async def sync_catalog() -> CrawlTriggerResponse:
-    data = await _request("POST", "/internal/catalog/sync")
-    return CrawlTriggerResponse.model_validate(data)
-
-
 async def scheduler_status() -> CrawlStatusSchema:
     data = await _get("/internal/scheduler/status")
     return CrawlStatusSchema.model_validate(data)

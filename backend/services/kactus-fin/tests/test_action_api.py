@@ -25,7 +25,15 @@ from kactus_common.database.oltp.models import Base, utcnow
 from kactus_common.database.oltp.session import DatabaseSessionManager
 from kactus_common.portfolio.const import AssetType
 from kactus_common.portfolio.model import Portfolio, PortfolioItem, SupportedAsset
+from kactus_common.project.service import ProjectService
 from kactus_common.user import auth as auth_mod
+from kactus_common.user.const import (
+    CSRF_FORM_FIELD,
+    CSRF_HEADER_NAME,
+    SESSION_COOKIE_NAME,
+)
+from kactus_common.user.context import set_current_project_id
+from kactus_common.user.csrf import CSRF_ERROR_CODE, csrf_token_for
 from kactus_common.user.model import User
 from kactus_fin.action.const import ActionType
 from kactus_fin.action.model import ActionToken
@@ -74,6 +82,14 @@ async def app(db, tmp_path):
     clear_settings()
 
 
+@pytest.fixture(autouse=True)
+def _reset_project_ctx():
+    """Keep the project ContextVar from leaking between tests."""
+    set_current_project_id(None)
+    yield
+    set_current_project_id(None)
+
+
 async def _make_user(db, email: str, username: str) -> User:
     async with db.get_session() as session:
         user = User.init(
@@ -86,6 +102,9 @@ async def _make_user(db, email: str, username: str) -> User:
         session.add(user)
         await session.commit()
         await session.refresh(user)
+        # A non-admin user gets a personal project; the action API is project-gated.
+        project = await ProjectService.ensure_personal_project(session, user=user)
+        user._project_id = project.id
         return user
 
 
@@ -105,10 +124,24 @@ def _client_for(app, user: User) -> AsyncClient:
     class _Auth:
         async def get_current_user(self, request):
             request.state.user = user
+            # Mirror real auth: select the user's personal project so the
+            # project-scoped SELECT filter and @permission checks apply.
+            project_id = getattr(user, "_project_id", None)
+            request.state.project_id = project_id
+            set_current_project_id(project_id)
             return user
 
     auth_mod._auth = _Auth()
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://test")
+    # The stub skips session lookup, but the CSRF check still runs on every
+    # session route and derives its token from the session cookie — so carry a
+    # cookie and the header that matches it, exactly as the SPA would.
+    session_id = f"stub-session-{user.id}"
+    return AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        cookies={SESSION_COOKIE_NAME: session_id},
+        headers={CSRF_HEADER_NAME: csrf_token_for(session_id)},
+    )
 
 
 @pytest_asyncio.fixture
@@ -120,25 +153,36 @@ async def client(app, owner):
 @pytest_asyncio.fixture
 async def portfolio(db, owner) -> Portfolio:
     """A portfolio plus one catalog entry the add-item action can reference."""
-    async with db.get_session() as session:
-        p = Portfolio.init(owner_id=owner.id, name="Danh mục chính")
-        session.add(p)
-        session.add(
-            SupportedAsset.init(
-                asset_type=str(AssetType.STOCK), code="FPT", name="FPT Corp"
+    # Create under the owner's project so the row is scoped like a real request.
+    set_current_project_id(owner._project_id)
+    try:
+        async with db.get_session() as session:
+            p = Portfolio.init(owner_id=owner.id, name="Danh mục chính")
+            session.add(p)
+            session.add(
+                SupportedAsset.init(
+                    asset_type=str(AssetType.STOCK), code="FPT", name="FPT Corp"
+                )
             )
-        )
-        await session.commit()
-        await session.refresh(p)
-        return p
+            await session.commit()
+            await session.refresh(p)
+            return p
+    finally:
+        set_current_project_id(None)
 
 
 async def _issue(db, user: User, action: ActionType, params: dict) -> str:
-    async with db.get_session() as session:
-        _, token = await ActionTokenService.issue(
-            session, user_id=user.id, action=action, params=params
-        )
-        return token
+    # Issue under the user's project so the token carries the same project_id a
+    # real (project-scoped) request would stamp on it.
+    set_current_project_id(getattr(user, "_project_id", None))
+    try:
+        async with db.get_session() as session:
+            _, token = await ActionTokenService.issue(
+                session, user_id=user.id, action=action, params=params
+            )
+            return token
+    finally:
+        set_current_project_id(None)
 
 
 # --------------------------------------------------------------------------- #
@@ -180,6 +224,61 @@ async def test_confirmation_page_shows_what_will_happen(client, db, owner, portf
     assert "FPT" in body
     assert f"action='/api/actions/{token}'" in body
     assert "method='post'" in body
+
+
+@pytest.mark.asyncio
+async def test_confirmation_form_carries_the_csrf_token(client, db, owner, portfolio):
+    """A plain form cannot set X-XSRF-TOKEN, so the page must embed the token."""
+    token = await _issue(
+        db,
+        owner,
+        ActionType.PORTFOLIO_ADD_ITEM,
+        {"portfolio_id": portfolio.id, "asset_type": "STOCK", "code": "FPT"},
+    )
+    body = (await client.get(f"/api/actions/{token}")).text
+
+    expected = csrf_token_for(client.cookies[SESSION_COOKIE_NAME])
+    assert f"name='{CSRF_FORM_FIELD}' value='{expected}'" in body
+
+
+@pytest.mark.asyncio
+async def test_form_post_with_the_field_executes(client, db, owner, portfolio):
+    """The confirm page's real submission: urlencoded body, no header."""
+    token = await _issue(
+        db,
+        owner,
+        ActionType.PORTFOLIO_ADD_ITEM,
+        {"portfolio_id": portfolio.id, "asset_type": "STOCK", "code": "FPT"},
+    )
+    del client.headers[CSRF_HEADER_NAME]
+    csrf = csrf_token_for(client.cookies[SESSION_COOKIE_NAME])
+
+    resp = await client.post(f"/api/actions/{token}", data={CSRF_FORM_FIELD: csrf})
+    assert resp.status_code == 200
+    assert "Added STOCK:FPT" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_post_without_csrf_neither_consumes_nor_executes(
+    client, db, owner, portfolio
+):
+    """Someone holding a leaked link cannot make the user's browser submit it."""
+    token = await _issue(
+        db,
+        owner,
+        ActionType.PORTFOLIO_ADD_ITEM,
+        {"portfolio_id": portfolio.id, "asset_type": "STOCK", "code": "FPT"},
+    )
+    del client.headers[CSRF_HEADER_NAME]
+
+    resp = await client.post(f"/api/actions/{token}")
+    assert resp.status_code == 403
+    assert resp.json()["code"] == CSRF_ERROR_CODE
+
+    async with db.get_session() as session:
+        row = (await session.execute(select(ActionToken))).scalars().one()
+        assert row.consumed_at is None
+        assert await PortfolioItem.all(session, portfolio_id=portfolio.id) == []
 
 
 # --------------------------------------------------------------------------- #

@@ -21,7 +21,7 @@ kactus/
 | [kactus-notification](backend/libs/kactus-notification/) | Notification domain (channels, templates, delivery) | — |
 | [kactus-fin](backend/services/kactus-fin/) | FastAPI backend server — control plane | 17600 |
 | [kactus-fin-gateway](backend/services/kactus-fin-gateway/) | FastAPI gateway server (public APIs) | 17601 |
-| [kactus-data-server](backend/services/kactus-data-server/) | ETL + DuckDB + crawl scheduler — data plane | 17602 |
+| [kactus-data-plane](backend/services/kactus-data-plane/) | ETL + DuckDB + crawl scheduler — data plane | 17602 |
 | [bloom-app](frontend/packages/bloom-app/) | React SPA (Vite, shadcn/ui, TanStack Query) | 17630 |
 | [bloom-ui](frontend/packages/bloom-ui/) | Shared component library (`@kactus-bloom/ui`) | — |
 | [deploy](deploy/) | Dockerfiles + Docker Compose configs for dev/stag/prod | — |
@@ -41,7 +41,7 @@ uv sync --all-packages
 
 python manage.py fin dev            # port 17600, hot-reload
 python manage.py fin-gw dev         # port 17601, hot-reload
-python manage.py data-server dev    # port 17602 (data plane)
+python manage.py data-plane dev    # port 17602 (data plane)
 ```
 
 ### Frontend
@@ -94,7 +94,7 @@ pre-commit run --all-files
 ```
 backend/services/kactus-fin ────────┐
 backend/services/kactus-fin-gateway ─┤──▶ backend/libs/core/kactus-common
-backend/services/kactus-data-server ─┤
+backend/services/kactus-data-plane ─┤
 backend/libs/kactus-data ───────────┤
 backend/libs/kactus-notification ───┘
 

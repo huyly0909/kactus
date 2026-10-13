@@ -366,3 +366,69 @@ def _filter_deleted_records(state: ORMExecuteState):
                 include_aliases=True,
             )
         )
+
+
+class ProjectScopedMixin:
+    """Scope a record to the selected project.
+
+    Adds a nullable ``project_id`` column, auto-populated on INSERT from the
+    request-scoped ``_current_project_id`` ContextVar (set by the auth
+    dependency), and — via the global ``do_orm_execute`` listener below —
+    transparently filters SELECTs to the current project.
+
+    ``project_id`` stays nullable so background writers (queue consumer, cron)
+    and superuser/no-project requests, which run with the ContextVar unset,
+    insert unscoped rows and see no filtering. Pass
+    ``.execution_options(skip_project_filter=True)`` to bypass the filter for
+    intentional cross-project reads (admin oversight, the crawl seam).
+    """
+
+    project_id: Mapped[UnsignedBigInt | None] = mapped_column(
+        index=True, default=None, comment="owning project id"
+    )
+    project_id._creation_order = 8799
+
+    @staticmethod
+    def _set_project_id(mapper, connection, target: "ProjectScopedMixin"):
+        from kactus_common.user.context import get_current_project_id
+
+        if target.project_id is None:
+            project_id = get_current_project_id()
+            if project_id is not None:
+                target.project_id = project_id
+
+
+# Registered on the mixin with ``propagate=True`` (not via ``__declare_last__``):
+# every scoped model also mixes in ``AuditMixin``, whose ``__declare_last__`` would
+# shadow ours under the MRO — only one ``__declare_last__`` is ever called. A
+# propagating mapper-event listener applies to all subclasses without that clash.
+event.listen(
+    ProjectScopedMixin,
+    "before_insert",
+    ProjectScopedMixin._set_project_id,
+    propagate=True,
+)
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _filter_by_project(state: ORMExecuteState):
+    """Automatically scope SELECTs of project-scoped models to the current project.
+
+    No-op when the ContextVar is unset (superuser without a project cookie,
+    background jobs, public routes) or when ``skip_project_filter`` is set.
+    """
+    if state.is_select and not state.is_column_load and not state.is_relationship_load:
+        if state.execution_options.get("skip_project_filter", False):
+            return
+        from kactus_common.user.context import get_current_project_id
+
+        project_id = get_current_project_id()
+        if project_id is None:
+            return
+        state.statement = state.statement.options(
+            with_loader_criteria(
+                ProjectScopedMixin,
+                lambda cls: cls.project_id == project_id,
+                include_aliases=True,
+            )
+        )

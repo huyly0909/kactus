@@ -8,9 +8,15 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+# Placeholder shown instead of a secret config value in API responses. Lives
+# here rather than next to SECRET_FIELDS so modules that only *compare* against
+# it (the service's masked-secret merge) need not import the registry.
+SECRET_MASK = "***"
+
 
 class NotificationChannelType(StrEnum):
-    """A delivery target. Adding a type = +1 config schema, +1 channel, +1 template."""
+    """A delivery target. Adding a type = one ``channels/<type>/`` package plus
+    one line in each table in :mod:`kactus_notification.registry`."""
 
     TELEGRAM = "telegram"
     SLACK = "slack"
@@ -33,7 +39,13 @@ class NotificationLogStatus(StrEnum):
 
 
 class NotificationTrigger(StrEnum):
-    """What initiated a send — manual API call vs (future) event-driven auto-fire."""
+    """What initiated a send — manual API call vs (future) event-driven auto-fire.
+
+    ``TEST`` covers the two probe endpoints (``/test`` credential check and the
+    Zalo ``/test-message`` greeting): they are real outcomes worth auditing, but
+    filtering them out of "did my alert go through?" must stay possible.
+    """
 
     MANUAL = "manual"
     EVENT = "event"
+    TEST = "test"

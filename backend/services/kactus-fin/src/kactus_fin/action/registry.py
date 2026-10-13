@@ -5,22 +5,23 @@ user.  They are ordinary service calls — the interesting part of this feature 
 everything around them (signature, expiry, one-time consumption, GET-does-not-
 execute), not the actions themselves.
 
-**Ownership is re-checked in every handler.**  It would be tempting to say the
+**Access is re-checked in every handler.**  It would be tempting to say the
 token already proves authorisation, but the token was issued minutes ago against
-state that may have changed: a portfolio can be deleted or transferred between
-issue and click.  ``get_owned_or_404`` is cheap and it is the same check the
-regular API does.
+state that may have changed: a portfolio can be deleted between issue and click.
+``get_or_404`` is cheap and it is the same project-scoped check the regular API
+does — the handler runs in the clicker's session, so the active project scopes
+every lookup.
 """
 
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 
-from kactus_common.exceptions import InvalidArgumentError, NotFoundError
+from kactus_common.exceptions import InvalidArgumentError
 from kactus_common.portfolio.const import AssetType, CrawlKind, CrawlTrigger
+from kactus_common.portfolio.crawl_queue import enqueue_crawl_jobs
 from kactus_common.portfolio.service import PortfolioService
-from kactus_fin import data_client
-from kactus_notification.model import NotificationChannel
+from kactus_notification.service import NotificationChannelService
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .const import ActionType
@@ -36,8 +37,8 @@ def _require(params: dict, key: str):
 
 
 async def _add_item(session: AsyncSession, user_id: int, params: dict) -> str:
-    portfolio = await PortfolioService.get_owned_or_404(
-        session, portfolio_id=int(_require(params, "portfolio_id")), owner_id=user_id
+    portfolio = await PortfolioService.get_or_404(
+        session, int(_require(params, "portfolio_id"))
     )
     asset_type = AssetType(_require(params, "asset_type"))
     code = str(_require(params, "code")).upper()
@@ -48,8 +49,8 @@ async def _add_item(session: AsyncSession, user_id: int, params: dict) -> str:
 
 
 async def _remove_item(session: AsyncSession, user_id: int, params: dict) -> str:
-    portfolio = await PortfolioService.get_owned_or_404(
-        session, portfolio_id=int(_require(params, "portfolio_id")), owner_id=user_id
+    portfolio = await PortfolioService.get_or_404(
+        session, int(_require(params, "portfolio_id"))
     )
     asset_type = AssetType(_require(params, "asset_type"))
     code = str(_require(params, "code")).upper()
@@ -60,8 +61,8 @@ async def _remove_item(session: AsyncSession, user_id: int, params: dict) -> str
 
 
 async def _refresh(session: AsyncSession, user_id: int, params: dict) -> str:
-    portfolio = await PortfolioService.get_owned_or_404(
-        session, portfolio_id=int(_require(params, "portfolio_id")), owner_id=user_id
+    portfolio = await PortfolioService.get_or_404(
+        session, int(_require(params, "portfolio_id"))
     )
     items = await PortfolioService.get_items(session, portfolio.id)
     codes_by_type: dict[str, list[str]] = {}
@@ -70,24 +71,24 @@ async def _refresh(session: AsyncSession, user_id: int, params: dict) -> str:
     if not codes_by_type:
         return f"{portfolio.name} is empty — nothing to refresh"
 
-    # Same path as POST /portfolios/{id}/refresh: a command, so HTTP to the data
-    # plane, with dedup so an approval racing the scheduler costs one crawl.
-    await data_client.trigger_crawl(
+    # Same path as POST /portfolios/{id}/refresh: enqueue into the shared sync
+    # queue; the dedup_key means an approval racing the scheduler costs one crawl.
+    created, _ = await enqueue_crawl_jobs(
+        session,
         kind=CrawlKind.QUOTES,
         codes_by_type=codes_by_type,
         trigger=CrawlTrigger.MANUAL,
         portfolio_id=portfolio.id,
-        dedup=True,
     )
+    if not created:
+        return f"A refresh of {portfolio.name} is already in progress"
     return f"Refreshing market data for {portfolio.name}"
 
 
 async def _mute_channel(session: AsyncSession, user_id: int, params: dict) -> str:
-    channel = await NotificationChannel.get(
+    channel = await NotificationChannelService.get_or_404(
         session, int(_require(params, "channel_id"))
     )
-    if channel is None or channel.owner_id != user_id:
-        raise NotFoundError("NotificationChannel record")
     channel.is_active = False
     await channel.save(session)
     return f"Muted notifications on {channel.name}"

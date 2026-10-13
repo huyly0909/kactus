@@ -17,9 +17,9 @@ import pytest_asyncio
 from cryptography.fernet import Fernet
 from kactus_common.config import CommonSettings, clear_settings, register_settings
 from kactus_common.exceptions import ConfigurationError
-from kactus_notification import zalo_pa
+from kactus_notification.channels.zalo_pa import session_store as zalo_pa
+from kactus_notification.channels.zalo_pa.session_store import RedisZaloPASessionStore
 from kactus_notification.config import NotificationSettings
-from kactus_notification.zalo_pa import RedisZaloPASessionStore
 
 TEST_KEY = Fernet.generate_key().decode()
 

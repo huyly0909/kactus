@@ -30,6 +30,11 @@ class User(Base, ModelMixin, AuditMixin, LogicalDeleteMixin):
     status: Mapped[str] = mapped_column(String(20), default=UserStatus.ACTIVE.value)
     last_login: Mapped[datetime.datetime | None] = mapped_column(default=None)
 
+    # User-scoped UI preferences (follow the account across devices). Nullable —
+    # None means "not set", the frontend falls back to its own defaults.
+    language: Mapped[str | None] = mapped_column(String(10), default=None)
+    timezone: Mapped[str | None] = mapped_column(String(64), default=None)
+
 
 class UserSession(Base, ModelMixin):
     """Active user session — one row per logged-in device."""

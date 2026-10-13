@@ -30,6 +30,14 @@ def get_redis() -> Redis:
             settings.redis_url,
             decode_responses=False,
             health_check_interval=30,
+            # redis-py 8 changed the default socket_timeout from None to 5s,
+            # which breaks blocking reads: the notification consumer's
+            # XREADGROUP block=5000 waits exactly 5s on an idle stream, so the
+            # socket deadline fires on every empty read. Blocking commands must
+            # not race the socket timeout — dead peers are caught by the
+            # health check above instead.
+            socket_timeout=None,
+            socket_connect_timeout=5,
         )
         _client = Redis(connection_pool=_pool)
     return _client

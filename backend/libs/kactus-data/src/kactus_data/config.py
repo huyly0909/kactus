@@ -47,6 +47,12 @@ class DataSettings(CommonSettings):
     # Empty → guest tier (~20 req/min).
     vnstock_api_key: str = ""
 
+    # Manual requests/min budget (``KACTUS_VNSTOCK_RPM_OVERRIDE``).  None →
+    # auto-detect via ``vnai.get_user_tier()``.  Set it when a paid tier is not
+    # recognised (no ``vnii`` license package installed) or to run below the
+    # real quota.
+    vnstock_rpm_override: int | None = None
+
     # Legacy mihong.vn XSRF token (``KACTUS_MIHONG_XSRF_TOKEN``).  No longer
     # required: the current api.mihong.vn endpoint is unauthenticated and the
     # gold crawl prefers sjc.com.vn anyway.  Kept so existing .env files and the

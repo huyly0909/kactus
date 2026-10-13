@@ -13,6 +13,7 @@ from kactus_common.database.oltp.session import get_db
 from kactus_common.exceptions import AuthenticationError
 
 from .const import PROJECT_COOKIE_NAME, SESSION_COOKIE_NAME
+from .csrf import delete_csrf_cookie, set_csrf_cookie
 from .model import User
 from .service import UserService
 
@@ -61,17 +62,23 @@ class AuthDependency:
         if user_session is None or user is None:
             raise AuthenticationError("Session expired or invalid")
 
-        # Set ContextVar for AuditMixin auto-populate
-        from kactus_common.user.context import set_current_user_id
+        # Set ContextVars for AuditMixin / ProjectScopedMixin auto-populate
+        from kactus_common.user.context import (
+            set_current_project_id,
+            set_current_user_id,
+        )
 
         set_current_user_id(user.id)
 
         # Set request.state.user for @permission decorator
         request.state.user = user
 
-        # Read selected project from cookie
+        # Read selected project from cookie. Always set the ContextVar (including
+        # None) so a no-cookie request cannot inherit the previous request's
+        # project on the same worker.
         project_id_str = request.cookies.get(self._config.project_cookie_name)
         request.state.project_id = int(project_id_str) if project_id_str else None
+        set_current_project_id(request.state.project_id)
 
         return user
 
@@ -113,6 +120,8 @@ class AuthDependency:
             samesite="lax",
             path="/",
         )
+        # The CSRF token is derived from the session id, so it rotates here too.
+        set_csrf_cookie(response, user_session.session_id, max_age=expiry_seconds)
         return user_session.session_id
 
     async def logout_user(self, request: Request, response: Response) -> None:
@@ -131,6 +140,7 @@ class AuthDependency:
             samesite="lax",
             path="/",
         )
+        delete_csrf_cookie(response)
 
 
 # ---------------------------------------------------------------------------

@@ -6,8 +6,9 @@ import secrets
 import string
 
 from fastapi import Request
+from kactus_common.audit import audit
 from kactus_common.authorization.casbin_service import get_casbin_service
-from kactus_common.exceptions import NotFoundError
+from kactus_common.exceptions import ConflictError, NotFoundError
 from kactus_common.project.schema import ProjectSchema
 from kactus_common.project.service import ProjectService
 from kactus_common.router import KactusAPIRouter
@@ -53,7 +54,11 @@ async def create_user(
     request: Request,
     session: AsyncSession,
 ) -> UserInfo:
-    """Create a new user (admin only)."""
+    """Create a new user (admin only).
+
+    Non-admin users are provisioned a personal project (they own it) so they can
+    use project-scoped features immediately. Admins are exempt.
+    """
     user = User.init(
         email=body.email,
         username=body.email,
@@ -64,6 +69,10 @@ async def create_user(
     session.add(user)
     await session.commit()
     await session.refresh(user)
+
+    await ProjectService.ensure_personal_project(session, user=user)
+
+    audit("user.create", "user", user.id, meta={"email": user.email})
     return UserInfo.model_validate(user)
 
 
@@ -93,10 +102,22 @@ async def deactivate_user(
     request: Request,
     session: AsyncSession,
 ) -> UserInfo:
-    """Deactivate a user (admin only)."""
+    """Deactivate a user (admin only).
+
+    Refused while the user is the only owner of a live project: deactivating
+    them would leave it unassigned, and picking a successor is a decision, not
+    a side effect. Assign a co-owner first (``POST /api/projects/{id}/owner``).
+    """
     user = await UserService.get_by_id(session, user_id)
     if not user:
         raise NotFoundError("User not found")
+
+    blocking = await ProjectService.sole_owner_project_ids(session, user_id)
+    if blocking:
+        raise ConflictError(
+            "User is the only owner of one or more projects",
+            data={"project_ids": [str(pid) for pid in blocking]},
+        )
 
     user.status = "inactive"
     await user.save(session)
@@ -158,5 +179,7 @@ async def list_all_projects(
 ) -> Pagination[ProjectSchema]:
     """List all projects (admin only)."""
     projects = await ProjectService.list_all(session)
-    items = [ProjectSchema.model_validate(p) for p in projects]
+    # viewer_id=None: an operator listing every project is not a member of them,
+    # so "my role" has no meaning here.
+    items = await ProjectService.build_schemas(session, projects, viewer_id=None)
     return Pagination(total=len(items), items=items)

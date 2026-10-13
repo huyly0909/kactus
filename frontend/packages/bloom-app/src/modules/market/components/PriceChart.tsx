@@ -8,6 +8,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useFormatDate } from '@/hooks/useFormatDateTime';
 import { num } from '@/lib/format';
 import type { OHLCV } from '@/types/market';
 
@@ -18,13 +19,16 @@ interface PriceChartProps {
 
 /** Close-price area chart over the OHLCV series (oldest → newest). */
 export const PriceChart: FC<PriceChartProps> = ({ candles, height = 280 }) => {
+  const fmtDate = useFormatDate();
   const data = useMemo(
     () =>
       candles.map((c) => ({
-        time: c.time.slice(0, 10),
+        // event_dt is UTC; render the axis label in the user's timezone so the
+        // bar lands on its correct Vietnam trading day when viewed in UTC+7.
+        time: fmtDate(c.event_dt),
         close: num(c.close),
       })),
-    [candles],
+    [candles, fmtDate],
   );
 
   return (

@@ -93,9 +93,9 @@ export function QuotesTable({ items, quotes, onRemove }: Props) {
                 </TableCell>
                 <TableCell className="text-right">
                   <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                    variant="ghost-destructive"
+                    size="icon-sm"
+                    className="text-muted-foreground"
                     onClick={() => onRemove(item)}
                   >
                     <Trash2 className="h-4 w-4" />

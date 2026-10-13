@@ -16,16 +16,17 @@ export function formatCurrency(value: number, currency = 'VND', locale = 'vi-VN'
   }).format(value);
 }
 
-export function formatDate(date: Date | string, locale = 'vi-VN'): string {
+export function formatDate(date: Date | string, locale = 'vi-VN', timeZone?: string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   return new Intl.DateTimeFormat(locale, {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
+    timeZone,
   }).format(d);
 }
 
-export function formatDateTime(date: Date | string, locale = 'vi-VN'): string {
+export function formatDateTime(date: Date | string, locale = 'vi-VN', timeZone?: string): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   return new Intl.DateTimeFormat(locale, {
     day: '2-digit',
@@ -34,6 +35,19 @@ export function formatDateTime(date: Date | string, locale = 'vi-VN'): string {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
+    timeZone,
+  }).format(d);
+}
+
+/** Wall-clock time in a given timezone (for the preferences format preview). */
+export function formatTime(date: Date | string, locale = 'vi-VN', timeZone?: string): string {
+  const d = typeof date === 'string' ? new Date(date) : date;
+  return new Intl.DateTimeFormat(locale, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZone,
   }).format(d);
 }
 

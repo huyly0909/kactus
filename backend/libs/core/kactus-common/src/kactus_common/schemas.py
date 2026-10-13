@@ -1,10 +1,12 @@
 """Shared Pydantic schemas and serialisation helpers."""
 
+import datetime
 from decimal import Decimal
 from typing import Annotated, Any, Generic, TypeVar, get_args
 
 from pydantic import (
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     PlainSerializer,
     ValidationInfo,
@@ -16,6 +18,28 @@ from pydantic import (
 FancyInt = Annotated[
     int, PlainSerializer(lambda v: str(v), return_type=str, when_used="json")
 ]
+
+
+def _ensure_utc(value: Any) -> Any:
+    """Stamp a datetime as UTC-aware; pass anything else through unchanged.
+
+    OLAP (DuckDB) timestamps are stored naive-UTC (no zone). Marking them aware
+    here makes Pydantic serialise them with an explicit ``+00:00`` offset, so
+    the client knows the zone and can convert to the user's timezone. Idempotent
+    — an already-aware value is converted, not double-stamped — which matters
+    because the shared market schemas are validated on both planes.
+    """
+    if isinstance(value, datetime.datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=datetime.UTC)
+        return value.astimezone(datetime.UTC)
+    return value
+
+
+# AwareUTCDatetime: a datetime guaranteed to carry a UTC offset in JSON. Use it
+# for any timestamp read out of the naive-UTC OLAP columns (``event_dt``,
+# ``crawled_at``, ``synced_at``) so the frontend can localise it.
+AwareUTCDatetime = Annotated[datetime.datetime, BeforeValidator(_ensure_utc)]
 
 # FancyFloat serializes float → str in JSON for precision
 FancyFloat = Annotated[

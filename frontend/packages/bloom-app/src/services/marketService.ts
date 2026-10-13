@@ -6,6 +6,7 @@ import type {
   GoldHistoryPoint,
   GoldImportResult,
   GoldPrice,
+  GoldScheduleResponse,
   OHLCV,
   OHLCVInterval,
   ReportPeriod,
@@ -24,6 +25,9 @@ export interface OHLCVParams {
 }
 
 export interface GoldHistoryParams {
+  /** Series identity is `(source, code)`. Omitting this returns every feed
+   *  serving the code interleaved — and spends `limit` across all of them. */
+  source?: string;
   start?: string;
   end?: string;
   limit?: number;
@@ -58,6 +62,14 @@ export const marketService = {
   goldHistoryCodes: async (): Promise<GoldHistoryCode[]> => {
     const { data } = await apiClient.get<ApiResponse<GoldHistoryCode[]>>(
       '/api/market/gold/history/codes',
+    );
+    return data.data;
+  },
+
+  goldSchedule: async (source: string, code: string): Promise<GoldScheduleResponse> => {
+    const { data } = await apiClient.get<ApiResponse<GoldScheduleResponse>>(
+      '/api/market/gold/schedule',
+      { params: { source, code } },
     );
     return data.data;
   },

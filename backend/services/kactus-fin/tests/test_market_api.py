@@ -6,7 +6,7 @@ the translation of query parameters into a data-plane call, the 404 policy for
 an unknown symbol, and what a user sees when the data plane is unreachable.
 
 The row-level assertions (derived spreads, exact decimals, ordering) moved to
-``services/kactus-data-server/tests/test_market_api.py`` along with the storage
+``services/kactus-data-plane/tests/test_market_api.py`` along with the storage
 that produces them.
 
 Requests reach a fake data plane over an in-process ASGI transport (see
@@ -23,17 +23,20 @@ from httpx import ASGITransport, AsyncClient
 from kactus_common.database.oltp import session as session_mod
 from kactus_common.database.oltp.models import Base
 from kactus_common.database.oltp.session import DatabaseSessionManager
-from kactus_common.market.schema import (
+from kactus_common.user import auth as auth_mod
+from kactus_common.user.const import CSRF_COOKIE_NAME, CSRF_HEADER_NAME
+from kactus_common.user.model import User
+from kactus_gold.schema import (
     GoldHistoryCodeSchema,
     GoldHistoryPointSchema,
     GoldImportResultSchema,
     GoldPriceSchema,
+)
+from kactus_stock_vn.schema import (
     StockDetailSchema,
     StockListingSchema,
     StockQuoteSchema,
 )
-from kactus_common.user import auth as auth_mod
-from kactus_common.user.model import User
 
 TEST_DB_URL = "sqlite+aiosqlite://"
 
@@ -92,6 +95,7 @@ async def client(app, seed_user):
         )
         assert login.status_code == 200
         c.cookies.update(dict(login.cookies))
+        c.headers[CSRF_HEADER_NAME] = login.cookies[CSRF_COOKIE_NAME]
         yield c
 
 
@@ -126,6 +130,31 @@ async def test_gold_passes_through_rows_and_filter(client, data_plane):
     assert body["data"][0]["buy_price"] == "121000000"
     # The filter reached the data plane rather than being applied here.
     assert data_plane.last("gold")["code"] == ["SJC"]
+
+
+@pytest.mark.asyncio
+async def test_gold_forwards_every_source_of_a_code(client, data_plane):
+    """The board is keyed ``(code, source)`` — the control plane must not dedupe.
+
+    SJC and mihong both quote 999 (bar issuer vs dealer). Collapsing them here
+    would put back exactly the bug the composite key removed: a mihong sync
+    that silently reads back as ``source: sjc``.
+    """
+    data_plane.gold = [
+        GoldPriceSchema(
+            code="999", buy_price="118000000", unit="VND/luong", source="mihong"
+        ),
+        GoldPriceSchema(
+            code="999", buy_price="118500000", unit="VND/luong", source="sjc"
+        ),
+    ]
+
+    rows = (await client.get("/api/market/gold", params={"code": "999"})).json()["data"]
+    assert [(r["code"], r["source"]) for r in rows] == [
+        ("999", "mihong"),
+        ("999", "sjc"),
+    ]
+    assert [r["buy_price"] for r in rows] == ["118000000", "118500000"]
 
 
 @pytest.mark.asyncio
@@ -282,6 +311,7 @@ async def admin_client(app, db):
             json={"email": "admin@kactus.io", "password": "Admin123!"},
         )
         c.cookies.update(dict(login.cookies))
+        c.headers[CSRF_HEADER_NAME] = login.cookies[CSRF_COOKIE_NAME]
         yield c
 
 
@@ -310,12 +340,36 @@ async def test_gold_history_forwards_code_and_window(client, data_plane):
     assert sent["code"] == "SJC"
     assert sent["start"] == "2026-01-01"
     assert sent["limit"] == 100
+    # Omitted rather than sent as an empty string — the data plane reads a
+    # present-but-blank ``source`` as "match rows whose source is ''".
+    assert sent["source"] is None
+
+
+@pytest.mark.asyncio
+async def test_gold_history_forwards_source(client, data_plane):
+    """``code`` alone is not a series: Mihong-999 and SJC-999 share it.
+
+    Forwarding ``source`` is what keeps the control plane from having to filter
+    the response itself — and what makes ``limit`` a budget for one series
+    instead of one split across every feed quoting that code.
+    """
+    data_plane.gold_history = []
+    resp = await client.get(
+        "/api/market/gold/history",
+        params={"code": "999", "source": "mihong", "limit": 50},
+    )
+    assert resp.status_code == 200
+    sent = data_plane.last("gold_history")
+    assert sent["code"] == "999"
+    assert sent["source"] == "mihong"
+    assert sent["limit"] == 50
 
 
 @pytest.mark.asyncio
 async def test_gold_history_codes_passthrough(client, data_plane):
     data_plane.gold_history_codes = [
         GoldHistoryCodeSchema(
+            source="pnj",
             code="PNJ:TPHCM:SJC",
             unit="VND/luong",
             points=5321,
@@ -325,7 +379,11 @@ async def test_gold_history_codes_passthrough(client, data_plane):
     ]
     resp = await client.get("/api/market/gold/history/codes")
     assert resp.status_code == 200
-    assert resp.json()["data"][0]["code"] == "PNJ:TPHCM:SJC"
+    row = resp.json()["data"][0]
+    assert row["code"] == "PNJ:TPHCM:SJC"
+    # The picker groups on this; dropping it in the forwarder would flatten
+    # every source back into one list without anything failing.
+    assert row["source"] == "pnj"
 
 
 @pytest.mark.asyncio

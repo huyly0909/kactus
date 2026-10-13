@@ -1,8 +1,13 @@
 import { apiClient } from './apiClient';
 import type { ApiResponse } from '../types';
-import type { Project, PermissionsResponse } from '../types/project';
+import type {
+  Project,
+  ProjectMemberDetail,
+  PermissionsResponse,
+  ProjectStatus,
+} from '../types/project';
 
-interface Pagination<T> {
+export interface Pagination<T> {
   total: number;
   items: T[];
 }
@@ -17,6 +22,13 @@ interface ProjectUpdatePayload {
   name?: string;
   code?: string;
   description?: string;
+  /** Archive/restore. The only writer of `Project.status`. */
+  status?: ProjectStatus;
+}
+
+export interface AddMemberPayload {
+  email: string;
+  role: string;
 }
 
 /**
@@ -61,5 +73,51 @@ export const projectService = {
       params: { project_id: projectId },
     });
     return data.data;
+  },
+
+  // ------------------------------------------------------------- members
+
+  /** List a project's members (with email/name for display). */
+  getMembers: async (projectId: string) => {
+    const { data } = await apiClient.get<ApiResponse<Pagination<ProjectMemberDetail>>>(
+      `/api/projects/${projectId}/members`,
+    );
+    return data.data;
+  },
+
+  /** Invite an existing user by exact email + role. No directory search by design. */
+  addMember: async (projectId: string, payload: AddMemberPayload) => {
+    const { data } = await apiClient.post<ApiResponse<ProjectMemberDetail>>(
+      `/api/projects/${projectId}/members`,
+      payload,
+    );
+    return data.data;
+  },
+
+  /**
+   * Give an existing user OWNER, adding them to the project if they are not a
+   * member yet. Unlike `addMember({role:'owner'})` this works on a project with
+   * **no** members — the repair path for one whose OWNER row was lost.
+   */
+  assignOwner: async (projectId: string, email: string) => {
+    const { data } = await apiClient.post<ApiResponse<ProjectMemberDetail>>(
+      `/api/projects/${projectId}/owner`,
+      { email },
+    );
+    return data.data;
+  },
+
+  /** Change a member's role. */
+  updateMemberRole: async (projectId: string, userId: string, role: string) => {
+    const { data } = await apiClient.patch<ApiResponse<ProjectMemberDetail>>(
+      `/api/projects/${projectId}/members/${userId}`,
+      { role },
+    );
+    return data.data;
+  },
+
+  /** Remove a member from the project. */
+  removeMember: async (projectId: string, userId: string) => {
+    await apiClient.delete(`/api/projects/${projectId}/members/${userId}`);
   },
 };

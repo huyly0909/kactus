@@ -30,7 +30,8 @@ import {
 } from '@/components/ui/select';
 import { useCreateChannel } from '@/hooks/useNotificationQuery';
 import type { NotificationChannelType } from '@/types/notification';
-import { ZaloPAQRDialog } from './ZaloPAQRDialog';
+import { TelegramSetupDialog } from './telegram/TelegramSetupDialog';
+import { ZaloPAQRDialog } from './zalo/ZaloPAQRDialog';
 
 interface Props {
   open: boolean;
@@ -43,27 +44,21 @@ const TYPES: { value: NotificationChannelType; labelKey: string; icon: React.Ele
   { value: 'zalo_pa', labelKey: 'notification.type_zalo_pa', icon: MessageCircle },
 ];
 
-/** Create-channel modal: Select type → per-type config (Zalo launches QR). */
+/** Create-channel modal: Select type → per-type config.
+ * Telegram and Zalo hand off to their own setup wizard instead of POSTing. */
 export function ChannelFormDialog({ open, onOpenChange }: Props) {
   const { t } = useTranslation();
   const create = useCreateChannel();
   const [qrOpen, setQrOpen] = useState(false);
+  const [telegramOpen, setTelegramOpen] = useState(false);
 
   const schema = z
     .object({
       name: z.string().trim().min(1, t('errors.required')),
       type: z.enum(['telegram', 'slack', 'zalo_pa']),
-      bot_token: z.string().optional().default(''),
-      chat_id: z.string().optional().default(''),
       webhook_url: z.string().optional().default(''),
     })
     .superRefine((val, ctx) => {
-      if (val.type === 'telegram') {
-        if (!val.bot_token.trim())
-          ctx.addIssue({ code: 'custom', path: ['bot_token'], message: t('errors.required') });
-        if (!val.chat_id.trim())
-          ctx.addIssue({ code: 'custom', path: ['chat_id'], message: t('errors.required') });
-      }
       if (val.type === 'slack' && !val.webhook_url.trim())
         ctx.addIssue({ code: 'custom', path: ['webhook_url'], message: t('errors.required') });
     });
@@ -71,7 +66,7 @@ export function ChannelFormDialog({ open, onOpenChange }: Props) {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { name: '', type: 'telegram', bot_token: '', chat_id: '', webhook_url: '' },
+    defaultValues: { name: '', type: 'telegram', webhook_url: '' },
   });
 
   const type = form.watch('type') as NotificationChannelType;
@@ -83,15 +78,21 @@ export function ChannelFormDialog({ open, onOpenChange }: Props) {
   };
 
   const onSubmit = async (values: FormValues) => {
+    // Telegram and Zalo both need a wizard: the credential alone is not enough,
+    // the user still has to discover which chat/conversation to send to.
     if (values.type === 'zalo_pa') {
       setQrOpen(true);
       return;
     }
-    const config =
-      values.type === 'telegram'
-        ? { bot_token: values.bot_token ?? '', chat_id: values.chat_id ?? '' }
-        : { webhook_url: values.webhook_url ?? '' };
-    await create.mutateAsync({ name: values.name.trim(), channel_type: values.type, config });
+    if (values.type === 'telegram') {
+      setTelegramOpen(true);
+      return;
+    }
+    await create.mutateAsync({
+      name: values.name.trim(),
+      channel_type: values.type,
+      config: { webhook_url: values.webhook_url ?? '' },
+    });
     form.reset();
     onOpenChange(false);
   };
@@ -150,34 +151,9 @@ export function ChannelFormDialog({ open, onOpenChange }: Props) {
             />
 
             {type === 'telegram' && (
-              <>
-                <FormField
-                  control={form.control}
-                  name="bot_token"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('notification.telegram.bot_token')}</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="chat_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>{t('notification.telegram.chat_id')}</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-              </>
+              <p className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground">
+                {t('notification.telegram.create_hint')}
+              </p>
             )}
 
             {type === 'slack' && (
@@ -207,12 +183,25 @@ export function ChannelFormDialog({ open, onOpenChange }: Props) {
                 {t('common.cancel')}
               </Button>
               <Button type="submit" disabled={create.isPending}>
-                {type === 'zalo_pa' ? t('notification.zalo.connect') : t('common.create')}
+                {type === 'zalo_pa' && t('notification.zalo.connect')}
+                {type === 'telegram' && t('notification.telegram.connect')}
+                {type === 'slack' && t('common.create')}
               </Button>
             </DialogFooter>
           </form>
         </Form>
       </DialogContent>
+
+      <TelegramSetupDialog
+        open={telegramOpen}
+        onOpenChange={setTelegramOpen}
+        mode="create"
+        channelName={name.trim()}
+        onDone={() => {
+          form.reset();
+          onOpenChange(false);
+        }}
+      />
 
       <ZaloPAQRDialog
         open={qrOpen}

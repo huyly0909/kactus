@@ -1,4 +1,4 @@
-"""Channel strategies — one :class:`BaseNotificationChannel` per channel type.
+"""Channel strategy base — one subclass per channel type under ``channels/``.
 
 A channel knows how to (a) open/close its transport ("connection"), (b) send a
 :class:`RenderedMessage`, and (c) test its credentials. Methods are
@@ -7,8 +7,8 @@ A channel knows how to (a) open/close its transport ("connection"), (b) send a
 ``asyncio.to_thread`` so any async caller (kactus-data, kactus-fin) can deliver
 without blocking the event loop.
 
-The ``config`` is a validated Pydantic schema from this package's ``schema``
-module.
+The ``config`` is a validated Pydantic schema from the channel's own
+``channels/<type>/schema.py``.
 """
 
 from __future__ import annotations
@@ -18,17 +18,9 @@ from dataclasses import dataclass
 from typing import ClassVar
 
 import requests
-from kactus_common.exceptions import ExternalServiceError
-from zlapi.models import ZaloAPIException
 
 from .const import NotificationChannelType
-from .schema import (
-    BaseChannelConfig,
-    Recipient,
-    SlackChannelConfig,
-    TelegramChannelConfig,
-    ZaloPAChannelConfig,
-)
+from .schema import BaseChannelConfig, Recipient
 
 
 @dataclass
@@ -41,6 +33,33 @@ class RenderedMessage:
 
     text: str
     payload: dict | None = None
+
+
+@dataclass
+class DeliveryTarget:
+    """Outcome of delivering one message to **one** conversation.
+
+    Only fan-out channels (Zalo PA, which sends to every saved conversation)
+    produce these; Telegram/Slack have a single implicit target and leave
+    ``last_targets`` empty. Persisted verbatim onto ``NotificationLog.targets``,
+    so a log row answers *which* conversations got the message — the fan-out
+    used to be invisible above ``send()``.
+    """
+
+    thread_id: str
+    thread_type: int
+    name: str | None
+    ok: bool
+    error: str | None = None
+
+    def as_dict(self) -> dict:
+        return {
+            "thread_id": self.thread_id,
+            "thread_type": self.thread_type,
+            "name": self.name,
+            "ok": self.ok,
+            "error": self.error,
+        }
 
 
 class BaseNotificationChannel(ABC):
@@ -65,6 +84,10 @@ class BaseNotificationChannel(ABC):
     def __init__(self, config: BaseChannelConfig) -> None:
         self.config = config
         self._session: requests.Session | None = None
+        # Per-conversation outcome of the most recent send(). An attribute rather
+        # than a return value because a send that delivers to nobody *raises* —
+        # and that is exactly the case whose per-target errors we must log.
+        self.last_targets: list[DeliveryTarget] = []
 
     # ---- connection lifecycle (sync, cheap) -------------------------------- #
     def create_connection(self) -> None:
@@ -104,7 +127,11 @@ class BaseNotificationChannel(ABC):
     # ---- behaviour (blocking; wrapped in to_thread by the async caller) ---- #
     @abstractmethod
     def send(self, message: RenderedMessage) -> None:
-        """Deliver ``message`` (blocking). Raises on transport/HTTP error."""
+        """Deliver ``message`` (blocking). Raises on transport/HTTP error.
+
+        Fan-out channels record one :class:`DeliveryTarget` per conversation in
+        ``self.last_targets`` — including on the raising path.
+        """
 
     @abstractmethod
     def test_connection(self) -> bool:
@@ -116,123 +143,3 @@ class BaseNotificationChannel(ABC):
         raise NotImplementedError(
             f"{self.channel_type} channels have no recipient directory"
         )
-
-
-class TelegramChannel(BaseNotificationChannel):
-    """Telegram Bot API — ``sendMessage`` to a chat; ``getMe`` to validate."""
-
-    channel_type = NotificationChannelType.TELEGRAM
-    config_schema = TelegramChannelConfig
-    _API = "https://api.telegram.org"
-
-    def send(self, message: RenderedMessage) -> None:
-        cfg: TelegramChannelConfig = self.config  # type: ignore[assignment]
-        resp = self.session.post(
-            f"{self._API}/bot{cfg.bot_token}/sendMessage",
-            json={
-                "chat_id": cfg.chat_id,
-                "text": message.text,
-                "parse_mode": cfg.parse_mode,
-            },
-            timeout=cfg.timeout,
-        )
-        resp.raise_for_status()
-
-    def test_connection(self) -> bool:
-        cfg: TelegramChannelConfig = self.config  # type: ignore[assignment]
-        resp = self.session.get(
-            f"{self._API}/bot{cfg.bot_token}/getMe", timeout=cfg.timeout
-        )
-        return resp.status_code == 200 and bool(resp.json().get("ok"))
-
-
-class SlackChannel(BaseNotificationChannel):
-    """Slack Incoming Webhook — POST the message body to the webhook URL."""
-
-    channel_type = NotificationChannelType.SLACK
-    config_schema = SlackChannelConfig
-    _WEBHOOK_PREFIX = "https://hooks.slack.com/"
-
-    def send(self, message: RenderedMessage) -> None:
-        cfg: SlackChannelConfig = self.config  # type: ignore[assignment]
-        body = (
-            message.payload if message.payload is not None else {"text": message.text}
-        )
-        resp = self.session.post(cfg.webhook_url, json=body, timeout=cfg.timeout)
-        resp.raise_for_status()
-
-    def test_connection(self) -> bool:
-        # Incoming webhooks have no introspection endpoint — validate URL shape so
-        # a "test" doesn't post a stray message to the channel.
-        return self.config.webhook_url.startswith(self._WEBHOOK_PREFIX)  # type: ignore[attr-defined]
-
-
-class ZaloPAChannel(BaseNotificationChannel):
-    """Zalo Personal Account — push a text report to a chosen friend/group.
-
-    Unlike the HTTP channels the "connection" is a blocking ``zlapi.ZaloAPI``
-    built from the login session in ``config`` (no ``requests.Session``). The
-    build + send run inside the dispatcher's ``asyncio.to_thread``, so this stays
-    synchronous like the others. An expired/invalid session surfaces as a
-    ``ZaloAPIException`` → re-raised as a **non-retryable** ``ExternalServiceError``
-    (re-scan the QR); genuine transport hiccups stay retryable.
-    """
-
-    channel_type = NotificationChannelType.ZALO_PA
-    config_schema = ZaloPAChannelConfig
-    # Transient network errors zlapi surfaces via ``requests`` → retry.
-    retryable_exceptions: ClassVar[tuple[type[BaseException], ...]] = (
-        requests.RequestException,
-        ConnectionError,
-        TimeoutError,
-    )
-
-    def __init__(self, config: ZaloPAChannelConfig) -> None:
-        super().__init__(config)
-        self._bot = None
-
-    def create_connection(self) -> None:
-        # Import here so the module's os.kill guard is applied and to avoid a
-        # circular import (zalo_pa imports schema, channel imports zalo_pa).
-        from .zalo_pa import build_sync_bot
-
-        if self._bot is None:
-            self._bot = build_sync_bot(self.config)  # type: ignore[arg-type]
-
-    def close_connection(self) -> None:
-        self._bot = None
-
-    def send(self, message: RenderedMessage) -> None:
-        from .zalo_pa import send_text_sync
-
-        cfg: ZaloPAChannelConfig = self.config  # type: ignore[assignment]
-        try:
-            send_text_sync(self._bot, message.text, cfg.thread_id, cfg.thread_type)
-        except ZaloAPIException as exc:  # expired session / API refusal → no retry
-            raise ExternalServiceError(
-                f"Zalo PA send failed (session may be expired — re-scan QR): {exc}"
-            ) from exc
-
-    def test_connection(self) -> bool:
-        try:
-            return bool(self._bot.fetchAccountInfo())
-        except ZaloAPIException:
-            return False
-
-    def list_recipients(self, query: str = "") -> list[Recipient]:
-        import asyncio
-
-        from .zalo_pa import ZlapiAsync
-
-        cfg: ZaloPAChannelConfig = self.config  # type: ignore[assignment]
-        creds = {
-            "cookies": cfg.cookies,
-            "imei": cfg.imei,
-            "user_agent": cfg.user_agent,
-        }
-
-        async def _run() -> list[Recipient]:
-            client = await ZlapiAsync.create(creds)
-            return await client.list_recipients(query)
-
-        return asyncio.run(_run())

@@ -1,5 +1,9 @@
 from enum import StrEnum
 
+# Generic OLAP read cap — the DuckDB tables are unbounded, the APIs over them
+# are not. Domain-specific caps (e.g. gold history) live with their domain lib.
+MAX_LIMIT = 2000
+
 
 class DataType(StrEnum):
     """DuckDB data types."""

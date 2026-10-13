@@ -89,7 +89,7 @@ class CommonSettings(BaseKactusSettings):
 
     # Data plane — where the DuckDB owner lives, and the shared secret that
     # fences its /internal routes off.  Both halves sit here because kactus-fin
-    # (the caller) and kactus-data-server (the callee) no longer share any
+    # (the caller) and kactus-data-plane (the callee) no longer share any
     # settings branch below this one: fin dropped its kactus-data dependency
     # when the planes split.
     #
@@ -97,7 +97,7 @@ class CommonSettings(BaseKactusSettings):
     # overrides it with the service name.
     data_plane_url: str = "http://localhost:17602"
     # Empty is a hard failure on the data plane, not a permissive default — see
-    # kactus_data_server.security. There is no anonymous access to /internal.
+    # kactus_data_plane.security. There is no anonymous access to /internal.
     internal_service_token: str = ""
     data_plane_timeout: float = 30.0
 

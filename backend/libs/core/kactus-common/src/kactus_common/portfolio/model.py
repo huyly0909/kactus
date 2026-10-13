@@ -17,6 +17,7 @@ from kactus_common.database.oltp.models import (
     Base,
     LogicalDeleteMixin,
     ModelMixin,
+    ProjectScopedMixin,
 )
 from kactus_common.database.oltp.types import UnsignedBigInt
 from sqlalchemy import JSON, Boolean, Integer, String, Text, UniqueConstraint
@@ -25,8 +26,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .const import AssetType, CrawlStatus, CrawlTrigger
 
 
-class Portfolio(Base, ModelMixin, AuditMixin, LogicalDeleteMixin):
-    """A user-owned watchlist of financial instruments."""
+class Portfolio(Base, ModelMixin, AuditMixin, LogicalDeleteMixin, ProjectScopedMixin):
+    """A project-scoped, user-owned watchlist of financial instruments.
+
+    ``owner_id`` records the creator (audit); access is governed by the owning
+    ``project_id`` + the member's role (see ``ProjectScopedMixin``).
+    """
 
     __tablename__ = "portfolios"
 
@@ -35,8 +40,13 @@ class Portfolio(Base, ModelMixin, AuditMixin, LogicalDeleteMixin):
     owner_id: Mapped[UnsignedBigInt] = mapped_column(index=True)
 
 
-class PortfolioItem(Base, ModelMixin):
-    """Membership of an instrument in a portfolio (watchlist; no qty/cost)."""
+class PortfolioItem(Base, ModelMixin, ProjectScopedMixin):
+    """Membership of an instrument in a portfolio (watchlist; no qty/cost).
+
+    Carries its own ``project_id`` (denormalized from the parent portfolio) so
+    direct item selects are project-scoped too; portfolios never move between
+    projects, so it stays consistent.
+    """
 
     __tablename__ = "portfolio_items"
 
@@ -85,6 +95,9 @@ class CrawlRun(Base, ModelMixin):
     kind: Mapped[str] = mapped_column(String(32), index=True)
     trigger: Mapped[str] = mapped_column(String(16), default=CrawlTrigger.CRON)
     portfolio_id: Mapped[UnsignedBigInt | None] = mapped_column(default=None)
+    # Plain column (NOT ProjectScopedMixin): cron writes this with no request
+    # context, so it is set from the parent portfolio and filtered explicitly.
+    project_id: Mapped[UnsignedBigInt | None] = mapped_column(index=True, default=None)
     status: Mapped[str] = mapped_column(
         String(16), default=CrawlStatus.RUNNING, index=True
     )

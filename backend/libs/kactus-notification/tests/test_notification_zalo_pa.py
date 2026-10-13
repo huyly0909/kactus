@@ -13,30 +13,50 @@ import types
 import pytest
 from kactus_common.config import CommonSettings, clear_settings, register_settings
 from kactus_common.exceptions import ExternalServiceError, ValidationError
-from kactus_notification import zalo_pa
-from kactus_notification.channel import RenderedMessage, ZaloPAChannel
+from kactus_notification.channel import RenderedMessage
+from kactus_notification.channels.zalo_pa import ZaloPAChannel
+from kactus_notification.channels.zalo_pa import client as zalo_pa
+from kactus_notification.channels.zalo_pa import session_store
+from kactus_notification.channels.zalo_pa.schema import (
+    ZaloPAChannelConfig,
+    ZaloRecipientTarget,
+)
 from kactus_notification.config import NotificationSettings
 from kactus_notification.const import NotificationChannelType
-from kactus_notification.registry import build_channel, get_template
-from kactus_notification.schema import (
-    NotificationEvent,
-    ZaloPAChannelConfig,
-    mask_config,
-)
+from kactus_notification.registry import build_channel, get_template, mask_config
+from kactus_notification.schema import NotificationEvent
 from zlapi.models import ZaloAPIException
 
-CONFIG = {
+_SESSION_FIELDS = {
     "cookies": {"zpdid": "dev1"},
     "imei": "dev1",
     "zpw_sek": "sek",
     "zpsid": "sid",
     "secret_key": "SK",
     "user_agent": "ua",
+    "zalo_user_id": "u1",
+    "account_name": "Me",
+}
+
+CONFIG = {
+    **_SESSION_FIELDS,
+    "recipients": [{"thread_id": "42", "thread_type": 0, "name": "Bob"}],
+}
+
+MULTI_CONFIG = {
+    **_SESSION_FIELDS,
+    "recipients": [
+        {"thread_id": "42", "thread_type": 0, "name": "Bob"},
+        {"thread_id": "g7", "thread_type": 1, "name": "Team"},
+    ],
+}
+
+# Pre-multi-recipient shape still present in existing DB rows.
+LEGACY_CONFIG = {
+    **_SESSION_FIELDS,
     "thread_id": "42",
     "thread_type": 0,
     "recipient_name": "Bob",
-    "zalo_user_id": "u1",
-    "account_name": "Me",
 }
 
 
@@ -55,7 +75,7 @@ def _settings():
         _Settings(app_env="dev", zalo_pa_session_ttl_secs=300, zalo_pa_max_sessions=50)
     )
     yield
-    zalo_pa.reset_session_store()
+    session_store.reset_session_store()
     clear_settings()
 
 
@@ -64,13 +84,24 @@ def _settings():
 # --------------------------------------------------------------------------- #
 def test_config_validates_and_masks():
     cfg = ZaloPAChannelConfig.model_validate(CONFIG)
-    assert cfg.thread_id == "42"
+    assert [r.thread_id for r in cfg.recipients] == ["42"]
     masked = mask_config(NotificationChannelType.ZALO_PA, CONFIG)
     for secret in ("cookies", "imei", "zpw_sek", "zpsid", "secret_key"):
         assert masked[secret] == "***"
     # Non-secret display/recipient fields stay visible.
-    assert masked["thread_id"] == "42"
+    assert masked["recipients"][0]["thread_id"] == "42"
     assert masked["account_name"] == "Me"
+
+
+def test_legacy_config_lifts_scalar_recipient():
+    """Old single-target rows keep working: scalar keys fold into recipients."""
+    cfg = ZaloPAChannelConfig.model_validate(LEGACY_CONFIG)
+    assert len(cfg.recipients) == 1
+    target = cfg.recipients[0]
+    assert (target.thread_id, target.thread_type, target.name) == ("42", 0, "Bob")
+    # New-shape dump carries no legacy scalar keys.
+    dumped = cfg.model_dump()
+    assert "thread_id" not in dumped and "recipient_name" not in dumped
 
 
 def test_template_is_plaintext():
@@ -91,42 +122,110 @@ def test_template_is_plaintext():
 
 
 # --------------------------------------------------------------------------- #
-# Channel send
+# Channel send (multi-recipient)
 # --------------------------------------------------------------------------- #
-def test_channel_send_uses_recipient(monkeypatch):
-    recorded = {}
+def test_channel_send_delivers_to_all_recipients(monkeypatch):
+    calls: list[tuple[str, int]] = []
+    sleeps: list[float] = []
     monkeypatch.setattr(zalo_pa, "build_sync_bot", lambda cfg: "BOT")
+    monkeypatch.setattr(
+        zalo_pa,
+        "send_text_sync",
+        lambda bot, text, thread_id, thread_type: calls.append(
+            (thread_id, thread_type)
+        ),
+    )
+    monkeypatch.setattr("time.sleep", lambda secs: sleeps.append(secs))
 
-    def _fake_send(bot, text, thread_id, thread_type):
-        recorded.update(
-            bot=bot, text=text, thread_id=thread_id, thread_type=thread_type
-        )
-
-    monkeypatch.setattr(zalo_pa, "send_text_sync", _fake_send)
-
-    ch = build_channel(NotificationChannelType.ZALO_PA, CONFIG)
+    ch = build_channel(NotificationChannelType.ZALO_PA, MULTI_CONFIG)
     assert isinstance(ch, ZaloPAChannel)
     with ch:
         ch.send(RenderedMessage(text="hello"))
-    assert recorded == {
-        "bot": "BOT",
-        "text": "hello",
-        "thread_id": "42",
-        "thread_type": 0,
-    }
+    assert calls == [("42", 0), ("g7", 1)]
+    # Anti-spam gap only *between* sends, not before the first.
+    assert sleeps == [zalo_pa.SEND_DELAY_SECS]
 
 
-def test_channel_send_expired_session_is_non_retryable(monkeypatch):
+def test_channel_send_partial_success_does_not_raise(monkeypatch):
+    """Once any target got the message, never raise — a retry would double-send."""
     monkeypatch.setattr(zalo_pa, "build_sync_bot", lambda cfg: "BOT")
+    monkeypatch.setattr("time.sleep", lambda secs: None)
+    delivered: list[str] = []
+
+    def _first_fails(bot, text, thread_id, thread_type):
+        if thread_id == "42":
+            raise ZaloAPIException("logged out")
+        delivered.append(thread_id)
+
+    monkeypatch.setattr(zalo_pa, "send_text_sync", _first_fails)
+
+    ch = build_channel(NotificationChannelType.ZALO_PA, MULTI_CONFIG)
+    with ch:
+        ch.send(RenderedMessage(text="hi"))  # must not raise
+    assert delivered == ["g7"]
+    # …but the failure is not swallowed: the dispatcher logs it per conversation.
+    assert [(t.thread_id, t.ok) for t in ch.last_targets] == [
+        ("42", False),
+        ("g7", True),
+    ]
+    assert "logged out" in ch.last_targets[0].error
+
+
+def test_channel_send_records_targets_when_everything_fails(monkeypatch):
+    """The raising path still has to leave the per-conversation errors behind."""
+    monkeypatch.setattr(zalo_pa, "build_sync_bot", lambda cfg: "BOT")
+    monkeypatch.setattr("time.sleep", lambda secs: None)
 
     def _boom(bot, text, thread_id, thread_type):
         raise ZaloAPIException("logged out")
 
     monkeypatch.setattr(zalo_pa, "send_text_sync", _boom)
 
+    ch = build_channel(NotificationChannelType.ZALO_PA, MULTI_CONFIG)
+    with ch:
+        with pytest.raises(ExternalServiceError):
+            ch.send(RenderedMessage(text="hi"))
+    assert [t.thread_id for t in ch.last_targets] == ["42", "g7"]
+    assert all(t.ok is False and t.error for t in ch.last_targets)
+
+
+def test_channel_send_expired_session_is_non_retryable(monkeypatch):
+    monkeypatch.setattr(zalo_pa, "build_sync_bot", lambda cfg: "BOT")
+    monkeypatch.setattr("time.sleep", lambda secs: None)
+
+    def _boom(bot, text, thread_id, thread_type):
+        raise ZaloAPIException("logged out")
+
+    monkeypatch.setattr(zalo_pa, "send_text_sync", _boom)
+
+    ch = build_channel(NotificationChannelType.ZALO_PA, MULTI_CONFIG)
+    with ch:
+        # All targets ZaloAPIException → ExternalServiceError (not retried).
+        with pytest.raises(ExternalServiceError):
+            ch.send(RenderedMessage(text="hi"))
+
+
+def test_channel_send_all_transient_failures_stay_retryable(monkeypatch):
+    """Zero deliveries + transport error → re-raise so the dispatcher retries."""
+    monkeypatch.setattr(zalo_pa, "build_sync_bot", lambda cfg: "BOT")
+
+    def _net_down(bot, text, thread_id, thread_type):
+        raise ConnectionError("reset")
+
+    monkeypatch.setattr(zalo_pa, "send_text_sync", _net_down)
+
     ch = build_channel(NotificationChannelType.ZALO_PA, CONFIG)
     with ch:
-        # ZaloAPIException → ExternalServiceError (deterministic, not retried).
+        with pytest.raises(ConnectionError):
+            ch.send(RenderedMessage(text="hi"))
+
+
+def test_channel_send_without_recipients_is_misconfig(monkeypatch):
+    monkeypatch.setattr(zalo_pa, "build_sync_bot", lambda cfg: "BOT")
+    ch = build_channel(
+        NotificationChannelType.ZALO_PA, {**_SESSION_FIELDS, "recipients": []}
+    )
+    with ch:
         with pytest.raises(ExternalServiceError):
             ch.send(RenderedMessage(text="hi"))
 
@@ -137,13 +236,19 @@ def test_channel_send_expired_session_is_non_retryable(monkeypatch):
 @pytest.mark.asyncio
 async def test_list_recipients_maps_friends_and_groups():
     friend = types.SimpleNamespace(userId="u9", displayName="Alice", avatar="a.png")
-    groups = types.SimpleNamespace(gridVerMap={"g1": 3})
+    # Aliased friend: name lives under zaloName, avatar under avt, id under id.
+    aliased = {"id": "u10", "zaloName": "Chị Hai", "avt": "b.png"}
+    groups = types.SimpleNamespace(gridVerMap={"g1": 3, "g2": 5})
     group_info = types.SimpleNamespace(
-        gridInfoMap={"g1": {"name": "Team", "avt": "g.png"}}
+        gridInfoMap={
+            "g1": {"name": "Team", "avt": "g.png"},
+            # Fallback keys: groupName + fullAvt.
+            "g2": {"groupName": "Crew", "fullAvt": "f.png"},
+        }
     )
     bot = types.SimpleNamespace(
         user_id="me",
-        fetchAllFriends=lambda: [friend],
+        fetchAllFriends=lambda: [friend, aliased],
         fetchAllGroups=lambda: groups,
         fetchGroupInfo=lambda gm: group_info,
     )
@@ -151,11 +256,93 @@ async def test_list_recipients_maps_friends_and_groups():
     recipients = await client.list_recipients()
     by_id = {r.id: r for r in recipients}
     assert by_id["u9"].name == "Alice" and by_id["u9"].is_group is False
+    assert by_id["u10"].name == "Chị Hai" and by_id["u10"].avatar == "b.png"
     assert by_id["g1"].name == "Team" and by_id["g1"].is_group is True
+    assert by_id["g2"].name == "Crew" and by_id["g2"].avatar == "f.png"
 
     # Query filters by name (case-insensitive).
     only_team = await client.list_recipients("team")
     assert [r.id for r in only_team] == ["g1"]
+
+    # …and diacritic-insensitive: nobody types "Chị" on an ASCII keyboard.
+    assert [r.id for r in await client.list_recipients("chi hai")] == ["u10"]
+    assert [r.id for r in await client.list_recipients("CHỊ")] == ["u10"]
+
+
+# --------------------------------------------------------------------------- #
+# Channel-level operations (stored config, no QR session)
+# --------------------------------------------------------------------------- #
+@pytest.mark.asyncio
+async def test_list_channel_recipients_uses_stored_credentials(monkeypatch):
+    captured: dict = {}
+
+    class _FakeZlapi:
+        @classmethod
+        async def create(cls, credentials):
+            captured.update(credentials)
+            return cls()
+
+        async def list_recipients(self, query=""):
+            return [zalo_pa.Recipient(id="u1", name="Alice")]
+
+    monkeypatch.setattr(zalo_pa, "ZlapiAsync", _FakeZlapi)
+    cfg = ZaloPAChannelConfig.model_validate(CONFIG)
+    out = await zalo_pa.list_channel_recipients(cfg)
+    assert [r.id for r in out] == ["u1"]
+    assert captured == {
+        "cookies": {"zpdid": "dev1"},
+        "imei": "dev1",
+        "user_agent": "ua",
+    }
+
+
+@pytest.mark.asyncio
+async def test_list_channel_recipients_dead_session_is_external_error(monkeypatch):
+    class _DeadZlapi:
+        @classmethod
+        async def create(cls, credentials):
+            raise ZaloAPIException("session expired")
+
+    monkeypatch.setattr(zalo_pa, "ZlapiAsync", _DeadZlapi)
+    cfg = ZaloPAChannelConfig.model_validate(CONFIG)
+    with pytest.raises(ExternalServiceError):
+        await zalo_pa.list_channel_recipients(cfg)
+
+
+@pytest.mark.asyncio
+async def test_send_greeting_collects_per_target_results(monkeypatch):
+    sent: list[tuple[str, str, int]] = []
+    sleeps: list[float] = []
+
+    class _FakeZlapi:
+        @classmethod
+        async def create(cls, credentials):
+            return cls()
+
+        async def send_text(self, text, thread_id, thread_type=0):
+            if thread_id == "g7":
+                raise ZaloAPIException("kicked from group")
+            sent.append((text, thread_id, thread_type))
+
+    async def _no_sleep(secs):
+        sleeps.append(secs)
+
+    monkeypatch.setattr(zalo_pa, "ZlapiAsync", _FakeZlapi)
+    monkeypatch.setattr(zalo_pa.asyncio, "sleep", _no_sleep)
+
+    cfg = ZaloPAChannelConfig.model_validate(MULTI_CONFIG)
+    results = await zalo_pa.send_greeting_to_recipients(cfg, zalo_pa.TEST_GREETING)
+    assert sent == [(zalo_pa.TEST_GREETING, "42", 0)]
+    assert sleeps == [zalo_pa.SEND_DELAY_SECS]  # only between targets
+    assert results[0]["ok"] is True and results[0]["thread_id"] == "42"
+    assert results[1]["ok"] is False and "kicked" in results[1]["error"]
+
+
+@pytest.mark.asyncio
+async def test_send_greeting_requires_recipients():
+    cfg = ZaloPAChannelConfig.model_validate({**_SESSION_FIELDS, "recipients": []})
+    with pytest.raises(ValidationError):
+        await zalo_pa.send_greeting_to_recipients(cfg, "hi")
 
 
 # --------------------------------------------------------------------------- #
@@ -164,7 +351,9 @@ async def test_list_recipients_maps_friends_and_groups():
 @pytest.mark.asyncio
 async def test_session_store_save_load_delete():
     store = zalo_pa.get_session_store()
-    assert isinstance(store, zalo_pa.InProcessZaloPASessionStore)  # default backend
+    assert isinstance(
+        store, session_store.InProcessZaloPASessionStore
+    )  # default backend
     await store.save("s1", {"code": "C"}, 300)
     assert await store.load("s1") == {"code": "C"}
     assert await store.count() == 1
@@ -186,7 +375,7 @@ async def test_session_store_expires_after_ttl():
 async def test_build_channel_config_requires_completed_session():
     with pytest.raises(ValidationError):
         await zalo_pa.build_channel_config(
-            "missing", thread_id="1", thread_type=0, recipient_name=None
+            "missing", recipients=[ZaloRecipientTarget(thread_id="1")]
         )
 
 
@@ -210,10 +399,16 @@ async def test_build_channel_config_from_completed_session():
         300,
     )
     cfg = await zalo_pa.build_channel_config(
-        "s2", thread_id="42", thread_type=1, recipient_name="Team"
+        "s2",
+        recipients=[
+            ZaloRecipientTarget(thread_id="42", thread_type=1, name="Team"),
+            ZaloRecipientTarget(thread_id="u5", thread_type=0, name="Bob"),
+        ],
     )
-    assert cfg.thread_id == "42"
-    assert cfg.thread_type == 1
+    assert [(r.thread_id, r.thread_type) for r in cfg.recipients] == [
+        ("42", 1),
+        ("u5", 0),
+    ]
     assert cfg.zalo_user_id == "u1"
     assert cfg.secret_key == "k"
 

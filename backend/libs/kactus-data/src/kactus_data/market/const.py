@@ -14,10 +14,19 @@ from kactus_data.sources.finance.tables import FINANCE_TABLE
 from kactus_data.sources.gold.history_tables import GOLD_PRICE_HISTORY_TABLE
 from kactus_data.sources.gold.portfolio_tables import GOLD_PRICE_BOARD_TABLE
 from kactus_data.sources.stock.portfolio_tables import (
+    STOCK_DAILY_SNAPSHOT_TABLE as _STOCK_DAILY_SNAPSHOT_TABLE,
+)
+from kactus_data.sources.stock.portfolio_tables import (
+    STOCK_EVENTS_TABLE as _STOCK_EVENTS_TABLE,
+)
+from kactus_data.sources.stock.portfolio_tables import (
     STOCK_NEWS_TABLE as _STOCK_NEWS_TABLE,
 )
 from kactus_data.sources.stock.portfolio_tables import (
     STOCK_PRICE_BOARD_TABLE as _STOCK_PRICE_BOARD_TABLE,
+)
+from kactus_data.sources.stock.portfolio_tables import (
+    STOCK_RATIOS_TABLE as _STOCK_RATIOS_TABLE,
 )
 from kactus_data.sources.stock.tables import STOCK_LISTING_TABLE as _STOCK_LISTING_TABLE
 from kactus_data.sources.stock.tables import STOCK_OHLCV_TABLE as _STOCK_OHLCV_TABLE
@@ -30,3 +39,6 @@ STOCK_PRICE_BOARD_TABLE = _STOCK_PRICE_BOARD_TABLE.name
 STOCK_OHLCV_TABLE = _STOCK_OHLCV_TABLE.name
 STOCK_NEWS_TABLE = _STOCK_NEWS_TABLE.name
 STOCK_FINANCE_TABLE = FINANCE_TABLE.name
+STOCK_EVENTS_TABLE = _STOCK_EVENTS_TABLE.name
+STOCK_RATIOS_TABLE = _STOCK_RATIOS_TABLE.name
+STOCK_DAILY_SNAPSHOT_TABLE = _STOCK_DAILY_SNAPSHOT_TABLE.name

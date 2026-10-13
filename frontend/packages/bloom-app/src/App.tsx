@@ -1,16 +1,29 @@
 import { lazy, useEffect } from 'react';
-import { createBrowserRouter, RouterProvider, Routes, Route } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Routes, Route, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
+import { useThemeStore } from '@/store/themeStore';
+import { useDebugUrlSync } from '@/hooks/useDebugMode';
 import { DashboardLayout } from '@/layouts/DashboardLayout';
+import { NotFoundRedirect } from '@/layouts/components/NotFoundRedirect';
+import { RequireProject } from '@/layouts/components/RequireProject';
 import { LoginPage } from '@/modules/core/auth/pages/LoginPage';
-import { AdminGuard } from '@modules/admin/components/AdminGuard';
 
 // Route-level code splitting — each page becomes its own async chunk, loaded on
 // demand behind the DashboardLayout's <Suspense> boundary (named → default).
 const DashboardPage = lazy(() =>
   import('@/modules/core/dashboard/pages/DashboardPage').then((m) => ({
     default: m.DashboardPage,
+  })),
+);
+const ProjectListPage = lazy(() =>
+  import('@modules/project/pages/ProjectListPage').then((m) => ({
+    default: m.ProjectListPage,
+  })),
+);
+const ProjectDetailPage = lazy(() =>
+  import('@modules/project/pages/ProjectDetailPage').then((m) => ({
+    default: m.ProjectDetailPage,
   })),
 );
 const PortfolioListPage = lazy(() =>
@@ -36,6 +49,9 @@ const NotificationDetailPage = lazy(() =>
 const GoldPricesPage = lazy(() =>
   import('@modules/market/pages/GoldPricesPage').then((m) => ({ default: m.GoldPricesPage })),
 );
+const SchedulerPage = lazy(() =>
+  import('@modules/scheduler/pages/SchedulerPage').then((m) => ({ default: m.SchedulerPage })),
+);
 const StockMarketPage = lazy(() =>
   import('@modules/market/pages/StockMarketPage').then((m) => ({ default: m.StockMarketPage })),
 );
@@ -45,16 +61,13 @@ const StockDetailPage = lazy(() =>
 const FinancePage = lazy(() =>
   import('@modules/market/pages/FinancePage').then((m) => ({ default: m.FinancePage })),
 );
-const AdminUsersPage = lazy(() =>
-  import('@modules/admin/pages/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })),
-);
-const AdminProjectsPage = lazy(() =>
-  import('@modules/admin/pages/AdminProjectsPage').then((m) => ({ default: m.AdminProjectsPage })),
-);
-const AdminAuthorizationPage = lazy(() =>
-  import('@modules/admin/pages/AdminAuthorizationPage').then((m) => ({
-    default: m.AdminAuthorizationPage,
+const FinanceReportPage = lazy(() =>
+  import('@modules/market/pages/FinanceReportPage').then((m) => ({
+    default: m.FinanceReportPage,
   })),
+);
+const SettingsPage = lazy(() =>
+  import('@modules/settings/pages/SettingsPage').then((m) => ({ default: m.SettingsPage })),
 );
 
 /**
@@ -65,25 +78,87 @@ const AdminAuthorizationPage = lazy(() =>
  * 4. Show router if authenticated
  */
 function AppRoutes() {
+  useDebugUrlSync();
   return (
     <Routes>
       <Route path="/" element={<DashboardLayout />}>
-        <Route index element={<DashboardPage />} />
-        <Route path="portfolios" element={<PortfolioListPage />} />
-        <Route path="portfolios/:id" element={<PortfolioDetailPage />} />
-        <Route path="notifications" element={<NotificationListPage />} />
-        <Route path="notifications/:id" element={<NotificationDetailPage />} />
-        <Route path="market/gold" element={<GoldPricesPage />} />
+        {/* Project-scoped pages: without a selection the API 403s, so the guard
+            sends the user to the picker rather than to empty widgets. */}
+        <Route
+          index
+          element={
+            <RequireProject>
+              <DashboardPage />
+            </RequireProject>
+          }
+        />
+        <Route path="projects" element={<ProjectListPage />} />
+        <Route path="projects/:id" element={<ProjectDetailPage />} />
+        <Route
+          path="portfolios"
+          element={
+            <RequireProject>
+              <PortfolioListPage />
+            </RequireProject>
+          }
+        />
+        <Route
+          path="portfolios/:id"
+          element={
+            <RequireProject>
+              <PortfolioDetailPage />
+            </RequireProject>
+          }
+        />
+        <Route
+          path="notifications"
+          element={
+            <RequireProject>
+              <NotificationListPage />
+            </RequireProject>
+          }
+        />
+        <Route
+          path="notifications/:id"
+          element={
+            <RequireProject>
+              <NotificationDetailPage />
+            </RequireProject>
+          }
+        />
+        {/* Market module root → its first sub-page (the sidebar trigger links here). */}
+        <Route path="market" element={<Navigate to="/market/gold/overview" replace />} />
+        {/* Gold: Overview (board) + Data (superuser backfill/sync), tab in the URL. */}
+        <Route path="market/gold" element={<Navigate to="/market/gold/overview" replace />} />
+        <Route path="market/gold/:tab" element={<GoldPricesPage />} />
+        {/* The sync queue moved into the shared Scheduler module. Old link redirects. */}
+        <Route path="market/sync" element={<Navigate to="/scheduler/queue" replace />} />
         <Route path="market/stocks" element={<StockMarketPage />} />
         <Route path="market/stocks/:symbol" element={<StockDetailPage />} />
         <Route path="market/finance" element={<FinancePage />} />
-        <Route path="admin" element={<AdminGuard />}>
-          <Route index element={<AdminUsersPage />} />
-          <Route path="users" element={<AdminUsersPage />} />
-          <Route path="projects" element={<AdminProjectsPage />} />
-          <Route path="authorization" element={<AdminAuthorizationPage />} />
-        </Route>
-        <Route path="*" element={<div className="p-8 text-muted-foreground">Page not found</div>} />
+        {/* POC — the finance pivot rebuilt on the ReportView primitive. */}
+        <Route path="market/finance-report" element={<FinanceReportPage />} />
+        {/* Scheduler (superuser): recurring cron jobs + the shared sync queue. */}
+        <Route path="scheduler" element={<Navigate to="/scheduler/jobs" replace />} />
+        <Route path="scheduler/:tab" element={<SchedulerPage />} />
+        {/* Admin (Users/Projects) folded into Settings. Old links redirect. */}
+        <Route path="admin" element={<Navigate to="/settings/users" replace />} />
+        <Route path="admin/users" element={<Navigate to="/settings/users" replace />} />
+        <Route path="admin/authorization" element={<Navigate to="/settings/users" replace />} />
+        <Route path="admin/projects" element={<Navigate to="/settings/projects" replace />} />
+        {/* Settings — not a registry module; reached from the sidebar/header. */}
+        <Route path="settings" element={<Navigate to="/settings/profile" replace />} />
+        <Route
+          path="settings/appearance"
+          element={<Navigate to="/settings/preferences" replace />}
+        />
+        <Route path="settings/:tab" element={<SettingsPage />} />
+        {/* The 401 interceptor and logout hard-navigate to /login, which is not a
+            route (the login form renders in place of the router). Without this,
+            the post-login mount lands on /login → catch-all → "page not found"
+            toast on every single sign-in. */}
+        <Route path="login" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFoundRedirect />} />
       </Route>
     </Routes>
   );
@@ -93,10 +168,34 @@ const router = createBrowserRouter([{ path: '*', element: <AppRoutes /> }]);
 
 function App() {
   const { user, isLoading, checkSession } = useAuth();
+  const mode = useThemeStore((s) => s.mode);
+  const color = useThemeStore((s) => s.color);
+  const radius = useThemeStore((s) => s.radius);
+  const scale = useThemeStore((s) => s.scale);
 
   useEffect(() => {
     void checkSession();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reflect the theme axes onto <html>. Clears prior atoms by prefix so we never
+  // drift out of sync with the preset list in index.css; `default` color adds no
+  // `theme-*` class (keeps the indigo base), `dark` mode adds no class (base).
+  useEffect(() => {
+    const root = document.documentElement;
+    Array.from(root.classList)
+      .filter(
+        (cls) =>
+          cls === 'light' ||
+          cls.startsWith('theme-') ||
+          cls.startsWith('radius-') ||
+          cls.startsWith('scale-'),
+      )
+      .forEach((cls) => root.classList.remove(cls));
+
+    if (mode === 'light') root.classList.add('light');
+    if (color !== 'default') root.classList.add(`theme-${color}`);
+    root.classList.add(`radius-${radius}`, `scale-${scale}`);
+  }, [mode, color, radius, scale]);
 
   if (isLoading) {
     return (

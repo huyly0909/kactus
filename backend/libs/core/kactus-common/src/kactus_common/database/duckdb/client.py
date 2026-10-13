@@ -54,6 +54,11 @@ class DatabaseClient:
         conn = None
         try:
             conn = duckdb.connect(self.db_path)
+            # Pin the session to UTC. Every timestamp column is naive UTC
+            # wall-clock by convention, so any SQL-side ``now()``/``current_*``
+            # default and any tz-aware value inserted lands as UTC — never the
+            # server's local zone.
+            conn.execute("SET TimeZone='UTC'")
             logger.debug(f"Opened connection to {self.db_path}")
             yield conn
         except Exception as e:

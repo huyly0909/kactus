@@ -22,6 +22,32 @@ COPY frontend/packages/bloom-app/ packages/bloom-app/
 RUN bunx turbo run build --filter=bloom-app
 
 # -------------------------------------------------------------------
+# Stage: dev — vite dev server with HMR (dev compose only, `target: dev`).
+# Kept BEFORE the runtime stage so the default build target (no `target:`)
+# stays the nginx image that stag/prod build. The source directories are
+# bind-mounted over this image at runtime; only node_modules come from here,
+# so host (darwin) and container (linux) native deps never clash.
+# -------------------------------------------------------------------
+FROM oven/bun:1-alpine AS dev
+
+WORKDIR /app
+
+COPY frontend/package.json frontend/bun.lock ./
+COPY frontend/packages/bloom-ui/package.json packages/bloom-ui/
+COPY frontend/packages/bloom-app/package.json packages/bloom-app/
+
+RUN bun install --frozen-lockfile
+
+COPY frontend/tsconfig.base.json frontend/turbo.json ./
+COPY frontend/packages/bloom-ui/ packages/bloom-ui/
+COPY frontend/packages/bloom-app/ packages/bloom-app/
+
+WORKDIR /app/packages/bloom-app
+EXPOSE 17630
+# --host so the server is reachable from the host through the published port.
+CMD ["bunx", "vite", "--host", "0.0.0.0", "--port", "17630"]
+
+# -------------------------------------------------------------------
 # Stage 2: Runtime — nginx serving the static bundle + /api reverse proxy
 # -------------------------------------------------------------------
 FROM nginx:alpine AS runtime

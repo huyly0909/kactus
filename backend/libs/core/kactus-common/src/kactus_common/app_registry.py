@@ -85,6 +85,7 @@ class AppManager:
         self.apps: dict[str, KactusApp] = {}
         self._auth_dependency: Callable | None = None
         self._superuser_dependency: Callable | None = None
+        self._csrf_dependency: Callable | None = None
 
     def register(self, app: KactusApp) -> None:
         """Register a KactusApp. Raises if name already taken."""
@@ -97,6 +98,7 @@ class AppManager:
         *,
         session_dep: Callable,
         superuser_dep: Callable,
+        csrf_dep: Callable | None = None,
     ) -> None:
         """Set the auth dependencies that will be applied to routers.
 
@@ -104,9 +106,14 @@ class AppManager:
             session_dep: FastAPI dependency that authenticates the user,
                 sets ``request.state.user`` and ``set_current_user_id()``.
             superuser_dep: FastAPI dependency that also requires ``is_superuser``.
+            csrf_dep: Optional CSRF check (``kactus_common.user.csrf.verify_csrf``)
+                run on every session/superuser router **after** auth, so an
+                unauthenticated request is still a 401, not a 403. Public
+                routes never get it — they act with no ambient session.
         """
         self._auth_dependency = session_dep
         self._superuser_dependency = superuser_dep
+        self._csrf_dependency = csrf_dep
 
     def init_fastapi(self, fastapi_app: FastAPI) -> None:
         """Wire all registered apps into the FastAPI instance."""
@@ -131,7 +138,7 @@ class AppManager:
                 for router in app.session_routes:
                     fastapi_app.include_router(
                         router,
-                        dependencies=[Depends(self._auth_dependency)],
+                        dependencies=self._route_dependencies(self._auth_dependency),
                     )
 
             # Superuser-protected routes
@@ -144,8 +151,17 @@ class AppManager:
                 for router in app.superuser_routes:
                     fastapi_app.include_router(
                         router,
-                        dependencies=[Depends(self._superuser_dependency)],
+                        dependencies=self._route_dependencies(
+                            self._superuser_dependency
+                        ),
                     )
+
+    def _route_dependencies(self, auth_dep: Callable) -> list:
+        """Auth first, then CSRF — FastAPI resolves them in list order."""
+        deps = [Depends(auth_dep)]
+        if self._csrf_dependency is not None:
+            deps.append(Depends(self._csrf_dependency))
+        return deps
 
     def _init_middlewares(self, fastapi_app: FastAPI) -> None:
         """Register all app middlewares."""
